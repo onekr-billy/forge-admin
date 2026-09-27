@@ -523,6 +523,7 @@ public class BusinessTriggerExecutor {
         MessageSendRequestDTO req = new MessageSendRequestDTO();
         req.setTemplateCode(templateCode);
         req.setChannel(StringUtils.defaultIfBlank(channelStatus.getSendChannel(), "WEB"));
+        req.setConnectionId(channelStatus.getConnectionId());
         req.setType("SYSTEM");
         req.setBizType("TRIGGER");
         req.setBizKey(event.getObjectCode() + ":" + event.getRecordId());

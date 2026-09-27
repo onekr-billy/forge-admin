@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { isInputLikeFieldType, isNumberFieldType } from '../field-type-utils'
+import {
+  coerceNumberFieldValue,
+  isInputLikeFieldType,
+  isNumberFieldType,
+  isNumberLikeField,
+  normalizeNumberFieldType,
+  resolveNumberFieldType,
+} from '../field-type-utils'
 
 describe('field type utils', () => {
-  it.each(['number', 'inputNumber', 'input-number', 'integer', 'money'])(
+  it.each(['number', 'inputNumber', 'input-number', 'integer', 'money', 'decimal'])(
     'recognizes %s as a number field type',
     (type) => {
       expect(isNumberFieldType(type)).toBe(true)
@@ -21,4 +28,18 @@ describe('field type utils', () => {
       expect(isInputLikeFieldType(type)).toBe(true)
     },
   )
+
+  it('resolves money from componentKey when type is weak input', () => {
+    expect(resolveNumberFieldType({ type: 'input', componentKey: 'money' })).toBe('money')
+    expect(isNumberLikeField({ type: 'input', componentKey: 'money' })).toBe(true)
+    expect(normalizeNumberFieldType('money')).toBe('number')
+  })
+
+  it('coerces string / blank money values for n-input-number', () => {
+    expect(coerceNumberFieldValue('128.50')).toBe(128.5)
+    expect(coerceNumberFieldValue('')).toBeNull()
+    expect(coerceNumberFieldValue(null)).toBeNull()
+    expect(coerceNumberFieldValue(99)).toBe(99)
+    expect(coerceNumberFieldValue('abc')).toBeNull()
+  })
 })

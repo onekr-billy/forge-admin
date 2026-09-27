@@ -25,4 +25,6 @@ public interface DataAuditFieldMapper extends BaseMapper<AiDataAuditField> {
     int countVisibleFields(@Param("tenantId") Long tenantId,
                            @Param("eventId") Long eventId,
                            @Param("visibleFieldCodes") List<String> visibleFieldCodes);
+
+    int insertBatch(@Param("items") List<AiDataAuditField> items);
 }

@@ -102,7 +102,8 @@ public class CollaborationLoginController {
             return RespInfo.error("该授权凭据不适用于登录，请重新发起免登");
         }
         SysSocialConfig connection = socialConfigService.selectConfigById(intent.getConnectionId());
-        if (connection == null || !EnableStatus.ENABLED.matches(connection.getStatus())) {
+        if (connection == null || !EnableStatus.ENABLED.matches(connection.getStatus())
+                || !EnableStatus.ENABLED.matches(connection.getSsoWorkbenchEnabled())) {
             return RespInfo.error("该连接未启用");
         }
 
@@ -150,7 +151,8 @@ public class CollaborationLoginController {
 
     private SysSocialConfig requireEnabledConnection(String connectionCode) {
         SysSocialConfig connection = socialConfigService.selectConnectionByCode(connectionCode);
-        if (connection == null || !EnableStatus.ENABLED.matches(connection.getStatus())) {
+        if (connection == null || !EnableStatus.ENABLED.matches(connection.getStatus())
+                || !EnableStatus.ENABLED.matches(connection.getSsoWorkbenchEnabled())) {
             throw new com.mdframe.forge.starter.core.exception.BusinessException("该连接不存在或未启用");
         }
         return connection;

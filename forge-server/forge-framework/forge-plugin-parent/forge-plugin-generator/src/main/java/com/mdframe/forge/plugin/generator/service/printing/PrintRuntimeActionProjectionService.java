@@ -1,8 +1,12 @@
 package com.mdframe.forge.plugin.generator.service.printing;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mdframe.forge.plugin.generator.dto.AiCrudConfigRenderVO;
+import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationMapper;
+import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationObjectMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationVersionMapper;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationRuntimeService;
 import com.mdframe.forge.plugin.print.entity.PrintBinding;
@@ -29,6 +33,8 @@ public class PrintRuntimeActionProjectionService {
     private final PrintIdentity identity;
     private final BusinessApplicationRuntimeService runtime;
     private final BusinessApplicationVersionMapper versions;
+    private final BusinessApplicationMapper applications;
+    private final BusinessApplicationObjectMapper applicationObjects;
     private final PrintApplicationSnapshotCodec snapshots;
     private final LowcodePrintSourceResolver sources;
     private final PrintTemplateMapper templates;
@@ -43,36 +49,41 @@ public class PrintRuntimeActionProjectionService {
             return config;
         }
         var actor = identity.current();
-        com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationRuntimeVO portal;
-        try {
-            portal = runtime.runtimeById(applicationId);
-        } catch (BusinessException denied) {
-            return config;
-        }
-        if (portal == null || portal.getApplication() == null) {
-            return config;
-        }
-        var allowed = json.createObjectNode();
-        allowed.putObject("application").set("options", json.valueToTree(map(portal.getApplication().getOptions())));
-        allowed.set("objects", json.valueToTree(portal.getObjects()));
         String rowKey = config.getRowKey();
         if (rowKey == null || !rowKey.matches("[A-Za-z_][A-Za-z0-9_]*")) {
             return config;
         }
         Map<PrintScene, Map<String, Object>> actions = new LinkedHashMap<>();
         if (designPreview) {
-            projectLive(actions, actor.tenantId(), applicationId, pageId, configKey, allowed, rowKey);
-        } else {
-            var version = versions.selectVersion(actor.tenantId(), applicationId, portal.getVersionNo());
-            if (version == null) {
+            // 设计预览必须用草稿页面树：未发布进快照的新页面在正式 runtime 里不存在。
+            JsonNode allowed = draftAllowed(actor.tenantId(), applicationId);
+            if (allowed == null) {
                 return config;
             }
-            projectSnapshot(actions, snapshots.read(version.getSnapshotJson(), applicationId),
-                    applicationId, pageId, configKey, allowed, rowKey, actor.tenantId());
-        }
-        // 正式运行优先读发布快照；配置人员可在未重新发布前，用当前启用的设计态绑定做验收。
-        if (actions.isEmpty() && SessionHelper.hasPermission("print:template:manage")) {
             projectLive(actions, actor.tenantId(), applicationId, pageId, configKey, allowed, rowKey);
+        } else {
+            com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationRuntimeVO portal;
+            try {
+                portal = runtime.runtimeById(applicationId);
+            } catch (BusinessException denied) {
+                return config;
+            }
+            if (portal == null || portal.getApplication() == null) {
+                return config;
+            }
+            JsonNode allowed = publishedAllowed(portal);
+            var version = versions.selectVersion(actor.tenantId(), applicationId, portal.getVersionNo());
+            if (version != null) {
+                projectSnapshot(actions, snapshots.read(version.getSnapshotJson(), applicationId),
+                        applicationId, pageId, configKey, allowed, rowKey, actor.tenantId());
+            }
+            // 正式运行优先读发布快照；配置人员可在未重新发布前，用当前启用的设计态绑定做验收。
+            if (actions.isEmpty() && SessionHelper.hasPermission("print:template:manage")) {
+                JsonNode draft = draftAllowed(actor.tenantId(), applicationId);
+                if (draft != null) {
+                    projectLive(actions, actor.tenantId(), applicationId, pageId, configKey, draft, rowKey);
+                }
+            }
         }
         if (actions.isEmpty()) {
             return config;
@@ -92,10 +103,33 @@ public class PrintRuntimeActionProjectionService {
         return config;
     }
 
+    private JsonNode publishedAllowed(
+            com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationRuntimeVO portal) {
+        ObjectNode allowed = json.createObjectNode();
+        allowed.putObject("application").set("options", json.valueToTree(map(portal.getApplication().getOptions())));
+        allowed.set("objects", json.valueToTree(portal.getObjects()));
+        return allowed;
+    }
+
+    private JsonNode draftAllowed(Long tenantId, Long applicationId) {
+        var app = applications.selectEntityById(tenantId, applicationId);
+        if (app == null || app.getOptions() == null || app.getOptions().isBlank()) {
+            return null;
+        }
+        try {
+            ObjectNode allowed = json.createObjectNode();
+            allowed.putObject("application").set("options", json.readTree(app.getOptions()));
+            allowed.set("objects", json.valueToTree(applicationObjects.selectByApplicationId(tenantId, applicationId)));
+            return allowed;
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
     private void projectSnapshot(Map<PrintScene, Map<String, Object>> actions,
                                  List<PrintApplicationSnapshotCodec.Binding> pinned,
                                  Long applicationId, String pageId, String configKey,
-                                 com.fasterxml.jackson.databind.JsonNode allowed, String rowKey, Long tenantId) {
+                                 JsonNode allowed, String rowKey, Long tenantId) {
         for (var binding : pinned) {
             accept(actions, binding.source(), binding.scene(), binding.templateId(),
                     applicationId, pageId, configKey, allowed, rowKey, tenantId);
@@ -103,7 +137,7 @@ public class PrintRuntimeActionProjectionService {
     }
 
     private void projectLive(Map<PrintScene, Map<String, Object>> actions, Long tenantId, Long applicationId,
-                             String pageId, String configKey, com.fasterxml.jackson.databind.JsonNode allowed,
+                             String pageId, String configKey, JsonNode allowed,
                              String rowKey) {
         for (PrintBinding row : bindings.selectApplicationEnabled(tenantId, applicationId)) {
             if (!pageId.equals(row.getPageId())) {
@@ -133,7 +167,7 @@ public class PrintRuntimeActionProjectionService {
 
     private void accept(Map<PrintScene, Map<String, Object>> actions, PrintSourceRequest source, PrintScene scene,
                         Long templateId, Long applicationId, String pageId, String configKey,
-                        com.fasterxml.jackson.databind.JsonNode allowed, String rowKey, Long tenantId) {
+                        JsonNode allowed, String rowKey, Long tenantId) {
         if (!pageId.equals(source.pageId()) || (scene != PrintScene.LIST && scene != PrintScene.DETAIL)) {
             return;
         }
@@ -141,7 +175,7 @@ public class PrintRuntimeActionProjectionService {
                 && !SessionHelper.hasPermission("ai:business:" + source.objectCode() + ":list")) {
             return;
         }
-        com.fasterxml.jackson.databind.JsonNode object;
+        JsonNode object;
         try {
             object = sources.object(allowed, source, false);
         } catch (BusinessException denied) {

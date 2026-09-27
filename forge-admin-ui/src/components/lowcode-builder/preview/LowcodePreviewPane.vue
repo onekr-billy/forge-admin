@@ -225,7 +225,16 @@ import AiCrudPage from '@/components/ai-form/AiCrudPage.vue'
 import { isImageFileName, resolveFileRenderItems } from '@/components/ai-form/file-render-utils'
 import AuthImage from '@/components/common/AuthImage.vue'
 import DictTag from '@/components/DictTag.vue'
-import { resolveDesignerFormLayout } from '../shared/runtime-crud-props'
+import {
+  mergeDesignerEditSchema,
+  resolveDesignerFormGovernance,
+  resolveDesignerFormLayout,
+} from '../shared/runtime-crud-props'
+import {
+  compileUiDocumentFromDesigner,
+  resolveAiFormSchemaFromUiDocument,
+  UI_DOCUMENT_PROTOCOL_VERSION,
+} from '@/protocols/ui-document'
 import {
   buildPageDesignModelSchema,
   isPageFieldVisible,
@@ -557,10 +566,21 @@ function buildRuntimeCrudProps(cfg) {
   const designerLayout = resolveDesignerFormLayout(formDesignerSchemaSource)
   const formOpenMode = resolveRuntimeFormOpenMode(options, cfg, designerLayout)
   const fieldMetaMap = buildRuntimeFieldMetaMap(cfg.modelSchema)
+  const formDesignerSchema = options.formDesignerSchema || cfg.formDesignerSchema
+  const governance = resolveDesignerFormGovernance(formDesignerSchema)
+  const editFields = mergeDesignerEditSchema(
+    Array.isArray(cfg.editSchema) ? cfg.editSchema : [],
+    formDesignerSchema,
+  )
+  const uiDocument = formDesignerSchema
+    ? compileUiDocumentFromDesigner(formDesignerSchema, {
+        resolvedFields: editFields,
+      })
+    : null
   return {
     searchSchema: transformFields(cfg.searchSchema),
     columns: transformColumns(cfg.columnsSchema, cfg.transConfig),
-    editSchema: transformEditFields(cfg.editSchema, options.editFormLayout, fieldMetaMap),
+    editSchema: transformEditFields(editFields, options.editFormLayout, fieldMetaMap, uiDocument),
     childrenConfig: transformChildrenConfig(options.masterDetailConfig?.children || []),
     expandConfig: options.expandConfig || cfg.expandConfig || {},
     detailPanels: options.detailPanels || cfg.detailPanels || [],
@@ -584,6 +604,8 @@ function buildRuntimeCrudProps(cfg) {
     editFormClass: designerLayout.formClass || options.editFormClass || cfg.editFormClass || '',
     editFormStyle: designerLayout.formStyle || options.editFormStyle || cfg.editFormStyle,
     formAssets: designerLayout.formAssets || options.formAssets || cfg.formAssets || [],
+    fieldEvents: Array.isArray(governance.fieldEvents) ? governance.fieldEvents : [],
+    formInit: governance.formInit && typeof governance.formInit === 'object' ? governance.formInit : {},
     editXGap: normalizeNumberOption(designerLayout.columnGap ?? options.editXGap ?? cfg.editXGap, 12),
     editYGap: normalizeNumberOption(designerLayout.rowGap ?? options.editYGap ?? cfg.editYGap, 8),
     loadDetailOnEdit: options.loadDetailOnEdit ?? cfg.loadDetailOnEdit ?? true,
@@ -732,8 +754,17 @@ function transformFields(fields, fieldMetaMap = new Map()) {
   })
 }
 
-function transformEditFields(fields = [], layout = [], fieldMetaMap = new Map()) {
+function transformEditFields(fields = [], layout = [], fieldMetaMap = new Map(), uiDocument = null) {
   const transformedFields = transformFields(fields, fieldMetaMap)
+  if (uiDocument && typeof uiDocument === 'object') {
+    const resolved = resolveAiFormSchemaFromUiDocument({
+      protocolVersion: uiDocument.version || UI_DOCUMENT_PROTOCOL_VERSION,
+      uiDocument,
+      fields: transformedFields,
+    })
+    if (Array.isArray(resolved) && resolved.length)
+      return resolved
+  }
   if (!Array.isArray(layout) || !layout.length)
     return transformedFields
 

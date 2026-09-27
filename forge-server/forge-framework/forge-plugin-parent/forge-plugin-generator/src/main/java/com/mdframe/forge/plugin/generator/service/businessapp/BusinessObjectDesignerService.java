@@ -54,7 +54,10 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -64,6 +67,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
@@ -85,9 +90,9 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
     private static final String OBJECT_OPTION_RUNTIME_DATASOURCE_ID = "runtimeDatasourceId";
     private static final String OBJECT_OPTION_RUNTIME_DATASOURCE = "runtimeDatasource";
     private static final Set<String> FORM_FIELD_COMPONENT_KEYS = LowcodeComponentCatalog.FIELD_COMPONENT_KEYS;
-    private static final Set<String> DICT_FIELD_TYPES = Set.of("DICT", "SELECT", "RADIO", "CHECKBOX", "MULTI_SELECT");
+    private static final Set<String> DICT_FIELD_TYPES = Set.of("DICT", "RADIO", "CHECKBOX", "MULTI_SELECT");
     private static final Set<String> DICT_COMPONENT_TYPES = Set.of(
-            "dictSelect", "select", "radio", "radioButton", "checkbox", "transfer", "cascader", "treeSelect", "customSelect");
+            "dictSelect", "select", "radio", "radioButton", "checkbox", "transfer", "cascader", "customSelect");
     private static final Map<String, String> PAGE_ZONE_ALIASES = Map.ofEntries(
             Map.entry("search", "search"),
             Map.entry("search-form", "search"),
@@ -143,7 +148,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
             Map.entry("checkbox", new ComponentFieldDefaults("CHECKBOX", "varchar", 255, 2, "in")),
             Map.entry("transfer", new ComponentFieldDefaults("MULTI_SELECT", "text", null, null, "in")),
             Map.entry("cascader", new ComponentFieldDefaults("DICT", "varchar", 128, 2, "eq")),
-            Map.entry("treeSelect", new ComponentFieldDefaults("SELECT", "varchar", 128, 2, "eq")),
+            Map.entry("treeSelect", new ComponentFieldDefaults("SELECT", "bigint", null, null, "eq")),
             Map.entry("customSelect", new ComponentFieldDefaults("SELECT", "varchar", 128, 2, "eq")),
             Map.entry("regionTreeSelect", new ComponentFieldDefaults("REGION", "varchar", 32, 2, "eq")),
             Map.entry("orgTreeSelect", new ComponentFieldDefaults("DEPT", "bigint", null, null, "eq")),
@@ -194,6 +199,11 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
     private final BusinessDocumentConfigService documentConfigService;
     private final BusinessAppService businessAppService;
     private final BusinessApplicationChangeTracker applicationChangeTracker;
+    private final PlatformTransactionManager transactionManager;
+    /** 同对象 designPreview/发布准备串行化，避免并发写 ai_business_object_relation 锁等待。 */
+    private final ConcurrentHashMap<Long, DraftPreparationLock> prepareRuntimeDraftLocks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, CachedPreviewDraft> previewDraftCache = new ConcurrentHashMap<>();
+    private static final long PREVIEW_DRAFT_CACHE_TTL_MS = 8_000L;
 
     public BusinessObjectDesignerVO getDesigner(Long objectId) {
         DesignerContext context = loadContext(objectId);
@@ -374,6 +384,30 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         // 直接读取结果无需重复调用（原二次 enrichModelSchema 已删除）
         modelSchema = context.getModelSchema();
         pageSchema = ensurePageSchema(context.getPageSchema(), modelSchema);
+        String preparedModelJson = writeJson(modelSchema, "modelSchema");
+        String preparedPageJson = writeJson(pageSchema, "pageSchema");
+        String normalizedStatus = BusinessObjectDesignStatus.normalize(designStatus);
+        // 应用发布会先 prepareRuntimeDraft 再 object.publish→saveDraft(READY)。
+        // schema 未变时跳过整份 model/page 大字段回写，只收敛设计状态。
+        if (isStoredRuntimeDraftCurrent(context, preparedModelJson, preparedPageJson)) {
+            boolean statusChanged = !StringUtils.equals(normalizedStatus, object.getDesignStatus());
+            if (statusChanged) {
+                object.setDesignStatus(normalizedStatus);
+                if (StringUtils.isBlank(object.getDesignerOptions())) {
+                    object.setDesignerOptions("{}");
+                }
+                businessObjectMapper.updateById(object);
+            }
+            if (markApplicationChanged) {
+                applicationChangeTracker.markObjectChanged(object.getId());
+            }
+            context.setModelSchema(modelSchema);
+            context.setPageSchema(pageSchema);
+            if (statusChanged || markApplicationChanged) {
+                invalidatePreviewDraftCache(object.getId());
+            }
+            return context;
+        }
         validateDraft(modelSchema, pageSchema);
         AiLowcodeModel model = saveModelDraft(object, context.getModel(), modelSchema);
         AiCrudConfig config = saveRuntimeDraft(object, context.getConfig(), modelSchema, pageSchema);
@@ -381,7 +415,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         object.setModelId(model.getId());
         object.setModelCode(model.getModelCode());
         object.setConfigKey(config.getConfigKey());
-        object.setDesignStatus(BusinessObjectDesignStatus.normalize(designStatus));
+        object.setDesignStatus(normalizedStatus);
         if (StringUtils.isBlank(object.getDesignerOptions())) {
             object.setDesignerOptions("{}");
         }
@@ -395,7 +429,22 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         context.setConfig(config);
         context.setModelSchema(modelSchema);
         context.setPageSchema(pageSchema);
+        invalidatePreviewDraftCache(object.getId());
         return context;
+    }
+
+    private boolean isStoredRuntimeDraftCurrent(DesignerContext context,
+                                                String preparedModelJson,
+                                                String preparedPageJson) {
+        AiCrudConfig config = context.getConfig();
+        AiLowcodeModel model = context.getModel();
+        return config != null
+                && model != null
+                && config.getId() != null
+                && model.getId() != null
+                && StringUtils.equals(config.getModelSchema(), preparedModelJson)
+                && StringUtils.equals(config.getPageSchema(), preparedPageJson)
+                && StringUtils.equals(model.getModelSchema(), preparedModelJson);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -403,7 +452,13 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         return saveDraft(loadContext(objectId), BusinessObjectDesignStatus.CHANGED.getCode()).getConfig();
     }
 
-    @Transactional(rollbackFor = Exception.class)
+    /**
+     * 物化设计预览/发布前的运行草稿。
+     *
+     * <p>关系同步与草稿保存各自短事务提交；schema 编译在事务外执行，避免
+     * {@code designPreview} 并发渲染时长时间持有 {@code ai_business_object_relation} 行锁
+     * 触发 Lock wait timeout。</p>
+     */
     public AiCrudConfig prepareRuntimeDraft(Long objectId) {
         return prepareRuntimeDraft(objectId, true);
     }
@@ -413,31 +468,109 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
      * 避免并发预览/保存时对 ai_business_object_relation 抢锁超时。
      * 子表关系仍由设计器保存和发布链路的 synchronizeFormChildRelations 负责落库。
      */
-    @Transactional(rollbackFor = Exception.class)
     public AiCrudConfig prepareRuntimeDraftForPreview(Long objectId) {
-        return prepareRuntimeDraft(objectId, false);
+        if (objectId == null) {
+            throw new BusinessException("业务对象ID不能为空");
+        }
+        long now = System.currentTimeMillis();
+        CachedPreviewDraft hit = previewDraftCache.get(objectId);
+        if (hit != null && hit.expiresAtMs > now) {
+            return hit.config;
+        }
+        AiCrudConfig prepared = prepareRuntimeDraft(objectId, false);
+        previewDraftCache.put(objectId, new CachedPreviewDraft(prepared, now + PREVIEW_DRAFT_CACHE_TTL_MS));
+        return prepared;
     }
 
-    @Transactional(rollbackFor = Exception.class)
+    /**
+     * 物化设计预览/发布前的运行草稿。
+     *
+     * <p>关系同步与草稿保存各自短事务提交；schema 编译在事务外执行，避免
+     * {@code designPreview} 并发渲染时长时间持有 {@code ai_business_object_relation} 行锁
+     * 触发 Lock wait timeout。预览路径可跳过关系写入。</p>
+     */
     public AiCrudConfig prepareRuntimeDraft(Long objectId, boolean persistChildRelations) {
+        if (objectId == null) {
+            throw new BusinessException("业务对象ID不能为空");
+        }
+        DraftPreparationLock lock = acquirePrepareRuntimeDraftLock(objectId);
+        lock.lock.lock();
+        try {
+            return doPrepareRuntimeDraft(objectId, persistChildRelations);
+        } finally {
+            lock.lock.unlock();
+            releasePrepareRuntimeDraftLock(objectId, lock);
+        }
+    }
+
+    private DraftPreparationLock acquirePrepareRuntimeDraftLock(Long objectId) {
+        return prepareRuntimeDraftLocks.compute(objectId, (key, existing) -> {
+            DraftPreparationLock lock = existing == null ? new DraftPreparationLock() : existing;
+            lock.references++;
+            return lock;
+        });
+    }
+
+    private void releasePrepareRuntimeDraftLock(Long objectId, DraftPreparationLock lock) {
+        prepareRuntimeDraftLocks.computeIfPresent(objectId, (key, current) -> {
+            if (current != lock) {
+                return current;
+            }
+            current.references--;
+            return current.references == 0 ? null : current;
+        });
+    }
+
+    private TransactionTemplate requiresNewTransactionTemplate() {
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        return template;
+    }
+
+    private AiCrudConfig doPrepareRuntimeDraft(Long objectId, boolean persistChildRelations) {
         DesignerContext context = loadContext(objectId);
+        if (persistChildRelations) {
+            DesignerContext relationContext = context;
+            requiresNewTransactionTemplate().executeWithoutResult(status ->
+                    synchronizeFormChildRelations(relationContext));
+            // 关系短事务提交后重新读取，避免并发设计保存期间用旧草稿覆盖最新模型/页面配置。
+            context = loadContext(objectId);
+        }
+        // 必须在关系同步/重载之后再取基线：否则 before 永远是 sync 前快照，短回路无法命中，
+        // 应用发布会对每个对象反复写出相同的 model/page schema。
         String beforeModelSchema = writeJson(context.getModelSchema(), "modelSchema");
         String beforePageSchema = writeJson(context.getPageSchema(), "pageSchema");
-        if (persistChildRelations) {
-            synchronizeFormChildRelations(context);
-        }
         applyRelationsToModel(context);
         compileFormFirstRuntimeSchema(context);
         String preparedModelSchema = writeJson(context.getModelSchema(), "modelSchema");
         String preparedPageSchema = writeJson(context.getPageSchema(), "pageSchema");
         if (context.getConfig() != null
-                && StringUtils.equals(beforeModelSchema, preparedModelSchema)
-                && StringUtils.equals(beforePageSchema, preparedPageSchema)) {
+                && (StringUtils.equals(beforeModelSchema, preparedModelSchema)
+                && StringUtils.equals(beforePageSchema, preparedPageSchema)
+                || isStoredRuntimeDraftCurrent(context, preparedModelSchema, preparedPageSchema))) {
             return context.getConfig();
         }
         String currentStatus = StringUtils.defaultIfBlank(
                 context.getObject().getDesignStatus(), BusinessObjectDesignStatus.DRAFT.getCode());
-        return saveDraft(context, currentStatus, false).getConfig();
+        DesignerContext preparedContext = context;
+        return requiresNewTransactionTemplate().execute(status ->
+                saveDraft(preparedContext, currentStatus, false).getConfig());
+    }
+
+    /** 预览准备的锁引用计数，避免最后一个执行者释放期间创建第二把同对象锁。 */
+    private static final class DraftPreparationLock {
+
+        private final ReentrantLock lock = new ReentrantLock(true);
+        private int references;
+    }
+
+    private void invalidatePreviewDraftCache(Long objectId) {
+        if (objectId != null) {
+            previewDraftCache.remove(objectId);
+        }
+    }
+
+    private record CachedPreviewDraft(AiCrudConfig config, long expiresAtMs) {
     }
 
     /**
@@ -643,6 +776,10 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         if (StringUtils.isBlank(target.getLayoutType())) {
             target.setLayoutType("simple-crud");
         }
+        // 画布已有 tree-panel 时强制左树右表，避免运行态仍按 simple-crud 渲染成普通列表
+        if (hasTreePanelBlock(target) && !"tree-crud".equals(target.getLayoutType())) {
+            target.setLayoutType("tree-crud");
+        }
         if (target.getZones() == null) {
             target.setZones(new ArrayList<>());
         }
@@ -655,6 +792,22 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
                 .filter(zone -> !zoneKeys.contains(zone.getZoneKey()))
                 .forEach(target.getZones()::add);
         return target;
+    }
+
+    private boolean hasTreePanelBlock(LowcodePageSchema pageSchema) {
+        if (pageSchema == null || pageSchema.getListGridLayout() == null) {
+            return false;
+        }
+        Object items = pageSchema.getListGridLayout().get("items");
+        if (!(items instanceof List<?> itemList)) {
+            return false;
+        }
+        for (Object item : itemList) {
+            if (item instanceof Map<?, ?> block && "tree-panel".equals(String.valueOf(block.get("blockType")))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void applyLegacyRuntimeSchemas(AiCrudConfig config, LowcodePageSchema pageSchema, LowcodeModelSchema modelSchema) {
@@ -1148,6 +1301,25 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
                 basicProps.putIfAbsent("options", props.get("options"));
                 field.setBasicProps(basicProps);
             }
+            if (props.containsKey("optionSource")) {
+                Map<String, Object> basicProps = new LinkedHashMap<>(mapValue(field.getBasicProps()));
+                basicProps.put("optionSource", props.get("optionSource"));
+                String labelValueField = StringUtils.firstNonBlank(
+                        text(props.get("labelValueField")),
+                        text(basicProps.get("labelValueField")));
+                if (StringUtils.isBlank(labelValueField) && isDynamicOptionSource(props.get("optionSource"))) {
+                    labelValueField = fieldCode + "Name";
+                }
+                if (StringUtils.isNotBlank(labelValueField)) {
+                    basicProps.put("labelValueField", labelValueField);
+                }
+                field.setBasicProps(basicProps);
+            }
+            if (props.containsKey("labelValueField")) {
+                Map<String, Object> basicProps = new LinkedHashMap<>(mapValue(field.getBasicProps()));
+                basicProps.put("labelValueField", props.get("labelValueField"));
+                field.setBasicProps(basicProps);
+            }
             if (props.containsKey("recordSelector")) {
                 Map<String, Object> basicProps = new LinkedHashMap<>(mapValue(field.getBasicProps()));
                 basicProps.put("recordSelector", props.get("recordSelector"));
@@ -1310,6 +1482,21 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         return "REFERENCE".equals(fieldType) || "objectReference".equals(componentType);
     }
 
+    private boolean isDynamicOptionSource(Object optionSource) {
+        if (!(optionSource instanceof Map<?, ?> map)) {
+            return false;
+        }
+        Object rawType = map.get("type");
+        if (rawType == null) {
+            return false;
+        }
+        String type = String.valueOf(rawType).trim();
+        if (type.isEmpty()) {
+            return false;
+        }
+        return !"STATIC".equalsIgnoreCase(type.replace('-', '_'));
+    }
+
     private boolean isUnconfiguredReferenceFieldPayload(BusinessFieldDTO field) {
         String referenceObjectCode = StringUtils.firstNonBlank(
                 field.getReferenceObjectCode(),
@@ -1403,7 +1590,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
             }
         }
 
-        pageSchema.setModelRefs(refs);
+        pageSchema.setModelRefs(sortModelRefsByFormSubTables(refs, context.getObject()));
         pageSchema.setPrimaryModelId(primaryRef.getModelId());
         pageSchema.setPrimaryModelCode(primaryRef.getModelCode());
         if (hasEmbeddedRelations) {
@@ -1413,6 +1600,58 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         }
         syncInlineEditRefsToEditZone(pageSchema, primaryRef, childFieldRefs);
         context.setPageSchema(pageSchema);
+    }
+
+    /**
+     * 关系表按 sort_order/id（约等于创建顺序）返回，发布态子表顺序又取自 modelRefs；
+     * 这里按表单设计器 subTable 组件的画布顺序重排，否则画布拖动后运行页/审批顺序会反。
+     */
+    private List<LowcodePageModelRef> sortModelRefsByFormSubTables(List<LowcodePageModelRef> refs,
+                                                                   AiBusinessObject object) {
+        List<String> order = collectFormSubTableOrder(object);
+        if (order.isEmpty() || refs.size() < 3) {
+            return refs;
+        }
+        List<LowcodePageModelRef> children = new ArrayList<>(refs.subList(1, refs.size()));
+        children.sort(Comparator.comparingInt(ref -> formSubTableRank(ref, order)));
+        List<LowcodePageModelRef> result = new ArrayList<>(refs.size());
+        result.add(refs.get(0));
+        result.addAll(children);
+        return result;
+    }
+
+    private int formSubTableRank(LowcodePageModelRef ref, List<String> order) {
+        String relationKey = ref.getProps() == null ? null : text(ref.getProps().get("relationKey"));
+        int byRelation = StringUtils.isBlank(relationKey) ? -1 : order.indexOf(relationKey);
+        if (byRelation >= 0) {
+            return byRelation;
+        }
+        int byModel = order.indexOf(ref.getModelCode());
+        return byModel >= 0 ? byModel : Integer.MAX_VALUE;
+    }
+
+    private List<String> collectFormSubTableOrder(AiBusinessObject object) {
+        Map<String, Object> designerOptions = readMap(object == null ? null : object.getDesignerOptions());
+        Object rawSchema = designerOptions.get(FORM_DESIGNER_SCHEMA_OPTION_KEY);
+        Map<String, Object> formSchema = rawSchema instanceof String json ? readMap(json) : mapValue(rawSchema);
+        List<String> order = new ArrayList<>();
+        collectFormSubTableKeys(listOfMap(formSchema.get("components")), order);
+        return order;
+    }
+
+    private void collectFormSubTableKeys(List<Map<String, Object>> components, List<String> order) {
+        for (Map<String, Object> component : components) {
+            String componentKey = StringUtils.firstNonBlank(text(component.get("componentKey")), text(component.get("type")));
+            if ("subTable".equalsIgnoreCase(componentKey) || "childTable".equalsIgnoreCase(componentKey)) {
+                Map<String, Object> props = mapValue(component.get("props"));
+                for (String key : new String[]{text(props.get("relationKey")), text(props.get("modelCode"))}) {
+                    if (StringUtils.isNotBlank(key)) {
+                        order.add(key.trim());
+                    }
+                }
+            }
+            collectFormSubTableKeys(listOfMap(component.get("children")), order);
+        }
     }
 
     private Map<String, LowcodePageModelRef> indexPageModelRefs(LowcodePageSchema pageSchema) {
@@ -1651,6 +1890,12 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         item.put("autoIncrement", field.getAutoIncrement());
         item.put("width", field.getWidth());
         item.put("remark", field.getRemark());
+        // 子表运行态控件依赖这些配置（选项源/引用对象/公式），快照缺失会让下拉、引用退化为输入框
+        item.put("referenceObjectCode", field.getReferenceObjectCode());
+        item.put("referenceDisplayField", field.getReferenceDisplayField());
+        item.put("basicProps", field.getBasicProps() == null ? null : new LinkedHashMap<>(field.getBasicProps()));
+        item.put("advancedProps", field.getAdvancedProps() == null ? null : new LinkedHashMap<>(field.getAdvancedProps()));
+        item.put("formulaConfig", field.getFormulaConfig() == null ? null : new LinkedHashMap<>(field.getFormulaConfig()));
         return item;
     }
 
@@ -1812,7 +2057,20 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
                 continue;
             }
             AiBusinessObjectRelation existingRelation = findEmbeddedRelationTo(existing, targetObjectCode);
+            AiBusinessObject child = businessObjectMapper.selectByObjectCode(
+                    resolveTenantId(), object.getSuiteCode(), targetObjectCode);
+            if (child == null) {
+                continue;
+            }
+            // 关系已存在时仍要确保外键字段在子对象模型里，否则库表永远补不上外键列。
+            String foreignKeyField = ensureChildForeignKeyField(object, child);
             if (existingRelation != null) {
+                if (StringUtils.isNotBlank(foreignKeyField)
+                        && !StringUtils.equals(foreignKeyField, existingRelation.getTargetFieldCode())) {
+                    existingRelation.setTargetFieldCode(foreignKeyField);
+                    relationMapper.updateById(existingRelation);
+                    changed = true;
+                }
                 if (overwriteChildRelationConfig(existingRelation, props)) {
                     relationMapper.updateById(existingRelation);
                     log.info("[子表自动关联] overwritten existing relation id={} target={}",
@@ -1821,12 +2079,6 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
                 }
                 continue;
             }
-            AiBusinessObject child = businessObjectMapper.selectByObjectCode(
-                    resolveTenantId(), object.getSuiteCode(), targetObjectCode);
-            if (child == null) {
-                continue;
-            }
-            String foreignKeyField = ensureChildForeignKeyField(object, child);
             if (StringUtils.isBlank(foreignKeyField)) {
                 continue;
             }
@@ -1892,7 +2144,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
                 relation.getTargetObjectCode(), relationName, props);
         String configJson = writeJson(config, "relationConfig");
         boolean changed = !StringUtils.equals(relation.getRelationName(), relationName)
-                || !jsonTextEquals(relation.getRelationConfig(), configJson)
+                || !jsonEquals(relation.getRelationConfig(), configJson)
                 || !AUTO_SUBTABLE_RELATION_DESC.equals(StringUtils.trimToEmpty(relation.getDescription()));
         if (!changed) {
             return false;
@@ -1901,6 +2153,27 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         relation.setRelationConfig(configJson);
         relation.setDescription(AUTO_SUBTABLE_RELATION_DESC);
         return true;
+    }
+
+    /**
+     * 关系配置按 JSON 语义比较，避免空白/键序差异导致每次 designPreview 都 updateById。
+     */
+    private boolean jsonEquals(String left, String right) {
+        if (StringUtils.equals(left, right)) {
+            return true;
+        }
+        if (StringUtils.isBlank(left) && StringUtils.isBlank(right)) {
+            return true;
+        }
+        if (StringUtils.isBlank(left) || StringUtils.isBlank(right)) {
+            return false;
+        }
+        try {
+            return objectMapper.readTree(left).equals(objectMapper.readTree(right));
+        } catch (Exception e) {
+            log.debug("[子表自动关联] relationConfig JSON解析失败，按文本处理", e);
+            return false;
+        }
     }
 
     private Map<String, Object> buildSubTableRelationConfig(String targetObjectCode, String relationName,
@@ -3340,6 +3613,16 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         if (props.get("optionSource") instanceof Map<?, ?> os
                 && !String.valueOf(os.get("type") != null ? os.get("type") : "").isEmpty()) {
             props.remove("options");
+            // 动态选项来源：冗余保存显示名称到 <field>Name，回显无需再查源表
+            if (isDynamicOptionSource(os) && StringUtils.isBlank(text(props.get("labelValueField")))) {
+                String fieldCode = StringUtils.firstNonBlank(
+                        text(mapValue(component.get("fieldBinding")).get("fieldCode")),
+                        text(component.get("field")),
+                        text(props.get("fieldCode")));
+                if (StringUtils.isNotBlank(fieldCode)) {
+                    props.put("labelValueField", fieldCode + "Name");
+                }
+            }
         }
         if (!props.isEmpty()) {
             setting.put("props", props);
@@ -3504,10 +3787,11 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         Map<String, Object> search = searchSchema == null ? Map.of() : searchSchema;
         List<Map<String, Object>> fields = visibleSortedItems(listOfMap(search.get("fields")));
         LowcodePageZone zone = findOrCreateZone(pageSchema, "search", "search-form");
-        zone.setFieldRefs(fields.stream()
+        List<String> fieldRefs = fields.stream()
                 .map(item -> StringUtils.defaultIfBlank(text(item.get("fieldCode")), text(item.get("field"))))
                 .filter(modelFields::contains)
-                .toList());
+                .toList();
+        zone.setFieldRefs(fieldRefs);
         Map<String, Object> props = zone.getProps() == null ? new LinkedHashMap<>() : new LinkedHashMap<>(zone.getProps());
         props.putAll(mapValue(search.get("settings")));
         Map<String, Object> settings = new LinkedHashMap<>();
@@ -3528,6 +3812,68 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         }
         replaceModelFieldSettings(props, modelFields, settings);
         zone.setProps(props);
+        // 列表网格 AiCrudPage 以 searchFieldRefs 为查询条件事实来源，必须与 search zone 同步
+        syncListGridSearchFieldRefs(pageSchema, fieldRefs, settings);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void syncListGridSearchFieldRefs(LowcodePageSchema pageSchema,
+                                             List<String> fieldRefs,
+                                             Map<String, Object> fieldSettings) {
+        if (pageSchema == null) {
+            return;
+        }
+        syncGridSearchFieldRefs(pageSchema.getListGridLayout(), fieldRefs, fieldSettings);
+        if (pageSchema.getPages() == null) {
+            return;
+        }
+        for (Map<String, Object> page : pageSchema.getPages()) {
+            if (page == null || !"list".equals(text(page.get("pageKey")))) {
+                continue;
+            }
+            Object grid = page.get("gridLayout");
+            if (grid instanceof Map<?, ?> gridMap) {
+                Map<String, Object> mutable = new LinkedHashMap<>((Map<String, Object>) gridMap);
+                syncGridSearchFieldRefs(mutable, fieldRefs, fieldSettings);
+                page.put("gridLayout", mutable);
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void syncGridSearchFieldRefs(Map<String, Object> gridLayout,
+                                         List<String> fieldRefs,
+                                         Map<String, Object> fieldSettings) {
+        if (gridLayout == null || gridLayout.isEmpty()) {
+            return;
+        }
+        Object itemsValue = gridLayout.get("items");
+        if (!(itemsValue instanceof List<?> items)) {
+            return;
+        }
+        List<Object> nextItems = new ArrayList<>(items.size());
+        boolean changed = false;
+        for (Object itemValue : items) {
+            if (!(itemValue instanceof Map<?, ?> rawItem)
+                    || !"AiCrudPage".equals(text(rawItem.get("blockType")))) {
+                nextItems.add(itemValue);
+                continue;
+            }
+            Map<String, Object> item = new LinkedHashMap<>((Map<String, Object>) rawItem);
+            Map<String, Object> props = item.get("props") instanceof Map<?, ?> propsMap
+                    ? new LinkedHashMap<>((Map<String, Object>) propsMap)
+                    : new LinkedHashMap<>();
+            props.put("searchFieldRefs", new ArrayList<>(fieldRefs == null ? List.of() : fieldRefs));
+            if (fieldSettings != null && !fieldSettings.isEmpty()) {
+                props.put("searchFieldSettings", new LinkedHashMap<>(fieldSettings));
+            }
+            item.put("props", props);
+            nextItems.add(item);
+            changed = true;
+        }
+        if (changed) {
+            gridLayout.put("items", nextItems);
+        }
     }
 
     private void applyListViewZone(LowcodePageSchema pageSchema, Set<String> modelFields,
@@ -4067,23 +4413,6 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
             return objectMapper.writeValueAsString(value);
         } catch (Exception e) {
             throw new BusinessException(fieldName + "序列化失败");
-        }
-    }
-
-    /**
-     * 关系配置按语义比较，避免 key 顺序或空白差异导致每次预览都 updateById 抢锁。
-     */
-    private boolean jsonTextEquals(String left, String right) {
-        if (StringUtils.equals(left, right)) {
-            return true;
-        }
-        if (StringUtils.isBlank(left) || StringUtils.isBlank(right)) {
-            return false;
-        }
-        try {
-            return objectMapper.readTree(left).equals(objectMapper.readTree(right));
-        } catch (Exception ignored) {
-            return false;
         }
     }
 

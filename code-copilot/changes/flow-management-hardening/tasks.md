@@ -250,6 +250,8 @@
 
 **继续开发（2026-09-06）**：新增 `POST /api/flow/model/version/cleanup` 历史版本清理接口，使用明确 `VersionCleanupDTO` 和 `VersionCleanupVO`；候选版本按租户 `SELECT ... FOR UPDATE` 稳定排序，默认保留最近 10 个（可配置 1-100），发布/废弃版本、当前模型版本和仍被运行中实例引用的版本均跳过，其余通过租户限定逻辑删除并返回扫描、删除和跳过分类结果。
 
+**缺陷修复（2026-09-22）**：移除版本清理锁查询中的数据库排序和行数限制，避免租户/数据权限 JSqlParser 将 `FOR UPDATE` 重排成 MySQL 非法语句；服务层恢复 `version DESC, create_time DESC, id DESC` 排序后再按最近版本保留规则处理。
+
 **继续开发（2026-09-06）**：补齐模型目录批量排序。新增 `sort_order` 字段及租户/逻辑删除/排序索引，迁移时按原创建时间倒序回填；新增 `FlowModelSortDTO`、租户锁定的 `selectByIdsForUpdate`、批量排序接口 `POST /api/flow/model/sort` 和独立 `flow:model:sort` 权限。前端模型卡片支持拖动排序、保存锁和失败反馈，排序保存仅提交当前页模型并按稳定页序分配值；重复模型、跨租户 ID、非法排序值和并发更新均拒绝。
 
 **缺陷修复（2026-09-06）**：模型排序锁查询经过租户 SQL 解析器后出现 `FOR UPDATE ORDER BY`，导致 MySQL 语法错误；已从 `selectByIdsForUpdate` 移除无业务意义的排序子句，保留租户锁和逻辑删除边界，契约测试增加锁查询不能在 `FOR UPDATE` 后出现 `ORDER BY` 的断言。

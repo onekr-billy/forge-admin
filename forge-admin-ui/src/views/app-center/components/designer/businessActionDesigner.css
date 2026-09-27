@@ -1,0 +1,371 @@
+.automation-designer {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 12px;
+  min-height: 100%;
+  padding: 14px;
+  background: #f7f8fa;
+}
+
+.designer-head,
+.boundary-strip,
+.panel-section,
+.automation-list,
+.advanced-json {
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.designer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+}
+
+.designer-head h2,
+.section-title h3 {
+  margin: 0;
+  color: #18181b;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.designer-head p {
+  margin: 3px 0 0;
+  color: #71717a;
+  font-size: 12px;
+}
+
+.boundary-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+}
+
+.boundary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  background: #fafafa;
+}
+
+.boundary-item.active {
+  background: #eef3ff;
+}
+
+.boundary-item strong {
+  color: #27272a;
+  font-size: 13px;
+}
+
+.boundary-item span,
+.pane-title span,
+.automation-list-item span,
+.flow-card-head em,
+.quantity-card-head span,
+.unsupported-step span {
+  color: #71717a;
+  font-size: 12px;
+}
+
+.approval-entry-note {
+  font-size: 12px;
+}
+
+.context-notices {
+  display: grid;
+  gap: 8px;
+}
+
+.relation-warning {
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.empty-state {
+  align-self: center;
+}
+
+.automation-workbench {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+}
+
+.automation-list {
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+}
+
+.pane-title,
+.section-title,
+.flow-card-head,
+.nested-title,
+.quantity-card-head,
+.unsupported-step {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.pane-title {
+  padding: 4px 4px 8px;
+  color: #52525b;
+  font-size: 12px;
+}
+
+.automation-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  width: 100%;
+  padding: 10px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+}
+
+.automation-list-item__info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.automation-list-item__delete {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.automation-list-item:hover .automation-list-item__delete,
+.automation-list-item.active .automation-list-item__delete {
+  opacity: 1;
+}
+
+.automation-list-item:hover,
+.automation-list-item.active {
+  border-color: #bfd0ff;
+  background: #eef3ff;
+}
+
+.automation-list-item strong,
+.quantity-card-head strong,
+.unsupported-step strong {
+  color: #27272a;
+  font-size: 13px;
+}
+
+.automation-main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.panel-section {
+  padding: 12px;
+}
+
+.action-summary {
+  padding-bottom: 4px;
+}
+
+.section-title > div,
+.subsection-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.section-hint,
+.subsection-head span {
+  margin: 0;
+  color: #71717a;
+  font-size: 12px;
+}
+
+.orchestration-step-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.scope-note {
+  width: 100%;
+  font-size: 12px;
+}
+
+.protocol-warning {
+  margin-bottom: 12px;
+}
+
+.schema-editor,
+.mapping-editor {
+  padding-top: 12px;
+  border-top: 1px solid #e4e4e7;
+}
+
+.subsection-head,
+.local-step-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.schema-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(130px, 1fr) 120px 44px repeat(2, minmax(90px, 0.7fr)) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.schema-row + .schema-row {
+  margin-top: 8px;
+}
+
+.add-step-select {
+  width: 150px;
+}
+
+.local-step-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.local-step-card {
+  padding: 12px;
+  border: 1px solid #dbe4ff;
+  border-radius: 8px;
+  background: #f8faff;
+}
+
+.local-step-card__head {
+  display: grid;
+  grid-template-columns: 180px minmax(180px, 1fr) auto;
+}
+
+.mapping-editor {
+  margin-top: 4px;
+}
+
+.mapping-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) 120px minmax(180px, 1.3fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.mapping-row + .mapping-row {
+  margin-top: 8px;
+}
+
+.adjustment-row {
+  grid-template-columns: minmax(140px, 1fr) 130px minmax(180px, 1.2fr) 100px 100px auto;
+}
+
+.flow-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.flow-card,
+.quantity-card,
+.call-api-step-card,
+.unsupported-step {
+  padding: 12px;
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.call-api-step-card {
+  border-color: #c7d2fe;
+  background: #f8faff;
+}
+
+.flow-card-head {
+  margin-bottom: 12px;
+}
+
+.flow-card-head > div,
+.quantity-card-head > div,
+.unsupported-step > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.step-index {
+  display: grid;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 50%;
+  background: #2944cc;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.nested-actions {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e4e4e7;
+}
+
+.nested-title {
+  margin-bottom: 10px;
+}
+
+.quantity-card + .quantity-card {
+  margin-top: 10px;
+}
+
+.quantity-card {
+  background: #fff;
+}
+
+.quantity-card-head {
+  margin-bottom: 10px;
+}
+
+.advanced-json {
+  overflow: hidden;
+}
+
+.json-error {
+  margin-top: 8px;
+}
+
+@media (max-width: 1180px) {
+  .boundary-strip,
+  .automation-workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .schema-row,
+  .mapping-row,
+  .adjustment-row {
+    grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr);
+  }
+}

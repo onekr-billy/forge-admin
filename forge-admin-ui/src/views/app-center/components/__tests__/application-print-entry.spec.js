@@ -23,6 +23,7 @@ describe('application print entry', () => {
   it('accepts known settings sections and rejects stale print query values', () => {
     expect(resolveApplicationSettingsSection('advanced')).toBe('advanced')
     expect(resolveApplicationSettingsSection(['advanced'])).toBe('advanced')
+    expect(resolveApplicationSettingsSection('integrations')).toBe('integrations')
     expect(resolveApplicationSettingsSection('printing')).toBe('basic')
   })
 })

@@ -51,6 +51,18 @@ public class BusinessObjectService extends ServiceImpl<BusinessObjectMapper, AiB
         return baseMapper.selectObjectList(resolveTenantId(), normalizeQuery(query));
     }
 
+    /**
+     * 校验业务对象编码是否可以在当前租户内使用。
+     * 最终保存仍由保存前校验和数据库唯一约束共同兜底。
+     */
+    public boolean objectCodeAvailable(String objectCode, Long excludeId) {
+        String code = StringUtils.trimToNull(objectCode);
+        if (code == null || !CODE_PATTERN.matcher(code).matches()) {
+            return false;
+        }
+        return baseMapper.countActiveByObjectCode(resolveTenantId(), code, excludeId) == 0;
+    }
+
     public BusinessObjectVO detail(Long id) {
         BusinessObjectVO vo = baseMapper.selectObjectDetail(resolveTenantId(), id);
         if (vo == null) {

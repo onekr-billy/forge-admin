@@ -106,6 +106,19 @@
           AND o.object_code = #{objectCode}
     </select>
 
+    <select id="countByApplicationAndConfigKey" resultType="java.lang.Long">
+        SELECT COUNT(1)
+        FROM ai_business_application_object ao
+        INNER JOIN ai_business_object o
+          ON o.tenant_id = ao.tenant_id
+         AND o.id = ao.object_id
+         AND o.del_flag = '0'
+        WHERE ao.tenant_id = #{tenantId}
+          AND ao.application_id = #{applicationId}
+          AND ao.del_flag = '0'
+          AND o.config_key = #{configKey}
+    </select>
+
     <select id="selectApplicationIdsByObjectId" resultType="java.lang.Long">
         SELECT ao.application_id
         FROM ai_business_application_object ao

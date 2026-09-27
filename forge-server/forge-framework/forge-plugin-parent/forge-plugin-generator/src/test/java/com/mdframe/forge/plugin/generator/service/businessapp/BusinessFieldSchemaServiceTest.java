@@ -111,6 +111,21 @@ class BusinessFieldSchemaServiceTest {
         assertEquals(true, schema.isMultipleSelection());
     }
 
+    @Test
+    @DisplayName("SELECT / treeSelect defaults to bigint storage for foreign keys")
+    void selectFieldTypeDefaultsToBigint() {
+        BusinessFieldDTO dto = baseField("上级分类", "parentCategoryId", "SELECT");
+        dto.setComponentType("treeSelect");
+        dto.setDataType(null);
+        dto.setLength(null);
+
+        LowcodeFieldSchema schema = service.buildFieldSchema(dto);
+
+        assertEquals("SELECT", schema.getBusinessFieldType());
+        assertEquals("bigint", schema.getDataType());
+        assertEquals("treeSelect", schema.getComponentType());
+    }
+
     private BusinessFieldDTO baseDictField() {
         BusinessFieldDTO dto = baseField("跟进方式", "type", "DICT");
         dto.setComponentType("select");

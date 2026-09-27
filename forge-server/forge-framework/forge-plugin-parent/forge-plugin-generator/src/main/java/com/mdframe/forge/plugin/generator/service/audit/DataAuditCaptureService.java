@@ -66,11 +66,23 @@ public class DataAuditCaptureService {
         }
         Long tenantId = DataAuditTenantSupport.currentTenantIdOrNull();
         AiBusinessObject object = resolveObject(tenantId, config);
+        policyService.ensureIndex(tenantId);
+        DataAuditPolicyIndex.TableBinding tableBinding = tenantId == null || config == null
+                ? null
+                : DataAuditTransactionHolder.index().findTable(tenantId, config.getTableName());
         if (object == null) {
+            // 表已进入审计索引，但运行配置找不到业务对象时不能静默跳过，否则写库阶段会报“缺少采集上下文”。
+            if (tableBinding != null) {
+                throw DataAuditErrorCode.AUDIT_WRITE_FAILED.exception(
+                        "表「" + config.getTableName() + "」已启用数据变更审计，"
+                                + "但运行配置「" + StringUtils.defaultString(config.getConfigKey())
+                                + "」未关联到业务对象。"
+                                + "请检查业务对象的 configKey 是否与运行配置一致；"
+                                + "或到「数据审计」关闭该对象审计后再写入。");
+            }
             return () -> {
             };
         }
-        policyService.ensureIndex(tenantId);
         DataAuditPolicyIndex.ObjectPolicy policy = DataAuditTransactionHolder.index().findObject(tenantId, object.getId());
         if (policy == null || !policy.enabled()) {
             return () -> {
@@ -94,12 +106,21 @@ public class DataAuditCaptureService {
                 && (eventType == DataAuditEventType.UPDATE || eventType == DataAuditEventType.DELETE)
                 && sourceType == DataAuditSourceType.FORM;
         if (userWrite && policy.reasonRequired() && (reason == null || reason.isBlank())) {
+            if (eventType == DataAuditEventType.DELETE) {
+                throw DataAuditErrorCode.AUDIT_REASON_REQUIRED.exception("请填写删除原因");
+            }
             throw DataAuditErrorCode.AUDIT_REASON_REQUIRED.exception();
         }
         if (reason != null && (reason.length() < 1 || reason.length() > 500)) {
-            throw DataAuditErrorCode.AUDIT_REASON_REQUIRED.exception("修改原因长度须为 1-500 个字符");
+            String lengthMessage = eventType == DataAuditEventType.DELETE
+                    ? "删除原因长度须为 1-500 个字符"
+                    : "修改原因长度须为 1-500 个字符";
+            throw DataAuditErrorCode.AUDIT_REASON_REQUIRED.exception(lengthMessage);
         }
-        boolean needRevision = requireRevision && userWrite && eventType != DataAuditEventType.CREATE;
+        // 删除不走乐观锁：列表/补齐常带过期或 0 revision，会误拦合法删除；修订号仍在落库时递增
+        boolean needRevision = requireRevision && userWrite
+                && eventType != DataAuditEventType.CREATE
+                && eventType != DataAuditEventType.DELETE;
         if (needRevision && safeContext.getExpectedRevision() == null) {
             throw DataAuditErrorCode.AUDIT_REVISION_REQUIRED.exception();
         }
@@ -154,13 +175,40 @@ public class DataAuditCaptureService {
         DataAuditRecordMetaBuilder.attach(record, tenantId, object, cursorMapper);
     }
 
+    /**
+     * 列表批量挂载策略元数据（不含 cursor 查询），供删除入口判断是否走审计批量接口。
+     */
+    public void attachPolicyMeta(AiCrudConfig config, List<Map<String, Object>> records) {
+        if (config == null || records == null || records.isEmpty()) {
+            return;
+        }
+        Long tenantId = DataAuditTenantSupport.currentTenantIdOrNull();
+        AiBusinessObject object = resolveObject(tenantId, config);
+        if (tenantId != null && object != null) {
+            policyService.ensureIndex(tenantId);
+        }
+        for (Map<String, Object> record : records) {
+            if (record != null) {
+                DataAuditRecordMetaBuilder.attachPolicyOnly(record, tenantId, object);
+            }
+        }
+    }
+
     private void persist(DataAuditCaptureSession session, AiBusinessObject object, AiCrudConfig config) {
         if (session == null || session.isSealed()) {
             return;
         }
         try {
+            List<AiDataAuditEvent> pendingEvents = new ArrayList<>();
+            List<AiDataAuditField> pendingFields = new ArrayList<>();
+            List<CursorRevisionUpdate> cursorUpdates = new ArrayList<>();
             for (DataAuditCaptureSession.AggregateState aggregate : session.getAggregates().values()) {
-                persistAggregate(session, object, config, aggregate);
+                collectPersistAggregate(session, object, config, aggregate, pendingEvents, pendingFields, cursorUpdates);
+            }
+            flushInsertBatch(eventMapper::insertBatch, pendingEvents);
+            flushInsertBatch(fieldMapper::insertBatch, pendingFields);
+            for (CursorRevisionUpdate update : cursorUpdates) {
+                cursorMapper.updateRevision(update.id(), update.revision(), update.lastEventId());
             }
         } catch (RuntimeException ex) {
             log.error("数据审计持久化失败 operationId={}", session.getOperationId(), ex);
@@ -173,10 +221,13 @@ public class DataAuditCaptureService {
         }
     }
 
-    private void persistAggregate(DataAuditCaptureSession session,
-                                  AiBusinessObject openedObject,
-                                  AiCrudConfig config,
-                                  DataAuditCaptureSession.AggregateState aggregate) {
+    private void collectPersistAggregate(DataAuditCaptureSession session,
+                                         AiBusinessObject openedObject,
+                                         AiCrudConfig config,
+                                         DataAuditCaptureSession.AggregateState aggregate,
+                                         List<AiDataAuditEvent> pendingEvents,
+                                         List<AiDataAuditField> pendingFields,
+                                         List<CursorRevisionUpdate> cursorUpdates) {
         if (!aggregate.touched) {
             return;
         }
@@ -296,16 +347,30 @@ public class DataAuditCaptureService {
         event.setCreateTime(LocalDateTime.now());
         event.setUpdateBy(session.currentUserId());
         event.setUpdateTime(event.getCreateTime());
-        if (eventMapper.insert(event) != 1) {
-            throw DataAuditErrorCode.AUDIT_WRITE_FAILED.exception();
-        }
+        pendingEvents.add(event);
         for (DataAuditFieldChange change : changes) {
-            insertField(session, event, change);
+            pendingFields.add(buildFieldEntity(session, event, change));
         }
-        cursorMapper.updateRevision(cursor.getId(), nextRevision, event.getId());
+        cursorUpdates.add(new CursorRevisionUpdate(cursor.getId(), nextRevision, event.getId()));
     }
 
-    private void insertField(DataAuditCaptureSession session, AiDataAuditEvent event, DataAuditFieldChange change) {
+    private <T> void flushInsertBatch(java.util.function.ToIntFunction<List<T>> inserter, List<T> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        final int chunkSize = 200;
+        for (int from = 0; from < items.size(); from += chunkSize) {
+            int to = Math.min(from + chunkSize, items.size());
+            List<T> chunk = items.subList(from, to);
+            // MySQL 多值 INSERT 常返回 1 或 SUCCESS_NO_INFO(-2)，不能按 chunk.size() 严格比对
+            int affected = inserter.applyAsInt(chunk);
+            if (affected == 0) {
+                throw DataAuditErrorCode.AUDIT_WRITE_FAILED.exception();
+            }
+        }
+    }
+
+    private AiDataAuditField buildFieldEntity(DataAuditCaptureSession session, AiDataAuditEvent event, DataAuditFieldChange change) {
         LowcodeFieldSchema field = change.getField();
         DataAuditValueProtection protection = valueProtector.resolve(field);
         DataAuditValueProtector.StoredValue before = valueProtector.store(change.getBefore(), protection);
@@ -349,9 +414,10 @@ public class DataAuditCaptureService {
                 // 解释快照失败不阻断主证据
             }
         }
-        if (fieldMapper.insert(entity) != 1) {
-            throw DataAuditErrorCode.AUDIT_WRITE_FAILED.exception();
-        }
+        return entity;
+    }
+
+    private record CursorRevisionUpdate(Long id, Long revision, Long lastEventId) {
     }
 
     private DataAuditFieldChange toChildSummaryChange(Long objectId,

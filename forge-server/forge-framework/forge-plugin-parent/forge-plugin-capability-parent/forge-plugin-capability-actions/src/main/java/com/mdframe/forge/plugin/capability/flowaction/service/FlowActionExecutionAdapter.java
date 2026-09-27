@@ -5,12 +5,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mdframe.forge.plugin.capability.flowaction.enums.CapabilityExecuteStatus;
+import com.mdframe.forge.plugin.capability.flowaction.enums.CapabilityFlowOperation;
 import com.mdframe.forge.plugin.capability.flowaction.source.FlowActionSourceService;
 import com.mdframe.forge.plugin.capability.flowaction.source.FlowActionSourceService.ResolvedFlowActionSource;
 import com.mdframe.forge.plugin.capability.execution.SecureActionDescriptor;
 import com.mdframe.forge.plugin.capability.execution.GovernedCapabilitySnapshot;
 import com.mdframe.forge.plugin.capability.execution.GovernedOpenGatewayAdapter;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowStartDTO;
+import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowWithdrawDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessTaskActionDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessTaskFormContextQueryDTO;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowService;
@@ -147,6 +149,20 @@ public class FlowActionExecutionAdapter implements GovernedOpenGatewayAdapter {
             requireEmptyArguments(input);
             return;
         }
+        if (CapabilityFlowOperation.WITHDRAW.matches(operation)) {
+            Map<String, Object> arguments = arguments(input);
+            if (!Set.of("comment", "processInstanceId").containsAll(arguments.keySet())
+                    || text(arguments.get("comment")) != null && text(arguments.get("comment")).length() > 500) {
+                throw new BusinessException("撤回只允许传入流程实例 ID 和不超过 500 字的说明");
+            }
+            String expectedInstance = requireText(arguments.get("processInstanceId"), "processInstanceId");
+            BusinessFlowRuntimeVO runtime = flowService.getFlowStatus(descriptor.objectCode(), recordId);
+            if (runtime == null || !expectedInstance.equals(runtime.getProcessInstanceId())
+                    || !sameProcessKey(source.flowModelKey(), runtime.getFlowModelKey())) {
+                throw new BusinessException(403, "FLOW_INSTANCE_MISMATCH");
+            }
+            return;
+        }
         if (!"APPROVE".equals(operation) && !"REJECT".equals(operation)) {
             throw new BusinessException(409, "POLICY_MISMATCH");
         }
@@ -186,6 +202,16 @@ public class FlowActionExecutionAdapter implements GovernedOpenGatewayAdapter {
             }
             else if ("START".equals(descriptor.actionCode())) {
                 runtime = start(descriptor, requireRecordId(input));
+            }
+            else if (CapabilityFlowOperation.WITHDRAW.matches(descriptor.actionCode())) {
+                // 由业务服务重新核对租户、当前实例和发起人，执行引擎撤回及业务状态回写。
+                validate(descriptor, input);
+                BusinessFlowWithdrawDTO command = new BusinessFlowWithdrawDTO();
+                command.setObjectCode(descriptor.objectCode());
+                command.setRecordId(requireRecordId(input));
+                command.setProcessInstanceId(requireText(arguments(input).get("processInstanceId"), "processInstanceId"));
+                command.setComment(StringUtils.trimToNull(text(arguments(input).get("comment"))));
+                runtime = flowService.withdrawDocumentFlow(command);
             }
             else {
                 runtime = complete(descriptor, identity, input, replayOrRecovery);

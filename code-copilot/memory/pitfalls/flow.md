@@ -1,6 +1,60 @@
 # 踩坑：流程 / Flowable / BPMN
 
-> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 52 条。
+> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 54 条。
+
+## 审批/主从子表下拉人员部门开关失效与窄列
+
+**发现日期**：2026-09-25
+
+主表引用子表后，新增行或审批待办里：下拉无数据、人员不回显、组织树空、开关无效、列宽过窄、字段联动不生效；低代码主表单正常。
+
+根因：
+1. `ChildTableEditor.toRuntimeCellField` 错误地对整份 field.props 套 `resolveControlProps`，把 `optionSource` / `cascade` / `fieldMappings` / `labelValueField` / 引用配置剥掉，再交给 `AiFormItem`，远程选项与联动全部失效。
+2. 子表行过滤 `filterVisibleRecordChildren` 只留业务列编码，丢掉伴随列 `xxxName`，人员/部门/引用无法回显。
+3. `sanitizeFieldBasicProps` 未透传 `checkedValue/uncheckedValue/runtimeRules`，子表开关默认 true/false 对不上库里的 0/1。
+4. 选择类列默认最小宽 120，看起来比表单控件窄一截。
+5. 子表单元格给 `.n-input` 强制 `min-width:160px`，人员选择器输入框把右侧清空按钮挤出单元格被邻列盖住；且 Naive `n-input` 在 `readonly` 时根本不渲染 clearable，不能把清空指望在输入框内置 ✕ 上。
+6. 子表 MD 列上的 `sourceField`（等于自身 field）被 `resolveCascadeConfig` 误当成级联父字段，`emptyStrategy=empty` 把下拉选项滤成「无数据」。
+7. `useRuntimeCell` 只认精确 `userSelect`，`forgeUserSelect` / `userPicker` 等别名会落到普通输入框。
+
+处理：运行态 cell 保留完整 props；过滤保留 `*Name`；开关默认 1/0；人员/组织列加宽且输入框 `min-width:0`；人员清空用独立 ✕ 按钮；缺名时按 id 调 `getById` 补回显；`isUserSelectLikeField` 路由进 AiFormItem 并规范化 type；`sourceField===自身` 不启用级联；表单 governance.fieldEvents 挂到 childrenConfig。
+
+## 审批子表只读列能改却保存报「不允许编辑子表字段」
+
+**发现日期**：2026-09-25
+
+节点把子表 `fieldInput` 配成只读，但审批页仍可编辑，暂存时报「当前节点不允许编辑子表字段: fieldInput」。另有偶发：子表列时有时无、后端有值不回显。
+
+根因：
+1. `applyChildTableFieldPermissions` 在字段权限未命中时，用子表 `allowUpdate===true` 把**所有列** `enableChildField`；只要同表另有可写列，只读列也会被放开，保存 payload 带上后被后端按字段白名单拒绝。
+2. `ChildTableEditor.normalizeInputValue` 只按精确 key 取数，且只 watch `props.value`；`childrenConfig` 晚到或 key 用 `cgou_*` / `business_object_*` 别名时，会把已有行数据归一成空表。
+3. 后端 `validateTaskChildRowPayload` 对行内每个 key 强制可写，只读快照字段一并提交就会抛错；真正落库本就有 `filterTaskChildWriteData`。
+
+处理：未命中字段权限时保留后端 `writable/readonly`，禁止 `allowUpdate` 一刀切；子表编辑器在配置键变化时重绑数据并按别名取行；服务端字段级校验改为过滤而非整行拒绝。
+
+## 审批子表列控件类型不能只依赖发布态 masterDetailConfig
+
+**发现日期**：2026-09-25
+
+设计器里子表列是下拉、人员选择，审批待办里全变成输入框。根因是设计器 `subTable.props.columns` 只存 `fieldCode/fieldLabel/required`，画布实时读子表对象字段注册表显示控件；审批按设计器草稿取列，控件类型却只靠 `mergeFormDesignerChildrenWithPublished` 从发布态 `masterDetailConfig.children[].fields` 匹配补齐。子表未发布、列被发布态过滤（`childFieldCodes` / 编辑区 fieldRefs / 只读）或发布态类型过期为 `input` 时，列没有 `type`，`ChildTableEditor` 落到 `n-input`。
+
+处理原则：子表列类型为空或弱类型（input/text）时，用子表对象 `businessFieldDesignService.listFields` 补 `type/componentType/dictType/basicProps`，与设计器同源；发布态已有强类型保持不变。
+
+子表顺序：发布态 `masterDetailConfig.children` 顺序取自 `pageSchema.modelRefs`，而后端每次保存/发布都在 `syncInlineEditRelationsToPageSchema` 按关系表 `sort_order, id`（约等于创建顺序）重建 `modelRefs`，前端按画布重排会被冲掉。必须在后端重建时按 `formDesignerSchema` 的 `subTable` 组件顺序排序（`sortModelRefsByFormSubTables`）。
+
+子表列缺失：`ChildTableEditor.isInternalIdField` 把所有 `xxxId` 字段当内部主外键隐藏，人员/部门/引用列通常就叫 `userId/deptId/customerId`，选了「全部字段」也看不到。选择/引用类控件不能按命名当内部 ID。发布快照 `toPageModelField` 还漏了 `basicProps`（选项源）和 `referenceObjectCode`，子表下拉/引用即使类型正确也拉不到数据。
+
+审批主表引用下拉：设计器画布用 `mergeRelationPreviewProps` 把字段注册表的引用配置合进组件，审批只拷贝组件 props，引用对象缺失；审批布局读 `settings.layout` 而设计器存在根 `layout`，列数/尺寸不一致导致控件宽度偏小。
+
+## 审批表单字段目录不能只信发布态 editSchema
+
+**发现日期**：2026-09-24
+
+表单设计器新加字段后，待办渲染仍像旧表单；办理时报「请填写必填字段: fieldSwitch」。根因是 `resolveBusinessTaskCrudPageFields` 优先用已发布 `editSchema`，设计器组件进了 `uiDocument` 却不在 `fields[]`，前端 `fieldMap` 缺键静默丢组件；开关未勾选时前端又不提交 `false`，后端把「缺 key」或 `String.valueOf` 空串当成未填。
+
+处理原则：审批主表 schema 优先读对象 `designerOptions.formDesignerSchema`（当前设计），应用页 `formAssets` 只保留 formKey/名称；子表以设计器 `subTable` 组件清单为准（顺序也按画布），发布态 `masterDetailConfig` 只补字段元数据与 `modelCode` 数据键；`filterVisibleRecordChildren` / 前端 normalize 必须按子表键别名取数，不能只做精确匹配。`resolve-ai-form` 有布局树时不得回灌未入画布字段。字段资产「未入当前表单」只表示没放进画布。
+
+补充（同日）：子表「新增 / 选择已有」依赖 `childrenConfig.allowCreate !== false` 与 `recordSelector`。节点未配 `childPermissions` 时不能再把 `allowCreate` 强制写成 `false`，应回落到设计器/发布态（默认允许新增）；`allowSelectExisting` 与选择器配置要从 subTable props 带出，缺 `recordSelector` 时用子表 `modelCode` 合成。`childKeyCandidates` 禁止 `List.of(可能为 null)`，否则 NPE 被吞掉后审批页子表整块消失。审批字段控件类型必须以设计器 `componentKey` 为准，禁止 `mergeNonNull(editSchema)` 把下拉/人员/部门盖成 `input`。
 
 ## 嵌入式流程设计器不能由父子组件同时持有
 
@@ -1068,3 +1122,41 @@ CRUD 详情页的渲染逻辑是“主表 `AiForm` + 子表 `ChildTableEditor`�
 新版应用已有流程实例，但 `documentEnabled=false`。运行态只在旧单据配置分支生成撤回动作，会使发起人只能到“我发送的”撤回。撤回后的消息回调又在动态仓储填充 `update_by` 时调用 Web Session，抛出 `SaTokenContextException`；上层吞掉写入异常后仍会因 rollback-only 整体回滚，最终引擎 canceled 而记录/关联仍在审批中。
 
 处理原则：流程动作依据实例关联、发起人、运行状态和实际接口权限生成，不依赖旧模式或当前待办。审计取值必须兼容显式执行身份和无 Web 的系统后台写入；缺少 Web 上下文不伪造用户，也不放宽租户/数据权限。状态回写失败须传播并记录原始堆栈，不能继续更新关联表。旧失败事件不会因重启自动补发，历史漂移需按实际引擎状态受控补偿。
+
+## 流程 Redis 回调非 Web 异常是 NotWebContextException
+
+**发现日期**：2026-09-23
+
+**问题描述**：启动流程后 `flowRedisListenerContainer` 同步 `flowStatus` 失败，日志为「非 web 上下文无法获取 HttpServletRequest」，随后 `UnexpectedRollbackException: rollback-only`。列表流程状态时有时无：状态字段与实例关联同事务回滚，列表列读库字段为空，批量 `_documentRuntime` 也可能补不齐。
+
+**根因**：
+1. Sa-Token Spring 在非 Web 线程抛的是 `NotWebContextException`（直接继承 `SaTokenException`），不是此前只 catch 的 `SaTokenContextException`。
+2. 任务事件 catch 吞掉异常后，内层 `@Transactional` 已把外层标成 rollback-only，提交时再炸。
+
+**解决方案**：
+- `DynamicCrudRepository.auditSessionValue` 捕获整个 `SaTokenException`。
+- `DataScopeServiceImpl` 非 Web 时安全返回 null；内部字段回写无用户会话时跳过写数据权限，仍保留租户条件。
+- 任务事件状态同步用 `REQUIRES_NEW`，失败不再毒化外层 FlowCallback 事务。
+
+## 列表流程状态列偶发消失是旧 fieldRefs 快照滤掉了托管字段
+
+**发现日期**：2026-09-23
+
+**问题描述**：审批节点自动补齐 `flowStatus` 并发布后，列表有时有「流程状态」列、有时没有。列表设计器里也不像独立组件，用户以为字段丢了。
+
+**根因**：列表自由布局 `listGridLayout` 的 `AiCrudPage.fieldRefs` 优先于 table zone。后补字段只写了 zone，旧网格快照不含 `flowStatus`，发布 `columnsSchema` 就被滤掉。前端 `includeManagedRuntimeFieldRefs` 又依赖 `advancedProps.managedBy`，而列目录常没有该标记，运行态兜底失效。
+
+**解决方案**：
+- 字段可见性同步同时写 zone 与 listGridLayout；ensure 已有字段时补列表选列。
+- 运行配置构建强制补托管 `flowStatus` 列（显式隐藏除外）。
+- 前端按字段名/字典识别托管字段，并可从字段目录合成缺失列。
+
+**补充（2026-09-25）**：上述修复只在「重新发布对象」时生效。保存流程时 `ensure` 只写对象草稿并建列，正式运行读已发布版本快照；应用发布对已发布对象只固定旧版本、不重建。另外有编辑权限的用户在门户走 `designPreview` 看草稿，所以同一应用有人有列有人没有。现在 `AiCrudConfigService.resolvePublishedRuntimeConfig` 在草稿已有托管 `flowStatus`、发布快照缺失时自愈补进 `modelSchema` 与 `columnsSchema`（表头、取值、回写共用）；流程保存时已绑定节点也会（有 DDL 权限时）重跑幂等 `ensure`。流程按钮仍以已发布流程版本为准。
+
+## 带排序和行数限制的流程锁查询会被 JSqlParser 重排
+
+**发现日期**：2026-09-22
+
+**问题描述**：流程模型版本清理 SQL 原文为 `ORDER BY ... LIMIT ... FOR UPDATE`，经过 MyBatis-Plus 租户拦截器和数据权限拦截器的 JSqlParser 重写后，输出变成 `FOR UPDATE ORDER BY ... LIMIT ...`，MySQL 报 1064，清理接口稳定返回 500。
+
+**解决方案**：需要行锁的 Mapper 查询只保留显式租户/逻辑删除条件和 `FOR UPDATE`，不要在同一条锁 SQL 中拼排序或行数限制；若排序决定业务语义，查询返回后在 Java 中按与原 SQL 相同的字段和方向稳定排序，再执行保留/删除判定。新增锁查询契约测试，禁止 `FOR UPDATE` 与排序/行数限制同时出现。

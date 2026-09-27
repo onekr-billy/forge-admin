@@ -5,6 +5,7 @@ import com.mdframe.forge.plugin.capability.flowaction.source.FlowActionSourceSer
 import com.mdframe.forge.plugin.capability.execution.SecureActionDescriptor;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessTaskActionDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowStartDTO;
+import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowWithdrawDTO;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFlowRuntimeVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessTaskFormContextVO;
@@ -178,6 +179,35 @@ class FlowActionExecutionAdapterTest {
         }
         return Map.of("recordId", "1001", "idempotencyKey", "flow-action-key-1001",
                 "arguments", arguments);
+    }
+
+    @Test
+    void withdrawsOnlyTheExplicitCurrentInstanceThroughBusinessService() {
+        var descriptor = descriptor("WITHDRAW");
+        when(sourceService.requireMatching(1L, "purchase", "order", 3, 71L, "order_approval"))
+                .thenReturn(new FlowActionSourceService.ResolvedFlowActionSource(null, "order_approval"));
+        var current = runtime("审批中");
+        current.setProcessInstanceId("instance-1"); current.setFlowModelKey("order_approval");
+        when(flowService.getFlowStatus("order", 1001L)).thenReturn(current);
+        when(flowService.withdrawDocumentFlow(any())).thenReturn(runtime("已撤回"));
+        doAnswer(invocation -> {
+            Function<FlowActionExecutionLogService.ExecutionAttempt, Map<String, Object>> action = invocation.getArgument(4);
+            return action.apply(null);
+        }).when(logService).executeWithAttempt(eq(descriptor), any(), anyMap(), eq("req-withdraw"), any());
+        try (var ignored = ExecutionIdentityContextHolder.open(identity())) {
+            adapter.execute(descriptor, Map.of("recordId", "1001", "idempotencyKey", "withdraw-1",
+                    "arguments", Map.of("processInstanceId", "instance-1", "comment", "修改后重提")), "req-withdraw");
+            current.setProcessInstanceId("instance-2");
+            assertThatThrownBy(() -> adapter.validate(descriptor, Map.of("recordId", "1001",
+                    "arguments", Map.of("processInstanceId", "instance-1"))))
+                    .hasMessageContaining("FLOW_INSTANCE_MISMATCH");
+        }
+        ArgumentCaptor<BusinessFlowWithdrawDTO> command = ArgumentCaptor.forClass(BusinessFlowWithdrawDTO.class);
+        verify(flowService).withdrawDocumentFlow(command.capture());
+        assertThat(command.getValue().getProcessInstanceId()).isEqualTo("instance-1");
+        assertThat(command.getValue().getRecordId()).isEqualTo(1001L);
+        assertThat(command.getValue().getObjectCode()).isEqualTo("order");
+        verify(flowService, never()).completeBusinessTask(any());
     }
 
     private SecureActionDescriptor descriptor(String operation) {

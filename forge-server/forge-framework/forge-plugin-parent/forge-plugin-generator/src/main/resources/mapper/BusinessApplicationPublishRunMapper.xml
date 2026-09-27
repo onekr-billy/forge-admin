@@ -114,10 +114,10 @@
             step_results_json = #{stepResultsJson},
             snapshot_json = COALESCE(#{snapshotJson}, snapshot_json),
             snapshot_hash = COALESCE(#{snapshotHash}, snapshot_hash),
-            result_version_id = #{resultVersionId},
-            error_code = #{errorCode},
-            error_summary = #{errorSummary},
-            finished_time = #{finishedTime},
+            result_version_id = COALESCE(#{resultVersionId}, result_version_id),
+            error_code = COALESCE(#{errorCode}, error_code),
+            error_summary = COALESCE(#{errorSummary}, error_summary),
+            finished_time = COALESCE(#{finishedTime}, finished_time),
             update_time = NOW()
         WHERE tenant_id = #{tenantId}
           AND application_id = #{applicationId}

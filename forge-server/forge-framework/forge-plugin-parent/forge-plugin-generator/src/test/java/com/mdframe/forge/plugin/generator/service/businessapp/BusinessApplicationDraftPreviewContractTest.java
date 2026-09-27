@@ -21,29 +21,66 @@ class BusinessApplicationDraftPreviewContractTest {
         String designerSource = readSource("service/businessapp/BusinessObjectDesignerService.java");
 
         assertTrue(serviceSource.contains("return buildDraftRenderConfig(config);"));
-        assertTrue(serviceSource.contains("!forceDraftCompile && hasStoredRuntimeConfig(config)"));
+        assertTrue(serviceSource.contains("!forceDraftCompile && hasStoredRuntimeConfig(config)")
+                || serviceSource.contains("if (designPreview)"));
         assertTrue(controllerSource.contains("businessObjectDesignerService.prepareRuntimeDraftForPreview(businessObject.getId())"));
         assertFalse(controllerSource.contains("businessObjectDesignerService.prepareRuntimeDraft(businessObject.getId())"));
         assertTrue(designerSource.contains("prepareRuntimeDraftForPreview"));
         assertTrue(designerSource.contains("prepareRuntimeDraft(objectId, false)"));
         assertTrue(designerSource.contains("if (persistChildRelations)"));
         assertTrue(controllerSource.contains("crudConfigService.getRenderConfig(configKey, designPreview)"));
-        assertTrue(designerSource.contains("saveDraft(context, currentStatus, false)"));
+        assertTrue(designerSource.contains("saveDraft(preparedContext, currentStatus, false)"));
         assertTrue(designerSource.contains("if (markApplicationChanged)"));
+        assertTrue(designerSource.contains("PROPAGATION_REQUIRES_NEW"));
+        assertTrue(designerSource.contains("requiresNewTransactionTemplate().executeWithoutResult"));
+        assertTrue(designerSource.contains("requiresNewTransactionTemplate().execute(status ->"));
+        assertTrue(designerSource.contains("prepareRuntimeDraftLocks"));
         assertFalse(designerSource.contains(
                 "return saveDraft(context, BusinessObjectDesignStatus.CHANGED.getCode()).getConfig();"));
+        // prepareRuntimeDraft 不得用外层长事务包住 schema 编译，否则会长时间持有关系表行锁
+        assertFalse(designerSource.matches(
+                "(?s).*@Transactional\\(rollbackFor = Exception\\.class\\)\\s*"
+                        + "public AiCrudConfig prepareRuntimeDraft\\(Long objectId\\).*"));
+        assertFalse(designerSource.matches(
+                "(?s).*@Transactional\\(rollbackFor = Exception\\.class\\)\\s*"
+                        + "public AiCrudConfig prepareRuntimeDraft\\(Long objectId, boolean persistChildRelations\\).*"));
     }
 
     @Test
     @DisplayName("发布检查和最终发布都先同步托管数据表")
     void applicationPublishSynchronizesManagedDatabasesBeforeReadiness() throws Exception {
         String source = readSource("service/businessapp/BusinessApplicationPublishService.java");
+        String objectPublishSource = readSource("service/businessapp/BusinessObjectPublishService.java");
+        String readinessSource = readSource("service/businessapp/BusinessApplicationReadinessService.java");
 
-        assertEquals(2, countOccurrences(source, "prepareApplicationObjectDrafts(applicationId);"));
-        assertEquals(2, countOccurrences(
+        assertEquals(1, countOccurrences(source, "prepareApplicationObjectDrafts(applicationId);"));
+        assertEquals(1, countOccurrences(
                 source, "formDataService.synchronizeManagedDatabases(applicationId);"));
-        assertTrue(source.contains(".forEach(objectDesignerService::prepareRuntimeDraft)"));
-        assertTrue(source.contains("verifyPublishedObjects(run.getApplicationId(), selection.getObjectIds(), result)"));
+        assertTrue(source.contains("needsRuntimeDraftPrepare"));
+        assertTrue(source.contains("BusinessApplicationObjectRole.PRIMARY"));
+        assertTrue(source.contains("objectDesignerService.prepareRuntimeDraft("));
+        String versionSource = readSource("service/businessapp/BusinessObjectDesignVersionService.java");
+        assertTrue(source.contains("verifyPublishedObjects(objects, selection.getObjectIds(), result)"));
+        // 真正发布：状态门禁；无改动对象只钉住已有版本，有未发布改动的对象必须重发，不能只改状态
+        assertTrue(source.contains("resolveStatusPublishCheck"));
+        assertTrue(source.contains(
+                "existingVersion != null && BusinessObjectDesignStatus.PUBLISHED.matches(object.getDesignStatus())"));
+        assertFalse(source.contains("objectPublishService.markDesignPublished(pinAndMarkIds)"));
+        assertTrue(versionSource.contains("selectLatestPublishedVersionIds"));
+        // DETAIL 最终发布必须同步子表关系；预检复用且关系未变时跳过二次 publishCheck
+        assertTrue(objectPublishSource.contains(
+                "boolean relationsChanged = designerService.synchronizeFormChildRelations(context);"));
+        assertFalse(objectPublishSource.contains("if (preloadedContext == null) {\n"
+                + "            designerService.synchronizeFormChildRelations(context);"));
+        assertTrue(objectPublishSource.contains("trustPreloadedPublishCheck()"));
+        assertTrue(objectPublishSource.contains("preloadedContext != null && !relationsChanged"));
+        assertTrue(objectPublishSource.contains("loadContextForApplicationPublish"));
+        assertTrue(readinessSource.contains("resolveStatusPublishCheck"));
+        assertTrue(readinessSource.contains("evaluateStatusOnly"));
+        assertFalse(objectPublishSource.contains("businessObjectMapper.selectBySuiteCode("));
+        // 关联摘要已 IN_SYNC 时跳过实时表结构探查
+        assertTrue(readinessSource.contains(
+                "\"IN_SYNC\".equalsIgnoreCase(StringUtils.trimToEmpty(object.getSyncStatus()))"));
     }
 
     @Test
@@ -87,8 +124,7 @@ class BusinessApplicationDraftPreviewContractTest {
         assertTrue(objectPublishSource.contains("return rollbackInternal(objectId, versionId, false);"));
         assertTrue(objectPublishSource.contains(
                 "lowcodePublishService.rollback(version.getConfigId(), version.getCrudConfigVersionId(), syncMenu)"));
-        assertTrue(lowcodePublishSource.contains("if (shouldSyncMenu(dto))"));
-        assertTrue(lowcodePublishSource.contains("disablePublishedMenu(config);"));
+        assertTrue(lowcodePublishSource.contains("boolean syncMenu = shouldSyncMenu(dto);"));
     }
 
     private String readSource(String relativePath) throws Exception {

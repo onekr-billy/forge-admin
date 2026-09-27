@@ -45,7 +45,7 @@
                 v-for="layout in group.options"
                 :key="layout.value"
                 class="layout-option"
-                :class="{ active: (value || 'normal') === layout.value }"
+                :class="{ active: (value || defaultLayout) === layout.value }"
                 type="button"
                 @click="updateValue(layout.value)"
               >
@@ -60,7 +60,7 @@
                   <span class="layout-option-desc">{{ layout.description }}</span>
                 </span>
                 <span
-                  v-if="(value || 'normal') === layout.value"
+                  v-if="(value || defaultLayout) === layout.value"
                   class="layout-option-check"
                   aria-hidden="true"
                 >
@@ -204,6 +204,7 @@ import { AiCrudPage } from '@/components/ai-form'
 import SystemTableCell from '@/components/common/SystemTableCell.vue'
 import DictTag from '@/components/DictTag.vue'
 import { useDict } from '@/composables/useDict'
+import { defaultLayout } from '@/settings'
 import { useUserStore } from '@/store'
 import { request } from '@/utils'
 import { resolveTenantPublicAssetUrl, setDocumentFavicon } from '@/utils/tenant-config'
@@ -253,6 +254,13 @@ const userPaginationConfig = computed(() => ({
 // 系统布局选项（与布局设置保持一致）
 const systemLayoutOptions = [
   {
+    label: '业务工作台',
+    value: 'business-workbench',
+    description: '顶部导航与分组菜单，适合多模块业务后台',
+    recommended: true,
+    preview: 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'104\' height=\'60\' viewBox=\'0 0 104 60\'%3E%3Crect width=\'104\' height=\'10\' fill=\'%234242F7\'/%3E%3Crect y=\'12\' width=\'22\' height=\'48\' fill=\'%23EEF2FF\'/%3E%3Crect x=\'24\' y=\'12\' width=\'80\' height=\'48\' fill=\'%23F8FAFC\'/%3E%3Crect x=\'28\' y=\'18\' width=\'18\' height=\'4\' fill=\'%23CBD5E1\'/%3E%3Crect x=\'50\' y=\'18\' width=\'22\' height=\'4\' fill=\'%23CBD5E1\'/%3E%3Crect x=\'76\' y=\'18\' width=\'20\' height=\'4\' fill=\'%23CBD5E1\'/%3E%3C/svg%3E',
+  },
+  {
     label: '简约',
     value: 'simple',
     description: '简单布局，仅包含基本元素',
@@ -262,7 +270,6 @@ const systemLayoutOptions = [
     label: '通用',
     value: 'normal',
     description: '侧边栏菜单布局',
-    recommended: true,
     preview: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTA0IiBoZWlnaHQ9IjYwIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxyZWN0IHdpZHRoPSIyMCIgaGVpZ2h0PSI2MCIgZmlsbD0iI0UwRTBFMCIvPjxyZWN0IHg9IjI0IiB3aWR0aD0iODAiIGhlaWdodD0iMTAiIGZpbGw9IiNGNUY1RjUiLz48cmVjdCB4PSIyNCIgeT0iMTQiIHdpZHRoPSI4MCIgaGVpZ2h0PSI0NiIgZmlsbD0iI0Y1RjVGNSIvPjwvc3ZnPg==',
   },
   {
@@ -275,7 +282,6 @@ const systemLayoutOptions = [
     label: '顶部加侧面菜单',
     value: 'top-side-menu',
     description: '顶部+左侧混合布局',
-    recommended: true,
     preview: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTA0IiBoZWlnaHQ9IjYwIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxyZWN0IHdpZHRoPSIxMDQiIGhlaWdodD0iMTAiIGZpbGw9IiNFMEUwRTAiLz48cmVjdCB5PSIxMiIgd2lkdGg9IjIwIiBoZWlnaHQ9IjQ4IiBmaWxsPSIjRTBFMEUwIi8+PHJlY3QgeD0iMjIiIHk9IjEyIiB3aWR0aD0iODIiIGhlaWdodD0iNDgiIGZpbGw9IiNGNUY1RjUiLz48L3N2Zz4=',
   },
   {
@@ -452,7 +458,7 @@ const tenantThemePresets = [
 ]
 
 const layoutOptionGroups = computed(() => {
-  const commonValues = ['normal', 'simple', 'top-side-menu', 'top-menu', 'full']
+  const commonValues = ['business-workbench', 'normal', 'simple', 'top-side-menu', 'top-menu', 'full']
   const commonOptions = systemLayoutOptions.filter(item => commonValues.includes(item.value))
   const advancedOptions = systemLayoutOptions.filter(item => !commonValues.includes(item.value))
 
@@ -737,6 +743,7 @@ const editSchema = computed(() => [
     label: '默认布局',
     type: 'slot',
     slotName: 'systemLayout',
+    defaultValue: defaultLayout,
     span: 2,
   },
   {
@@ -1275,6 +1282,8 @@ async function handleSubmitSuccess() {
 
 // 提交前处理 - 将主题配置字段组装成 JSON
 function handleBeforeSubmit(formData) {
+  formData.systemLayout = formData.systemLayout || defaultLayout
+
   const businessDatasource = findBusinessDatasource(formData.defaultBusinessDatasourceId)
   if (businessDatasource) {
     formData.defaultBusinessDatasourceCode = businessDatasource.datasourceCode || null

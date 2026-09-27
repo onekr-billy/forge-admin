@@ -163,4 +163,29 @@ describe('runtime form layout hydration', () => {
     expect(nodes).toHaveLength(3)
     expect(nodes.slice(1).map(node => node.field)).toEqual(['age', 'remark'])
   })
+
+  it('prefer uiDocument protocol over legacy editFormLayout', () => {
+    const uiDocument = {
+      version: '1',
+      components: [
+        {
+          type: 'card',
+          children: [
+            { type: 'input', field: 'name', visible: true },
+            { type: 'input', field: 'age', visible: true },
+          ],
+        },
+      ],
+    }
+    const legacyLayout = [
+      {
+        nodeType: 'row',
+        children: [{ nodeType: 'field', field: 'remark' }],
+      },
+    ]
+    const nodes = hydrateRuntimeFormLayout(flatFields(), legacyLayout, uiDocument)
+    expect(nodes[0].nodeType).toBe('card')
+    expect(nodes[0].children.map(n => n.field)).toEqual(['name', 'age'])
+    expect(nodes[1].field).toBe('remark')
+  })
 })

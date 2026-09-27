@@ -91,6 +91,7 @@ import {
   updateBusinessApplication,
 } from '@/api/business-application'
 import { normalizePortalConfig, parseJsonObject } from './components/portal/portal-config'
+import { syncPortalShellNavigationFields } from './components/portal/portal-shell-layouts'
 import AppSettingsAccess from './components/settings/AppSettingsAccess.vue'
 import AppSettingsAdvanced from './components/settings/AppSettingsAdvanced.vue'
 import AppSettingsBasic from './components/settings/AppSettingsBasic.vue'
@@ -113,7 +114,7 @@ const activeSection = ref(String(route.query.section || 'basic'))
 const sections = [
   { key: 'basic', label: '基础属性', icon: ColorPaletteOutline },
   { key: 'access', label: '访问地址', icon: LinkOutline },
-  { key: 'navigation', label: '导航设置', icon: MenuOutline },
+  { key: 'navigation', label: '导航与布局', icon: MenuOutline },
   { key: 'permission', label: '应用权限', icon: LockClosedOutline },
   { key: 'globalization', label: '全球化', icon: EarthOutline },
   { key: 'advanced', label: '高级设置', icon: OptionsOutline },
@@ -194,7 +195,7 @@ async function saveSettings() {
     })
     await saveBusinessApplicationPortalConfig(application.value.id, {
       portalSlug: settingsModel.value.portalSlug,
-      portalConfig: stripApplicationFields(settingsModel.value),
+      portalConfig: syncPortalShellNavigationFields(stripApplicationFields(settingsModel.value)),
     })
     message.success('应用设置已保存，重新发布后正式门户生效')
     await loadSettings()

@@ -464,23 +464,42 @@ FROM forge_schema_history
 ORDER BY installed_rank DESC;
 ```
 
-### 5.14 前端状态管理与单文件规模约束（Pinia 强制）
+### 5.14 前端 Vue 页面规范（规模 / 拆分 / Store / 注释）
 
-> 本节为全局硬性约束，适用于所有 AI 生成的与修改的前端代码，违反即打回。
+> 本节为全局硬性约束，适用于所有 AI 生成的与修改的前端代码，违反即打回。细则见 `code-copilot/rules/coding-style.md` §7.4–7.6。
 
-#### Pinia 强制使用
+#### 单文件行数上限
 
-- **能用 Pinia 的场景必须用 Pinia**：凡涉及跨组件、跨面板、跨层级的共享状态或通信（设计器 schema、选中 ID、面板 UI 状态、多组件联动的业务状态等），必须沉淀到 Pinia store（`src/stores/` 下按领域建子目录，如 `stores/designer/`）。
-- **禁止纯 props/emit 层层透传**：同一个状态经 props + emit 转手超过 2 层即视为违规，必须改用 store；子组件直接读写 store，父组件不再充当数据中转站。
-- 存量巨型组件改造时遵循渐进式模式：入口组件接收 props 后 `syncFromProps` 同步进 store 并 watch store 变化对外 emit（兼容存量父组件），内部面板子组件全部改为读写 store，逐步消灭中间 props 链。
-- store 命名与文件：`useXxxStore` 对应 `stores/<domain>/xxxStore.js`；一个 store 聚焦一个领域（如 `formDesignerStore`、`listDesignerStore`），禁止一个“大杂烩 store”包揽全项目。
+| 档位 | 行数（template + script + style 合计） | 要求 |
+|------|----------------------------------------|------|
+| 常规 | **不超过 1000** | 新建 / 日常改动的目标上限；接近时先拆再加功能 |
+| 特例 | **大于 1000 且不超过 2000** | 仅允许有充分理由（如编排壳、历史巨页渐进拆分中）；须在 PR/Spec 说明原因与后续拆分计划 |
+| 禁止 | **超过 2000** | **禁止提交**，必须先重构拆分 |
 
-#### 组件拆分与逻辑拆分强制
+- 新增功能禁止继续往已超限（或即将超限）的 SFC 里堆逻辑；发现所在文件已超限时，**先拆分再实现**。
+- 编排入口（薄壳）可保留：真正逻辑进 composable / 子组件 / store，壳文件本身仍应尽量不超过 1000。
 
-- **复杂页面必须拆分**：Vue SFC 超过 **800 行**（模板 + script + style 合计）必须拆分；超过 **2000 行**禁止提交，必须先重构。
-- 拆分方式：右侧/左侧属性面板按分区拆成独立子组件（如一个 collapse-item / 一个 tab-pane 一个文件）；可复用逻辑抽 composables（`useXxx.js`）；纯函数工具下沉到模块级 `utils.js`。
-- 拆分后目录约定：同域组件放同目录子文件夹（如 `forge-form-designer/panels/FooPanel.vue`），禁止把拆出文件散落在无关目录。
+#### Pinia 强制使用（避免深度传参）
+
+- **能用 Pinia 的场景必须用 Pinia**：跨组件、跨面板、跨层级的共享状态或通信（设计器 schema、选中 ID、面板 UI 状态、多组件联动的业务状态等），必须沉淀到 Pinia store（`src/stores/` 下按领域建子目录，如 `stores/designer/`）。
+- **禁止纯 props/emit 层层透传**：同一个状态经 props + emit 转手超过 **2 层**即视为违规，必须改用 store；子组件直接读写 store，父组件不再充当数据中转站。
+- 仅「展示用一次性 props」或「单层父子事件」可保留 props/emit；跨右侧属性栏、画布、工具栏等多面板联动一律走 store。
+- 存量巨型组件改造遵循渐进式：入口接收 props 后 `syncFromProps` 同步进 store，并 watch store 对外 emit（兼容存量父组件）；内部子面板全部读写 store，逐步消灭中间 props 链。
+- store 命名与文件：`useXxxStore` → `stores/<domain>/xxxStore.js`；一个 store 聚焦一个领域，禁止大杂烩 store。
+
+#### 组件拆分与同类方法拆分（强制）
+
+- **组件必须拆分**：复杂页面按 UI 区块拆独立子组件（工具栏 / 筛选区 / 表格区 / 抽屉或弹窗 / 属性面板的每个 collapse 或 tab-pane 一个文件）。
+- **同类方法必须拆分**：按业务域抽 composable（如 `useXxxList.js`、`useXxxForm.js`、`useXxxPreview.js`），禁止在一个 setup 里堆互不相关的大段方法；纯函数下沉模块级 `utils.js` / `xxxUtils.js`。
+- 拆分后目录：同域组件放同目录或子文件夹（如 `panels/FooPanel.vue`、`composables/useFoo.js`），禁止散落到无关目录。
 - 禁止在一个 SFC 里同时堆积：多种组件类型的属性配置、多个业务域的状态、超长内联模板。发现即拆。
+
+#### 注释与 template 布局清晰度（强制）
+
+- **关键处注释必须明确**：非显而易见的业务规则、状态机、兼容历史数据、与后端协议约定、易踩坑分支，须用简短中文注释说明「为什么」；禁止无意义的废话注释，也禁止关键逻辑零注释。
+- **template 布局分区注释**：顶层模板按区块用 HTML 注释标明结构，例如 `<!-- 工具栏 -->`、`<!-- 筛选区 -->`、`<!-- 表格/列表 -->`、`<!-- 抽屉/弹窗 -->`，让阅读者能一眼扫清页面骨架。
+- 复杂 `v-if` / 权限 / 模式切换处，在模板旁补一行注释说明触发条件。
+- script 内 composable / 大段逻辑按域用分节注释（如 `// —— 列表查询 ——`），与方法拆分一致。
 
 ---
 

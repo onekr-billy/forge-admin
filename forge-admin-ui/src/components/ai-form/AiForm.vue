@@ -312,10 +312,23 @@ const fieldPermissionMap = computed(() => createFieldPermissionMap(props.fieldPe
 const arrayPermissionMap = computed(() => createArrayPermissionMap(props.fieldPermissions))
 const hasExplicitFieldPermissions = computed(() => fieldPermissionMap.value.size > 0 || arrayPermissionMap.value.size > 0)
 
-// 初始化表单数据
+// 初始化表单数据。
+// 禁止 deep watch：父级 formData 任意嵌套变更都会把本地 formValue 整表覆盖，
+// 下拉「选中后回填」刚写入的映射字段会在入库前被冲掉。
+let suppressPropsSync = false
 watch(() => props.value, (newVal) => {
-  formValue.value = { ...newVal }
-}, { immediate: true, deep: true })
+  const incoming = newVal && typeof newVal === 'object' ? newVal : {}
+  if (suppressPropsSync) {
+    // 本地 patch 触发的回声：以本地为准合并，避免父级尚未带上映射键时把回填冲掉
+    formValue.value = {
+      ...incoming,
+      ...formValue.value,
+    }
+    suppressPropsSync = false
+    return
+  }
+  formValue.value = { ...incoming }
+}, { immediate: true })
 
 function isFieldVisible(field) {
   const control = resolveRuntimeControl(field || {}, {
@@ -824,6 +837,8 @@ function patchFormData(patch = {}) {
     else
       next[key] = value
   })
+  // 标记下一次 props 回声合并保留本地键（映射目标 / xxxName）
+  suppressPropsSync = true
   formValue.value = next
   emit('update:value', { ...formValue.value })
 }
@@ -891,6 +906,7 @@ function normalizeDesignerComponentForRuntime(component = {}) {
     props: {
       ...(component.props || {}),
       disabled: Boolean(component.visibility?.readonly || component.props?.disabled),
+      readonly: Boolean(component.visibility?.readonly),
     },
     children,
     ...(isWidget ? { fieldBinding: { ...(component.fieldBinding || {}), mode: component.fieldBinding?.mode || 'virtual' } } : {}),

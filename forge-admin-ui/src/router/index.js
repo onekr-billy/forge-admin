@@ -3,6 +3,7 @@ import { routes as autoRoutes } from 'vue-router/auto-routes'
 import { recoverFromDynamicImportError } from '@/utils/dynamic-import-recovery'
 import { SSO_BRIDGE_ROUTE } from '@/utils/sso-target'
 import { setupRouterGuards } from './guards'
+import { openPlatformRoutes } from './open-platform-routes'
 
 export function redirectLegacyDataScopeAdapter(to) {
   if (String(to.query?.panel || '') !== 'permission')
@@ -24,6 +25,7 @@ export function redirectLegacyDataScopeAdapter(to) {
 
 // 手动定义的路由（登录页、SSO、带参数的路由等）
 export const manualRoutes = [
+  ...openPlatformRoutes,
   // 打印设计与运行页独立全屏；数据接口仍分别核验设计权或记录读取权。
   {
     name: 'PrintTemplates',

@@ -1,23 +1,32 @@
 <template>
-  <n-modal
-    :show="show"
-    preset="card"
-    class="client-workbench-modal"
-    :mask-closable="false"
-    @update:show="emit('update:show', $event)"
-  >
-    <template #header>
+  <section v-if="show" class="client-workbench">
+    <header class="workbench-header">
+      <NButton size="small" :disabled="grantSubmitting" @click="emit('update:show', false)">
+        ← 返回系统列表
+      </NButton>
       <div class="workbench-title">
-        <strong>客户端工作台</strong>
-        <span v-if="client">{{ client.clientName }} · {{ client.clientCode }} · AppId {{ client.id }}</span>
+        <strong>{{ client?.clientName || '接入配置' }}</strong>
+        <span v-if="client">{{ client.clientCode }} · AppId {{ client.id }}</span>
       </div>
-    </template>
+    </header>
 
-    <n-tabs v-if="client" v-model:value="activeTab" type="line" animated @update:value="handleTabChange">
-      <n-tab-pane name="overview" tab="概览与凭据">
-        <n-alert type="info" class="tab-alert">
-          一个客户端就是一个外围系统接入身份。先准备凭据，再授权能力，最后在调用日志中排查真实请求。
-        </n-alert>
+    <n-tabs v-if="client" v-model:value="activeTab" type="line" class="workbench-tabs" animated @update:value="handleTabChange">
+      <n-tab-pane name="overview" tab="接入配置">
+        <div class="onboarding-actions">
+          <span>接入顺序</span>
+          <NButton text @click="activeTab = 'overview'">
+            1. 保存凭据
+          </NButton>
+          <NButton v-if="canGrantQuery" text type="primary" @click="activeTab = 'grants'; handleTabChange('grants')">
+            2. 授权能力
+          </NButton>
+          <NButton v-if="userDelegationEnabled" text @click="activeTab = 'mappings'">
+            3. 配置真实用户
+          </NButton>
+          <NButton v-if="canLogQuery" text @click="activeTab = 'logs'; handleTabChange('logs')">
+            查看调用结果
+          </NButton>
+        </div>
         <div class="overview-grid">
           <div><span>客户端名称</span><strong>{{ client.clientName }}</strong></div>
           <div><span>客户端编码</span><strong>{{ client.clientCode }}</strong></div>
@@ -38,14 +47,14 @@
             </div>
           </div>
           <n-space>
-            <NButton v-if="canRotate && client.status === 'ENABLED'" type="primary" secondary @click="emit('rotate-secret', client)">
+            <NButton v-if="canRotate && client.status === 'ENABLED'" type="primary" secondary @click="emit('rotateSecret', client)">
               轮换 Client Secret
             </NButton>
             <NButton
               v-if="canEdit && signatureEnabled && client.status === 'ENABLED'"
               type="primary"
               secondary
-              @click="emit('rotate-signing-key', client)"
+              @click="emit('rotateSigningKey', client)"
             >
               轮换 Signing Key
             </NButton>
@@ -53,7 +62,7 @@
               v-if="canEdit && userDelegationEnabled && client.status === 'ENABLED'"
               type="primary"
               secondary
-              @click="emit('configure-identity', client)"
+              @click="emit('configureIdentity', client)"
             >
               用户身份与 RSA 私钥
             </NButton>
@@ -68,7 +77,7 @@
         <div class="section-heading toolbar-heading">
           <div>
             <h3>这个客户端可以调用哪些能力</h3>
-            <p>授权默认锚定当前能力版本；必填字段会自动保留，客户端只能进一步收窄字段范围。</p>
+            <p>授权默认锚定当前能力版本。字段范围由能力契约限定；业务动作支持进一步收窄，模型必填项不可移除。</p>
           </div>
           <NButton v-if="canGrant" type="primary" @click="openGrantModal()">
             新增授权
@@ -100,7 +109,7 @@
           <NButton
             v-if="canEdit && userDelegationEnabled && client.status === 'ENABLED'"
             type="primary"
-            @click="emit('configure-identity', client)"
+            @click="emit('configureIdentity', client)"
           >
             配置身份映射
           </NButton>
@@ -158,15 +167,7 @@
       </n-tab-pane>
     </n-tabs>
 
-    <template #footer>
-      <n-space justify="end">
-        <NButton @click="emit('update:show', false)">
-          关闭
-        </NButton>
-      </n-space>
-    </template>
-
-    <n-modal v-model:show="grantVisible" preset="card" :title="editingGrantId ? '调整客户端授权' : '为当前客户端新增授权'" style="width: min(640px, calc(100vw - 32px))">
+    <n-modal v-model:show="grantVisible" preset="card" :title="editingGrantId ? '调整客户端授权' : '为当前客户端新增授权'" style="width: min(640px, calc(100vw - 32px))" :content-style="{ maxHeight: '70vh', overflow: 'auto' }" :mask-closable="false" :closable="!grantSubmitting" :close-on-esc="!grantSubmitting">
       <n-form ref="grantFormRef" :model="grantForm" :rules="grantRules" label-placement="left" label-width="100px">
         <n-form-item label="客户端">
           <n-input :value="`${client?.clientName || '-'}（${client?.clientCode || '-'}）`" disabled />
@@ -200,7 +201,7 @@
       </n-form>
       <template #footer>
         <n-space justify="end">
-          <NButton @click="grantVisible = false">
+          <NButton :disabled="grantSubmitting" @click="grantVisible = false">
             取消
           </NButton>
           <NButton type="primary" :loading="grantSubmitting" @click="submitGrant">
@@ -234,26 +235,16 @@
         </template>
       </n-spin>
     </n-modal>
-  </n-modal>
+  </section>
 </template>
 
 <script setup>
-import { NButton, NTag } from 'naive-ui'
-import { computed, h, reactive, ref, watch } from 'vue'
-import {
-  addCapabilityGrant,
-  getCapabilityGrantOptions,
-  getCapabilityGrantPage,
-  getCapabilityInvocationDetail,
-  getCapabilityInvocationPage,
-  revokeCapabilityGrant,
-  updateCapabilityGrant,
-  useCurrentCapabilityGrantVersion,
-} from '@/api/ai/capability'
-import { useDict } from '@/composables'
-import { formatDateTime } from '@/utils'
+import { NButton } from 'naive-ui'
+
+import { useCapabilityClientWorkbench } from './useCapabilityClientWorkbench'
 
 const props = defineProps({
+  initialTab: { type: String, default: 'overview' },
   show: Boolean,
   client: { type: Object, default: null },
   canRotate: Boolean,
@@ -264,543 +255,105 @@ const props = defineProps({
   canGrantRevoke: Boolean,
   canLogQuery: Boolean,
 })
-
 const emit = defineEmits([
   'update:show',
-  'rotate-secret',
-  'rotate-signing-key',
-  'configure-identity',
+  'rotateSecret',
+  'rotateSigningKey',
+  'configureIdentity',
   'revoke',
 ])
 
-const { dict, reload: reloadWorkbenchDicts } = useDict(
-  'ai_capability_client_actor_mode',
-  'ai_capability_client_status',
-  'ai_capability_auth_mode',
-  'ai_capability_user_mapping_mode',
-  'ai_capability_version_strategy',
-  'ai_capability_grant_status',
-  'ai_capability_flow_operation',
-  'ai_capability_actor_type',
-)
-
-const actorModeOptions = computed(() => dict.value.ai_capability_client_actor_mode || [])
-const clientStatusOptions = computed(() => dict.value.ai_capability_client_status || [])
-const mappingModeOptions = computed(() => dict.value.ai_capability_user_mapping_mode || [])
-const versionStrategyOptions = computed(() => dict.value.ai_capability_version_strategy || [])
-const grantStatusOptions = computed(() => dict.value.ai_capability_grant_status || [])
-const actorTypeOptions = computed(() => dict.value.ai_capability_actor_type || [])
-const flowOperationOptions = computed(() => dict.value.ai_capability_flow_operation || [])
-const activeTab = ref('overview')
-
-const signatureEnabled = computed(() => authModes.value.includes('SIGNATURE'))
-const userDelegationEnabled = computed(() => Number(props.client?.oauthEnabled) === 1
-  && ['USER_DELEGATION', 'HYBRID'].includes(props.client?.actorMode))
-const authModes = computed(() => String(props.client?.authModes || '').split(',').filter(Boolean))
-const authModeText = computed(() => authModes.value
-  .map(mode => dictLabel(dict.value.ai_capability_auth_mode || [], mode))
-  .join(' / ') || '-')
-const mappingModeLabel = computed(() => dictLabel(
-  mappingModeOptions.value,
-  props.client?.userAssertionMappingMode || 'PREBOUND',
-))
-
-watch(() => props.show, (visible) => {
-  if (!visible)
-    return
-  activeTab.value = 'overview'
-  grantRows.value = []
-  logRows.value = []
-  Object.assign(logFilters, { requestId: '', capabilityKeyword: '', actorKeyword: '' })
-})
-
-function handleTabChange(tab) {
-  if (tab === 'grants')
-    loadGrants()
-  if (tab === 'logs')
-    loadLogs()
-}
-
-function dictLabel(options, value) {
-  return options.find(item => String(item.value) === String(value))?.label || value || '-'
-}
-
-// ===== 授权 =====
-const grantRows = ref([])
-const grantLoading = ref(false)
-const grantOptions = ref({ clients: [], capabilities: [] })
-const grantPagination = reactive({
-  page: 1,
-  pageSize: 10,
-  itemCount: 0,
-  showSizePicker: true,
-  pageSizes: [10, 20, 50],
-})
-const capabilityMap = computed(() => new Map((grantOptions.value.capabilities || [])
-  .map(item => [String(item.id), item])))
-
-const grantColumns = computed(() => [
-  {
-    title: '能力',
-    key: 'capabilityId',
-    minWidth: 220,
-    render: row => capabilityName(row.capabilityId),
-  },
-  { title: '版本策略', key: 'versionStrategy', width: 120, render: row => dictLabel(versionStrategyOptions.value, row.versionStrategy) },
-  { title: '基准版本', key: 'fixedVersion', width: 100, render: row => row.fixedVersion || '-' },
-  { title: '状态', key: 'status', width: 90, render: row => dictLabel(grantStatusOptions.value, row.status) },
-  { title: '过期时间', key: 'expiresAt', width: 160, render: row => row.expiresAt || '长期有效' },
-  {
-    title: '操作',
-    key: 'action',
-    width: 230,
-    fixed: 'right',
-    render: row => h('div', { class: 'table-actions' }, [
-      row.status === 'ENABLED' && grantVersionUpgradeAvailable(row)
-        ? h(NButton, { text: true, type: 'primary', onClick: () => switchGrantVersion(row) }, { default: () => '使用当前版本' })
-        : null,
-      row.status === 'ENABLED' && props.canGrant
-        ? h(NButton, { text: true, type: 'primary', onClick: () => openGrantModal(row) }, { default: () => '调整' })
-        : null,
-      row.status === 'ENABLED' && props.canGrantRevoke
-        ? h(NButton, { text: true, type: 'error', onClick: () => revokeGrant(row) }, { default: () => '撤销' })
-        : null,
-    ]),
-  },
-])
-
-async function ensureGrantOptions() {
-  const res = await getCapabilityGrantOptions()
-  grantOptions.value = res.data || { clients: [], capabilities: [] }
-}
-
-async function loadGrants() {
-  if (!props.client?.id)
-    return
-  grantLoading.value = true
-  try {
-    await ensureGrantOptions()
-    const res = await getCapabilityGrantPage({
-      pageNum: grantPagination.page,
-      pageSize: grantPagination.pageSize,
-      clientId: props.client.id,
-    })
-    grantRows.value = res.data?.records || []
-    grantPagination.itemCount = Number(res.data?.total || 0)
-  }
-  catch (error) {
-    window.$message.error(error?.message || '客户端授权加载失败')
-  }
-  finally {
-    grantLoading.value = false
-  }
-}
-
-function changeGrantPage(page) {
-  grantPagination.page = page
-  loadGrants()
-}
-
-function changeGrantPageSize(pageSize) {
-  grantPagination.pageSize = pageSize
-  grantPagination.page = 1
-  loadGrants()
-}
-
-function capabilityName(capabilityId) {
-  const capability = capabilityMap.value.get(String(capabilityId))
-  return capability ? `${capability.capabilityName}（${capability.capabilityCode}）` : `能力 #${capabilityId}`
-}
-
-function grantVersionUpgradeAvailable(row) {
-  const capability = capabilityMap.value.get(String(row.capabilityId))
-  return capability?.currentVersion
-    && String(capability.currentVersion) !== String(row.fixedVersion || '')
-}
-
-function revokeGrant(row) {
-  window.$dialog.warning({
-    title: '撤销能力授权',
-    content: `撤销后当前客户端将不能再调用「${capabilityName(row.capabilityId)}」。是否继续？`,
-    positiveText: '确认撤销',
-    negativeText: '取消',
-    onPositiveClick: async () => {
-      const res = await revokeCapabilityGrant(row.id)
-      if (res.code === 200) {
-        window.$message.success('授权已撤销')
-        await loadGrants()
-      }
-    },
-  })
-}
-
-async function switchGrantVersion(row) {
-  const capability = capabilityMap.value.get(String(row.capabilityId))
-  if (!capability?.currentVersion)
-    return
-  const res = await useCurrentCapabilityGrantVersion(row.id)
-  if (res.code === 200) {
-    window.$message.success(`授权基准已切换到 v${capability.currentVersion}`)
-    await loadGrants()
-  }
-}
-
-const grantVisible = ref(false)
-const editingGrantId = ref(null)
-const grantSubmitting = ref(false)
-const grantOptionLoading = ref(false)
-const grantFormRef = ref(null)
-const grantForm = reactive({
-  capabilityId: null,
-  versionStrategy: null,
-  fixedVersion: '',
-  allowedFields: [],
-  allowedOperations: [],
-  expiresAt: null,
-})
-const selectedCapability = computed(() => (grantOptions.value.capabilities || [])
-  .find(item => item.id === grantForm.capabilityId))
-const capabilityOptions = computed(() => (grantOptions.value.capabilities || [])
-  .filter(item => item.publishStatus === 'PUBLISHED' && item.enabled !== 0)
-  .map((item) => {
-    const unavailableReason = capabilityUnavailableReason(item)
-    return {
-      label: `${item.capabilityName}（${item.capabilityCode}）· v${item.currentVersion || '-'}${unavailableReason ? ` · ${unavailableReason}` : ''}`,
-      value: item.id,
-      disabled: !!unavailableReason,
-    }
-  }))
-const grantFieldOptions = computed(() => {
-  const metaMap = new Map((selectedCapability.value?.fields || []).map(item => [item.fieldCode, item]))
-  return (selectedCapability.value?.allowedFields || []).map((fieldCode) => {
-    const meta = metaMap.get(fieldCode)
-    const required = meta?.required || selectedCapability.value?.requiredFields?.includes(fieldCode)
-    return {
-      label: `${meta?.fieldLabel || '未命名字段'}${required ? '（必填）' : ''}`,
-      value: fieldCode,
-      disabled: required,
-    }
-  })
-})
-const grantOperationOptions = computed(() => (selectedCapability.value?.allowedOperations || [])
-  .map(operation => ({ label: dictLabel(flowOperationOptions.value, operation), value: operation })))
-const grantRules = {
-  capabilityId: {
-    trigger: 'change',
-    validator: (_rule, value) => value != null && String(value).trim()
-      ? true
-      : new Error('请选择能力'),
-  },
-  versionStrategy: { required: true, message: '请选择版本策略', trigger: 'change' },
-  fixedVersion: { required: true, message: '请输入基准版本', trigger: 'blur' },
-}
-
-async function openGrantModal(row = null) {
-  grantVisible.value = true
-  editingGrantId.value = row?.id || null
-  grantOptionLoading.value = true
-  try {
-    await Promise.all([ensureGrantOptions(), reloadWorkbenchDicts()])
-    if (row) {
-      const fieldPolicy = parseFieldPolicy(row.fieldPolicy)
-      const capability = (grantOptions.value.capabilities || [])
-        .find(item => item.id === row.capabilityId)
-      Object.assign(grantForm, {
-        capabilityId: row.capabilityId,
-        versionStrategy: row.versionStrategy,
-        fixedVersion: row.fixedVersion || '',
-        allowedFields: [...new Set([
-          ...(Array.isArray(fieldPolicy.allowedFields) ? fieldPolicy.allowedFields : []),
-          ...(capability?.requiredFields || []),
-        ])],
-        allowedOperations: Array.isArray(fieldPolicy.allowedOperations) ? [...fieldPolicy.allowedOperations] : [],
-        expiresAt: parseDateTimeValue(row.expiresAt),
-      })
-    }
-    else {
-      Object.assign(grantForm, {
-        capabilityId: null,
-        versionStrategy: versionStrategyOptions.value.find(item => item.isDefault === 'Y')?.value
-          || versionStrategyOptions.value[0]?.value
-          || null,
-        fixedVersion: '',
-        allowedFields: [],
-        allowedOperations: [],
-        expiresAt: null,
-      })
-    }
-  }
-  catch (error) {
-    grantVisible.value = false
-    window.$message.error(error?.message || '授权候选能力加载失败')
-  }
-  finally {
-    grantOptionLoading.value = false
-  }
-}
-
-function capabilityUnavailableReason(capability) {
-  if (capability.riskLevel === 'HIGH')
-    return '高风险能力暂不可授权'
-  if (capability.behavior === 'READ_ONLY' || capability.sourceType === 'SYSTEM_SERVICE')
-    return ''
-  if (capability.sourceType === 'BUSINESS_ACTION')
-    return capability.allowedFields?.length ? '' : '缺少允许字段'
-  if (capability.sourceType === 'FLOW_ACTION') {
-    return capability.allowedOperations?.length
-      && (!capability.allowedOperations.includes('SUBMIT') || capability.allowedFields?.length)
-      ? ''
-      : '缺少允许操作或申请字段'
-  }
-  return '当前类型不可授权'
-}
-
-function handleCapabilityChange(capabilityId) {
-  const capability = (grantOptions.value.capabilities || []).find(item => item.id === capabilityId)
-  grantForm.fixedVersion = capability?.currentVersion || ''
-  grantForm.allowedFields = [...(capability?.allowedFields || [])]
-  grantForm.allowedOperations = [...(capability?.allowedOperations || [])]
-}
-
-function parseFieldPolicy(value) {
-  if (value && typeof value === 'object')
-    return value
-  if (typeof value !== 'string' || !value.trim())
-    return {}
-  try {
-    const parsed = JSON.parse(value)
-    return parsed && typeof parsed === 'object' ? parsed : {}
-  }
-  catch {
-    return {}
-  }
-}
-
-function parseDateTimeValue(value) {
-  if (!value)
-    return null
-  const timestamp = new Date(String(value).replace(' ', 'T')).getTime()
-  return Number.isFinite(timestamp) ? timestamp : null
-}
-
-async function submitGrant() {
-  try {
-    await grantFormRef.value?.validate()
-  }
-  catch {
-    return
-  }
-  const capability = selectedCapability.value
-  if (!capability)
-    return
-  if ((capability.allowedFields || []).length && grantForm.allowedFields.length === 0) {
-    window.$message.error('请至少保留一个允许字段')
-    return
-  }
-  if ((capability.allowedOperations || []).length && grantForm.allowedOperations.length === 0) {
-    window.$message.error('请至少保留一个允许操作')
-    return
-  }
-  grantSubmitting.value = true
-  try {
-    const fieldPolicy = capability.sourceType === 'BUSINESS_ACTION'
-      ? { allowedFields: grantForm.allowedFields }
-      : capability.sourceType === 'FLOW_ACTION'
-        ? {
-            allowedOperations: grantForm.allowedOperations,
-            ...((capability.allowedFields || []).length ? { allowedFields: grantForm.allowedFields } : {}),
-          }
-        : null
-    const payload = {
-      versionStrategy: grantForm.versionStrategy,
-      fixedVersion: grantForm.fixedVersion,
-      fieldPolicy,
-      expiresAt: grantForm.expiresAt ? formatDateTime(grantForm.expiresAt) : null,
-    }
-    const res = editingGrantId.value
-      ? await updateCapabilityGrant(editingGrantId.value, payload)
-      : await addCapabilityGrant({
-          clientId: props.client.id,
-          capabilityId: grantForm.capabilityId,
-          ...payload,
-        })
-    if (res.code === 200) {
-      window.$message.success(editingGrantId.value ? '授权已调整' : '授权成功')
-      grantVisible.value = false
-      editingGrantId.value = null
-      grantPagination.page = 1
-      await loadGrants()
-    }
-  }
-  finally {
-    grantSubmitting.value = false
-  }
-}
-
-// ===== 调用日志 =====
-const logRows = ref([])
-const logLoading = ref(false)
-const logFilters = reactive({
-  requestId: '',
-  capabilityKeyword: '',
-  actorKeyword: '',
-})
-const logPagination = reactive({
-  page: 1,
-  pageSize: 10,
-  itemCount: 0,
-  showSizePicker: true,
-  pageSizes: [10, 20, 50],
-})
-const logColumns = [
-  { title: '请求 ID', key: 'requestId', width: 210, fixed: 'left', ellipsis: { tooltip: true } },
-  { title: '能力', key: 'capabilityCode', width: 250, ellipsis: { tooltip: true }, render: capabilityDisplay },
-  { title: '调用用户', key: 'actorUserId', width: 190, ellipsis: { tooltip: true }, render: userLabel },
-  {
-    title: '结果',
-    key: 'resultStatus',
-    width: 95,
-    render: row => h(NTag, { size: 'small', type: row.resultStatus === 'SUCCESS' ? 'success' : 'error' }, { default: () => resultStatusLabel(row.resultStatus) }),
-  },
-  { title: '失败阶段', key: 'failureStage', width: 150, render: row => failureStageLabel(row.failureStage, row.resultStatus) },
-  { title: '错误摘要', key: 'errorMessage', width: 250, ellipsis: { tooltip: true }, render: row => row.errorMessage || row.resultCode || '-' },
-  { title: '耗时', key: 'durationMs', width: 90, render: row => row.durationMs == null ? '-' : `${row.durationMs} ms` },
-  { title: '调用时间', key: 'createTime', width: 170, fixed: 'right', render: row => formatInvocationTime(row.createTime) },
-  {
-    title: '操作',
-    key: 'action',
-    width: 70,
-    fixed: 'right',
-    render: row => h(NButton, { text: true, type: 'primary', onClick: () => openLogDetail(row) }, { default: () => '详情' }),
-  },
-]
-
-async function loadLogs() {
-  if (!props.client?.id)
-    return
-  logLoading.value = true
-  try {
-    const res = await getCapabilityInvocationPage({
-      pageNum: logPagination.page,
-      pageSize: logPagination.pageSize,
-      clientId: props.client.id,
-      requestId: normalizeFilter(logFilters.requestId),
-      capabilityKeyword: normalizeFilter(logFilters.capabilityKeyword),
-      actorKeyword: normalizeFilter(logFilters.actorKeyword),
-    })
-    logRows.value = res.data?.records || []
-    logPagination.itemCount = Number(res.data?.total || 0)
-  }
-  catch (error) {
-    window.$message.error(error?.message || '客户端调用日志加载失败')
-  }
-  finally {
-    logLoading.value = false
-  }
-}
-
-function searchLogs() {
-  logPagination.page = 1
-  loadLogs()
-}
-
-function resetLogFilters() {
-  Object.assign(logFilters, { requestId: '', capabilityKeyword: '', actorKeyword: '' })
-  searchLogs()
-}
-
-function changeLogPage(page) {
-  logPagination.page = page
-  loadLogs()
-}
-
-function changeLogPageSize(pageSize) {
-  logPagination.pageSize = pageSize
-  logPagination.page = 1
-  loadLogs()
-}
-
-const logDetailVisible = ref(false)
-const logDetailLoading = ref(false)
-const logDetail = ref(null)
-
-async function openLogDetail(row) {
-  logDetailVisible.value = true
-  logDetailLoading.value = true
-  logDetail.value = null
-  try {
-    const res = await getCapabilityInvocationDetail(row.id)
-    logDetail.value = res.data || null
-  }
-  catch (error) {
-    window.$message.error(error?.message || '调用日志详情加载失败')
-    logDetailVisible.value = false
-  }
-  finally {
-    logDetailLoading.value = false
-  }
-}
-
-function userLabel(row) {
-  if (!row?.actorUserId)
-    return '-'
-  const name = row.actorRealName || row.actorUsername || `用户 #${row.actorUserId}`
-  return `${name}${row.actorUsername && row.actorRealName ? `（${row.actorUsername}）` : ''} · ID ${row.actorUserId}`
-}
-
-function capabilityDisplay(row) {
-  if (!row)
-    return '-'
-  if (row.capabilityName)
-    return `${row.capabilityName}（${row.capabilityCode || '-'}）`
-  return row.capabilityCode || '-'
-}
-
-function normalizeFilter(value) {
-  const normalized = String(value || '').trim()
-  return normalized || undefined
-}
-
-function formatInvocationTime(value) {
-  return value ? String(value).replace('T', ' ') : '-'
-}
-
-function failureStageLabel(value, resultStatus) {
-  if (!value)
-    return ['ERROR', 'FAILED'].includes(resultStatus) ? '未记录' : '-'
-  return {
-    SCOPE_AUTHORIZATION: '调用范围校验',
-    GRANT_RESOLUTION: '客户端授权解析',
-    CAPABILITY_RESOLUTION: '能力版本解析',
-    ACTOR_AUTHORIZATION: '主体类型校验',
-    RBAC_AUTHORIZATION: '用户权限校验',
-    RATE_LIMIT: '调用频率限制',
-    AUTHENTICATION: '身份认证',
-    AUTHORIZATION: '能力授权',
-    INPUT_PREPARATION: '入参准备',
-    INPUT_SCHEMA_VALIDATION: '入参校验',
-    POLICY_VALIDATION: '能力策略校验',
-    IDEMPOTENCY: '幂等校验',
-    AUDIT_RESERVATION: '审计预留',
-    ADAPTER_RESOLUTION: '适配器解析',
-    ADAPTER_EXECUTION: '业务执行',
-    OUTPUT_SCHEMA_VALIDATION: '返回校验',
-    AUDIT_FINALIZATION: '审计完成',
-    AUDIT: '审计记录',
-  }[value] || value
-}
-
-function resultStatusLabel(value) {
-  return {
-    SUCCESS: '成功',
-    ERROR: '失败',
-    FAILED: '失败',
-    PENDING_APPROVAL: '等待审批',
-  }[value] || value || '-'
-}
+const {
+  actorModeOptions,
+  clientStatusOptions,
+  versionStrategyOptions,
+  actorTypeOptions,
+  activeTab,
+  signatureEnabled,
+  userDelegationEnabled,
+  authModeText,
+  mappingModeLabel,
+  handleTabChange,
+  dictLabel,
+  grantRows,
+  grantLoading,
+  grantPagination,
+  grantColumns,
+  changeGrantPage,
+  changeGrantPageSize,
+  grantVisible,
+  editingGrantId,
+  grantSubmitting,
+  grantOptionLoading,
+  grantFormRef,
+  grantForm,
+  capabilityOptions,
+  grantFieldOptions,
+  grantOperationOptions,
+  grantRules,
+  openGrantModal,
+  handleCapabilityChange,
+  submitGrant,
+  logRows,
+  logLoading,
+  logFilters,
+  logPagination,
+  logColumns,
+  searchLogs,
+  resetLogFilters,
+  changeLogPage,
+  changeLogPageSize,
+  logDetailVisible,
+  logDetailLoading,
+  logDetail,
+  userLabel,
+  capabilityDisplay,
+  failureStageLabel,
+} = useCapabilityClientWorkbench(props, emit)
 </script>
 
 <style scoped>
+.client-workbench {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg-primary);
+}
+.workbench-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-light);
+}
+.workbench-tabs {
+  flex: 1;
+  min-height: 0;
+  padding: 0 16px;
+  display: flex;
+  flex-direction: column;
+}
+.workbench-tabs :deep(.n-tabs-pane-wrapper) {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 16px;
+}
+.onboarding-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+.onboarding-actions > span {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
 .workbench-title strong,
 .workbench-title span {
   display: block;
@@ -808,7 +361,7 @@ function resultStatusLabel(value) {
 
 .workbench-title strong {
   color: var(--text-primary);
-  font-size: 17px;
+  font-size: 15px;
 }
 
 .workbench-title span {
@@ -830,10 +383,10 @@ function resultStatusLabel(value) {
 
 .overview-grid > div {
   min-width: 0;
-  padding: 12px 14px;
+  padding: 10px 12px;
   border-right: 1px solid var(--border-light);
   border-bottom: 1px solid var(--border-light);
-  background: var(--bg-secondary);
+  background: var(--bg-primary);
 }
 
 .overview-grid span,
@@ -897,9 +450,9 @@ function resultStatusLabel(value) {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  padding: 20px;
+  padding: 14px;
   border: 1px solid var(--border-light);
-  border-radius: 8px;
+  border-radius: 4px;
   background: var(--bg-secondary);
 }
 
@@ -961,15 +514,5 @@ function resultStatusLabel(value) {
   .log-filter-bar {
     grid-template-columns: 1fr;
   }
-}
-
-:global(.client-workbench-modal) {
-  width: min(1080px, calc(100vw - 32px));
-}
-
-:global(.client-workbench-modal > .n-card__content) {
-  min-height: 520px;
-  max-height: calc(100vh - 180px);
-  overflow-y: auto;
 }
 </style>

@@ -154,11 +154,13 @@ describe('formPermissionConfig', () => {
     const wrapper = mountConfig({
       formFieldCatalog: [
         ...fields,
-        { scope: 'child', childKey: 'items', childField: 'quantity', field: 'quantity', label: '数量' },
+        { scope: 'child', childKey: 'items', childField: 'quantity', field: 'quantity', label: '数量', childLabel: '明细' },
       ],
     })
 
-    expect(wrapper.text()).toContain('items.quantity')
+    expect(wrapper.text()).toContain('主表字段')
+    expect(wrapper.text()).toContain('子表字段 · 明细')
+    expect(wrapper.text()).toContain('quantity')
     await wrapper.find('[data-test="child-allow-create"]').setValue(true)
     await wrapper.find('[data-test="child-allow-update"]').setValue(true)
     await wrapper.find('[data-test="child-allow-delete"]').setValue(true)
@@ -174,6 +176,36 @@ describe('formPermissionConfig', () => {
       expect.objectContaining({ childKey: 'items', allowCreate: true, allowUpdate: true, allowDelete: true }),
     ])
 
+    wrapper.unmount()
+  })
+
+  it('已删除的子表不再出现在字段列表和行操作区', () => {
+    const wrapper = mountConfig({
+      formFieldCatalog: [
+        ...fields,
+        { scope: 'child', childKey: 'items', childField: 'quantity', field: 'quantity', label: '数量', childLabel: '明细' },
+      ],
+      permissions: {
+        version: 2,
+        fields: [
+          { field: 'amount', readable: true, writable: true },
+          { scope: 'child', childKey: 'items', childField: 'quantity', readable: true, writable: true },
+          { scope: 'child', childKey: 'removed_child', childField: 'name', readable: true, writable: true },
+        ],
+        children: [
+          { childKey: 'items', readable: true, allowCreate: true },
+          { childKey: 'removed_child', readable: true, allowCreate: true, allowDelete: true },
+        ],
+      },
+      formChildPermissions: [
+        { childKey: 'items', readable: true, allowCreate: true },
+        { childKey: 'removed_child', readable: true, allowCreate: true, allowDelete: true },
+      ],
+    })
+
+    expect(wrapper.text()).toContain('子表字段 · 明细')
+    expect(wrapper.text()).not.toContain('removed_child')
+    expect(wrapper.findAll('[data-test="child-allow-create"]')).toHaveLength(1)
     wrapper.unmount()
   })
 

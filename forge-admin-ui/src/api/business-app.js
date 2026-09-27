@@ -57,6 +57,13 @@ export function businessObjectList(params) {
   return request.get('/ai/business/object/list', encryptedParams(params))
 }
 
+export function businessObjectCodeAvailable(objectCode, excludeId) {
+  return request.get('/ai/business/object/code-available', encryptedParams({
+    objectCode,
+    ...(excludeId == null || excludeId === '' ? {} : { excludeId }),
+  }))
+}
+
 export function businessObjectDetail(id) {
   return request.get(`/ai/business/object/${id}`, ENCRYPTED_REQUEST)
 }

@@ -136,8 +136,20 @@ public class PrintMetadataResolver {
             if (relations.size() != 1) {
                 throw invalid("children." + ref.getModelCode() + ".relation");
             }
-            String mainColumn = column(main, relations.get(0)[0]);
-            String childColumn = column(child, relations.get(0)[1]);
+            String mainColumn;
+            String childColumn;
+            try {
+                mainColumn = column(main, relations.get(0)[0]);
+                childColumn = column(child, relations.get(0)[1]);
+            }
+            catch (RuntimeException ex) {
+                // 设计草稿：子表外键对不上时跳过该子表，仍允许为主表建打印模板；
+                // 已发布清单必须严格，避免运行时静默丢明细。
+                if (!published) {
+                    continue;
+                }
+                throw ex;
+            }
             if (childColumn.equals(child.config().getPrimaryKeyColumn())
                     || Set.of("tenant_id", "del_flag", "create_by", "update_by").contains(childColumn)) {
                 throw invalid("children." + ref.getModelCode() + ".relation");
@@ -208,14 +220,112 @@ public class PrintMetadataResolver {
     }
 
     private String column(Model model, String field) {
-        if (field != null && field.equals(model.config().getPrimaryKeyField())) {
+        String token = normalizeRelationField(field);
+        if (token == null || token.isBlank()) {
+            throw invalid("relation");
+        }
+        if (token.equals(model.config().getPrimaryKeyField()) || "id".equalsIgnoreCase(token)) {
             return model.config().getPrimaryKeyColumn();
         }
-        return model.schema().getFields().stream()
-                .filter(item -> field != null && (field.equals(item.getField()) || field.equals(item.getColumnName())))
+        Optional<String> matched = model.schema().getFields().stream()
+                .filter(item -> matchesRelationField(item, token))
                 .map(LowcodeFieldSchema::getColumnName).filter(Objects::nonNull).findFirst()
-                .filter(value -> value.matches("[A-Za-z_][A-Za-z0-9_]*"))
-                .orElseThrow(() -> invalid("relation." + field));
+                .filter(value -> value.matches("[A-Za-z_][A-Za-z0-9_]*"));
+        if (matched.isPresent()) {
+            return matched.get();
+        }
+        // 子表自动外键常已落库，但草稿 model_schema 可能漏字段；按设计器同款规则推导列名
+        // （BusinessObjectDesignerService.camelToSnakeCase：不做字母→数字拆分）
+        if (token.matches("[A-Za-z][A-Za-z0-9]*Id") || token.matches("[a-z][a-z0-9_]*_id")) {
+            String inferred = designerCamelToSnake(token.endsWith("Id") ? token : snakeToCamel(token));
+            if (inferred.matches("[A-Za-z_][A-Za-z0-9_]*")) {
+                return inferred;
+            }
+        }
+        throw invalid("relation." + token);
+    }
+
+    /** 兼容历史脏数据中偶发的 HTML 实体转义（不影响合法字段名如 businessObject0eq3Id） */
+    private String normalizeRelationField(String field) {
+        if (field == null) {
+            return null;
+        }
+        String value = field.trim();
+        if (value.isEmpty()) {
+            return value;
+        }
+        return value
+                .replace("&#61;", "=")
+                .replace("&#x3d;", "=")
+                .replace("&#x3D;", "=")
+                .replace("&#x003d;", "=")
+                .replace("&#X3D;", "=")
+                .replace("&equals;", "=")
+                .replace("&eq;", "=");
+    }
+
+    private boolean matchesRelationField(LowcodeFieldSchema item, String field) {
+        if (item == null || field == null) {
+            return false;
+        }
+        return sameFieldToken(field, item.getField()) || sameFieldToken(field, item.getColumnName());
+    }
+
+    private boolean sameFieldToken(String left, String right) {
+        if (right == null || right.isBlank()) {
+            return false;
+        }
+        if (left.equals(right)) {
+            return true;
+        }
+        // businessObject0eq3Id ↔ business_object0eq3_id（设计器落库）↔ business_object_0eq3_id（规范拆分）
+        if (snakeToCamel(left).equals(snakeToCamel(right))) {
+            return true;
+        }
+        String leftDesigner = designerCamelToSnake(left);
+        String rightDesigner = designerCamelToSnake(right);
+        if (leftDesigner.equals(rightDesigner) || leftDesigner.equals(right) || rightDesigner.equals(left)) {
+            return true;
+        }
+        String leftSnake = camelToSnake(left);
+        String rightSnake = camelToSnake(right);
+        return leftSnake.equals(rightSnake) || leftSnake.equals(right) || rightSnake.equals(left);
+    }
+
+    private String snakeToCamel(String value) {
+        if (value == null || value.isBlank() || !value.contains("_")) {
+            return value;
+        }
+        StringBuilder result = new StringBuilder();
+        boolean upperNext = false;
+        for (char ch : value.toCharArray()) {
+            if (ch == '_') {
+                upperNext = true;
+                continue;
+            }
+            result.append(upperNext ? Character.toUpperCase(ch) : ch);
+            upperNext = false;
+        }
+        return result.toString();
+    }
+
+    /** 与 BusinessObjectDesignerService.camelToSnakeCase 一致，生成 business_object0eq3_id */
+    private String designerCamelToSnake(String value) {
+        if (value == null || value.isBlank()) {
+            return value;
+        }
+        return value.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase(Locale.ROOT);
+    }
+
+    private String camelToSnake(String value) {
+        if (value == null || value.isBlank()) {
+            return value;
+        }
+        // 规范拆分：字母→数字边界也加下划线（business_object_0eq3_id）
+        return value
+                .replaceAll("([a-z0-9])([A-Z])", "$1_$2")
+                .replaceAll("([A-Za-z])(\\d)", "$1_$2")
+                .toLowerCase(Locale.ROOT);
     }
 
     private Model model(PrintActor actor, JsonNode object, boolean published) {

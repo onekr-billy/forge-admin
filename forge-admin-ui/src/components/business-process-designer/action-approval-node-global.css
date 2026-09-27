@@ -1,0 +1,14 @@
+/* NSelect 下拉菜单 teleport 到 body，scoped 样式无法命中，需全局样式 */
+.flow-model-option {
+  display: flex;
+  flex-direction: column;
+}
+
+.flow-model-option-key {
+  padding-left: 12px;
+  padding-bottom: 3px;
+  color: #94a3b8;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  line-height: 1.4;
+}

@@ -17,7 +17,7 @@ describe('page design tabs', () => {
     expect(source).toContain('activePageDesignTab === \'list\'')
     expect(source).toContain('PageDesignSettingsPanel')
     expect(source).toContain('PageDesignPublishPanel')
-    expect(source).toContain('v-else-if="!editing && runtimeViewMode === \'pages\'"')
+    expect(source).toContain('v-else-if="(!editing && runtimeViewMode === \'pages\') || showFreeLayoutCanvas"')
   })
 
   it('keeps print templates on the current page settings', () => {

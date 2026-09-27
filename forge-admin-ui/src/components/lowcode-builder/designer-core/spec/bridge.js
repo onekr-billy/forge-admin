@@ -191,6 +191,47 @@ export const LIST_CANVAS_PENDING_TYPES = [
   'formSectionTitle',
 ]
 
+/**
+ * 列表设计器左侧面板隐藏（仍可渲染存量画布节点）：
+ * - 水印：应走页面级设置 / 打印模板，不是拖一个区块
+ * - 表单字段挂件、媒体/开发向挂件：列表页几乎用不上，噪音大
+ * - 被 AiCrudPage 覆盖的遗留拆分块：默认模板已内置，面板不再推销
+ */
+export const LIST_PALETTE_EXCLUDED_TYPES = [
+  'watermark',
+  'signature-pad',
+  'transfer',
+  'vue-component',
+  'html-tag',
+  'menu',
+  'pagination',
+  'split',
+  'calendar',
+  'code',
+  'countdown',
+  'number-animation',
+  'breadcrumb',
+  'audio-player',
+  'video-player',
+  'avatar',
+  'barcode',
+  'qrcode',
+  'iframe',
+  'workspace-summary-metrics',
+  'step-form',
+  'AiForm',
+  'AiTable',
+  'data-table',
+  'search-form',
+  'toolbar',
+  'sub-table-tabs',
+  'space',
+  'descriptions',
+  'announcement',
+  'log',
+  'list',
+]
+
 // ─── 列表页区块桥接 ────────────────────────────────────────
 
 /** techTitle 映射：当组件 type 含大写驼峰或需要技术名展示时使用 */

@@ -16,7 +16,6 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class BusinessApplicationPageMenuPublishService {
 
-    private static final String ROOT_NODE_ID = "__application_menu_root__";
     private static final String PORTAL_COMPONENT = "app-center/application-portal";
 
     private final MenuRegisterAdapter menuRegisterAdapter;
@@ -32,94 +31,36 @@ public class BusinessApplicationPageMenuPublishService {
         if (nodes.isEmpty()) {
             return menuRegisterAdapter.syncApplicationPageMenus(applicationCode, List.of());
         }
-        List<Map<String, Object>> visibleNodes = nodes.stream().filter(this::systemMenuVisible).toList();
-        if (visibleNodes.isEmpty()) {
-            return menuRegisterAdapter.syncApplicationPageMenus(applicationCode, List.of());
-        }
-        // 收集可见节点的全部祖先，将嵌套 group 节点也纳入可见集合，
-        // 确保不同客户端投影后仍能保留完整的父级目录链路。
-        java.util.Map<String, Map<String, Object>> nodesById = nodes.stream()
-                .filter(node -> StringUtils.trimToNull(string(node.get("id"))) != null)
-                .map(node -> Map.entry(StringUtils.trimToNull(string(node.get("id"))), node))
-                .collect(java.util.stream.Collectors.toMap(
-                        Map.Entry::getKey,
-                        Map.Entry::getValue,
-                        (left, right) -> left,
-                        java.util.LinkedHashMap::new));
-        java.util.Set<String> referencedAncestorIds = new java.util.LinkedHashSet<>();
-        for (Map<String, Object> visibleNode : visibleNodes) {
-            String parentId = StringUtils.trimToNull(string(visibleNode.get("parentId")));
-            java.util.Set<String> visited = new java.util.HashSet<>();
-            while (parentId != null && visited.add(parentId)) {
-                referencedAncestorIds.add(parentId);
-                Map<String, Object> parent = nodesById.get(parentId);
-                parentId = parent == null ? null : StringUtils.trimToNull(string(parent.get("parentId")));
-            }
-        }
-        List<Map<String, Object>> effectiveNodes = nodes.stream()
-                .filter(node -> systemMenuVisible(node)
-                        || referencedAncestorIds.contains(StringUtils.trimToNull(string(node.get("id")))))
-                .toList();
         List<Map<String, Object>> publishedObjects = maps(snapshot.get("objects"));
-        java.util.Set<String> visibleNodeIds = effectiveNodes.stream()
-                .map(node -> StringUtils.trimToNull(string(node.get("id"))))
-                .filter(java.util.Objects::nonNull)
-                .collect(java.util.stream.Collectors.toSet());
-        String rootPerms = permission(applicationCode, "root");
-        List<BusinessApplicationPageMenuDTO> menus = new ArrayList<>();
-        java.util.LinkedHashSet<String> clientCodes = new java.util.LinkedHashSet<>();
-        // Derive clients from nodes that actually have a visible page for the
-        // client.  A legacy ADMIN group containing only MOBILE pages must not
-        // create an empty management-side application root.
-        for (String candidateClient : List.of("pc", "h5")) {
-            if (effectiveNodes.stream().anyMatch(node -> isNodeVisibleForClient(node, candidateClient, effectiveNodes))) {
-                clientCodes.add(candidateClient);
-            }
-        }
-        if (clientCodes.isEmpty()) {
-            clientCodes.add("pc");
-        }
-        String applicationName = StringUtils.defaultIfBlank(string(application.get("applicationName")), applicationCode);
         String portalIdentifier = resolvePortalIdentifier(application, applicationCode);
-        for (String clientCode : clientCodes) {
-            menus.add(menu(ROOT_NODE_ID, null, applicationName,
-                    "/app/" + portalIdentifier, null, rootPerms,
-                    string(application.get("icon")), 0, true, true, clientCode));
-            for (Map<String, Object> node : effectiveNodes) {
-                String nodeId = StringUtils.trimToNull(string(node.get("id")));
-                if (nodeId == null || !isNodeVisibleForClient(node, clientCode, effectiveNodes)) {
+        List<BusinessApplicationPageMenuDTO> menus = new ArrayList<>();
+        // 系统菜单必须显式选择管理端/移动端父级；禁止回落到 /ai（AI应用）或通用业务域目录。
+        // 仅开启开关但未选父级：视为未挂载并跳过，避免误触开关导致整次发布失败。
+        for (Map<String, Object> node : nodes) {
+            if (isGroupNode(node) || !systemMenuVisible(node)) {
+                continue;
+            }
+            String nodeId = StringUtils.trimToNull(string(node.get("id")));
+            if (nodeId == null) {
+                continue;
+            }
+            boolean directory = false;
+            String title = resolveMenuTitle(node, directory);
+            Integer sort = resolveMenuSort(node);
+            for (String clientCode : resolveClientCodes(node)) {
+                String externalMenuParentId = resolveExternalMenuParentId(node, clientCode);
+                if (externalMenuParentId == null) {
                     continue;
                 }
-                boolean directory = isGroupNode(node);
-                String title = resolveMenuTitle(node, directory);
-                Integer sort = resolveMenuSort(node);
-
-                // 解析父级：优先使用外部门级 ID（menuParentId），其次使用应用内部页面树的 parentId
-                // menuParentId is a management-menu resource ID. H5 has a
-                // separate client resource tree, so never reuse a pc parent ID
-                // when projecting the mobile copy.
-                String externalMenuParentId = resolveExternalMenuParentId(node, clientCode);
-                String parentNodeId;
-                boolean externalParent;
-                if (externalMenuParentId != null) {
-                    parentNodeId = externalMenuParentId;
-                    externalParent = true;
-                } else {
-                    String requestedParentId = StringUtils.trimToNull(string(node.get("parentId")));
-                    parentNodeId = requestedParentId != null && visibleNodeIds.contains(requestedParentId)
-                            ? requestedParentId : ROOT_NODE_ID;
-                    externalParent = false;
-                }
-
                 String menuPath = resolveMenuPath(application, portalIdentifier,
                         node, nodeId, directory, clientCode, publishedObjects);
-                String menuComponent = directory ? null
-                        : "h5".equalsIgnoreCase(clientCode) ? menuPath
+                String menuComponent = "h5".equalsIgnoreCase(clientCode)
+                        ? menuPath
                         : resolveDesktopMenuComponent(menuPath);
-                BusinessApplicationPageMenuDTO item = menu(nodeId, parentNodeId, title,
+                BusinessApplicationPageMenuDTO item = menu(nodeId, externalMenuParentId, title,
                         menuPath, menuComponent, permission(applicationCode, nodeId),
                         string(node.get("icon")), sort, directory, true, clientCode);
-                item.setExternalParent(externalParent);
+                item.setExternalParent(true);
                 menus.add(item);
             }
         }
@@ -139,6 +80,7 @@ public class BusinessApplicationPageMenuPublishService {
                 errors.add("应用页面未设置有效默认首页");
             }
         }
+        // 未选父级的「假挂载」不阻塞发布；真正挂载需开关 + 父级齐全（见 sync）
         return errors;
     }
 
@@ -199,45 +141,6 @@ public class BusinessApplicationPageMenuPublishService {
         return List.of("pc");
     }
 
-    private boolean isNodeVisibleForClient(Map<String, Object> node, String clientCode,
-                                           List<Map<String, Object>> effectiveNodes) {
-        if (!isGroupNode(node)) {
-            return systemMenuVisible(node) && resolveClientCodes(node).contains(clientCode);
-        }
-        String groupId = StringUtils.trimToNull(string(node.get("id")));
-        if (groupId == null) {
-            return false;
-        }
-        return hasVisibleDescendantForClient(groupId, clientCode, effectiveNodes, new java.util.HashSet<>());
-    }
-
-    private boolean hasVisibleDescendantForClient(String parentId, String clientCode,
-                                                  List<Map<String, Object>> nodes,
-                                                  java.util.Set<String> visited) {
-        if (!visited.add(parentId)) {
-            return false;
-        }
-        for (Map<String, Object> child : nodes) {
-            if (!parentId.equals(StringUtils.trimToNull(string(child.get("parentId"))))) {
-                continue;
-            }
-            if (!isGroupNode(child)
-                    && systemMenuVisible(child)
-                    && resolveClientCodes(child).contains(clientCode)
-                    // An explicitly selected external parent owns this page;
-                    // it must not also appear below its old in-app group.
-                    && resolveExternalMenuParentId(child, clientCode) == null) {
-                return true;
-            }
-            String childId = StringUtils.trimToNull(string(child.get("id")));
-            if (isGroupNode(child) && childId != null
-                    && hasVisibleDescendantForClient(childId, clientCode, nodes, new java.util.HashSet<>(visited))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private boolean isGroupNode(Map<String, Object> node) {
         String type = StringUtils.defaultString(string(node.get("type"))).trim().toLowerCase();
         return "group".equals(type) || "page-group".equals(type) || "page_group".equals(type)
@@ -248,7 +151,7 @@ public class BusinessApplicationPageMenuPublishService {
     /**
      * 解析页面节点的外部门级 ID（sys_resource.id）。
      * <p>当页面配置了 menuParentId 时，该 ID 指向系统菜单树中的某个目录/菜单，
-     * 页面将直接挂载到该目录下而非应用根目录下。返回 null 表示未配置外部门级。</p>
+     * 页面将直接挂载到该目录下。返回 null 表示未配置外部门级，发布时跳过。</p>
      */
     private String resolveExternalMenuParentId(Map<String, Object> node, String clientCode) {
         String parentKey = "h5".equalsIgnoreCase(clientCode) ? "mobileMenuParentId" : "menuParentId";

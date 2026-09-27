@@ -435,7 +435,7 @@
 
 /* ════════════════════════════════════
  * Naive UI 按钮风格 - 扁平化后台操作按钮
- * 统一收敛圆角、去除阴影和浮起动效，现有页面无需替换 n-button
+ * 仅定制 primary：纯色 + 悬停白色蒙层；其它类型保持原有样式
  * ═════════════════════════════════════ */
 .n-button {
   min-width: 34px !important;
@@ -451,7 +451,8 @@
   transition:
     background-color 0.16s ease,
     border-color 0.16s ease,
-    color 0.16s ease !important;
+    color 0.16s ease,
+    box-shadow 0.16s ease !important;
 }
 
 .n-button::before,
@@ -556,24 +557,45 @@
   color: currentColor !important;
 }
 
-/* Primary 默认跟随系统主题变量，纯色扁平 */
+/* Primary：纯色扁平，悬停叠半透明白层，无投影浮起 */
 .n-button--primary-type {
   border: 1px solid var(--button-primary-border) !important;
-  border-radius: 3px !important;
+  border-radius: 2px !important;
   background: var(--button-primary-bg) !important;
+  background-image: none !important;
+  box-shadow: none !important;
   color: #fff !important;
   font-weight: 500 !important;
   text-shadow: none;
 }
 
 .n-button--primary-type:hover:not(:disabled) {
-  background: var(--button-primary-bg-hover) !important;
-  box-shadow: var(--button-primary-shadow-hover) !important;
+  background: var(--button-primary-bg) !important;
+  background-image: none !important;
+  box-shadow: inset 0 0 0 100vmax rgb(255 255 255 / 18%) !important;
 }
 
 .n-button--primary-type:active:not(:disabled) {
-  background: var(--button-primary-bg-active) !important;
-  box-shadow: var(--button-primary-shadow-active) !important;
+  background: var(--button-primary-bg) !important;
+  background-image: none !important;
+  box-shadow: inset 0 0 0 100vmax rgb(255 255 255 / 28%) !important;
+}
+
+.n-button--primary-type .n-button__border,
+.n-button--primary-type:hover:not(:disabled) .n-button__border,
+.n-button--primary-type:active:not(:disabled) .n-button__border,
+.n-button--primary-type:focus:not(:disabled) .n-button__border {
+  border: 1px solid var(--button-primary-border) !important;
+}
+
+.n-button--primary-type .n-button__state-border {
+  border: 1px solid transparent !important;
+}
+
+.n-button--primary-type:hover:not(:disabled) .n-button__state-border,
+.n-button--primary-type:focus:not(:disabled) .n-button__state-border,
+.n-button--primary-type:active:not(:disabled) .n-button__state-border {
+  border: 1px solid var(--button-primary-border) !important;
 }
 
 .n-button--primary-type .n-button__content,

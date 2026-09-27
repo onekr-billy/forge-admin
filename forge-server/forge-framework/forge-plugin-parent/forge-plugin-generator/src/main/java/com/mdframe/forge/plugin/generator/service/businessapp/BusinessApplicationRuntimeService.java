@@ -22,6 +22,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import com.mdframe.forge.starter.core.enums.EnableStatus;
 
@@ -31,19 +32,25 @@ import com.mdframe.forge.starter.core.enums.EnableStatus;
 public class BusinessApplicationRuntimeService {
 
     private static final Pattern LEGACY_PAGE_ID_UNSAFE = Pattern.compile("[^a-z0-9_]+");
+    /** render overlay / print 同请求或短时连点会重复 runtimeById；按发布版本短缓存。 */
+    private static final long RUNTIME_CACHE_TTL_MS = 30_000L;
+    private static final int RUNTIME_CACHE_MAX = 64;
 
     private final BusinessApplicationService applicationService;
     private final BusinessApplicationVersionService versionService;
     private final BusinessApplicationSnapshotService snapshotService;
     private final ObjectMapper objectMapper;
+    private final ConcurrentHashMap<String, CachedRuntime> runtimeCache = new ConcurrentHashMap<>();
+    /** applicationId → 发布版本缓存，避免同请求 overlay/print 各打一次 detail。 */
+    private final ConcurrentHashMap<String, CachedRuntime> runtimeByAppIdCache = new ConcurrentHashMap<>();
 
     public BusinessApplicationRuntimeVO runtimeByCode(String applicationCode) {
         BusinessApplicationVO current = applicationService.detailByCode(applicationCode);
-        return runtime(current);
+        return runtimeCached(current);
     }
 
     public BusinessApplicationRuntimeVO runtimeByCodeOrSlug(String identifier) {
-        return runtime(applicationService.detailByPublishedCodeOrSlug(identifier));
+        return runtimeCached(applicationService.detailByPublishedCodeOrSlug(identifier));
     }
 
     /**
@@ -53,7 +60,7 @@ public class BusinessApplicationRuntimeService {
         List<BusinessApplicationVO> result = new ArrayList<>();
         for (BusinessApplicationVO candidate : applicationService.workbenchDistributionCandidates()) {
             try {
-                BusinessApplicationRuntimeVO runtime = runtime(candidate);
+                BusinessApplicationRuntimeVO runtime = runtimeCached(candidate);
                 if (hasReachableHomePage(runtime)
                         && applicationService.isCurrentUserDistributedToWorkbench(
                                 runtime.getApplication().getPortalConfig())) {
@@ -70,7 +77,77 @@ public class BusinessApplicationRuntimeService {
      * 按应用主键读取正式运行快照，供带应用入口上下文的低代码运行配置叠加使用。
      */
     public BusinessApplicationRuntimeVO runtimeById(Long applicationId) {
-        return runtime(applicationService.detail(applicationId));
+        if (applicationId == null) {
+            return runtime(null);
+        }
+        long now = System.currentTimeMillis();
+        String appKey = resolveTenantId() + ":id:" + applicationId;
+        CachedRuntime softHit = runtimeByAppIdCache.get(appKey);
+        if (softHit != null && softHit.expiresAtMs > now) {
+            return softHit.value;
+        }
+        return runtimeCached(applicationService.detail(applicationId));
+    }
+
+    /** 发布后主动失效，避免短 TTL 内仍读到旧快照。 */
+    public void invalidateRuntimeCache(Long applicationId) {
+        if (applicationId == null) {
+            return;
+        }
+        Long tenantId = resolveTenantId();
+        String prefix = tenantId + ":" + applicationId + ":";
+        runtimeCache.keySet().removeIf(key -> key.startsWith(prefix));
+        runtimeByAppIdCache.remove(tenantId + ":id:" + applicationId);
+    }
+
+    private BusinessApplicationRuntimeVO runtimeCached(BusinessApplicationVO current) {
+        if (current == null || current.getId() == null) {
+            return runtime(current);
+        }
+        Integer versionNo = current.getLastPublishVersion();
+        if (versionNo == null) {
+            return runtime(current);
+        }
+        String cacheKey = resolveTenantId() + ":" + current.getId() + ":" + versionNo;
+        long now = System.currentTimeMillis();
+        CachedRuntime hit = runtimeCache.get(cacheKey);
+        if (hit != null && hit.expiresAtMs > now) {
+            runtimeByAppIdCache.put(resolveTenantId() + ":id:" + current.getId(), hit);
+            return hit.value;
+        }
+        BusinessApplicationRuntimeVO value = runtime(current);
+        CachedRuntime cached = new CachedRuntime(value, now + RUNTIME_CACHE_TTL_MS);
+        runtimeCache.put(cacheKey, cached);
+        runtimeByAppIdCache.put(resolveTenantId() + ":id:" + current.getId(), cached);
+        trimRuntimeCache(now);
+        return value;
+    }
+
+    private void trimRuntimeCache(long now) {
+        if (runtimeCache.size() <= RUNTIME_CACHE_MAX) {
+            runtimeCache.entrySet().removeIf(entry -> entry.getValue().expiresAtMs <= now);
+            return;
+        }
+        runtimeCache.entrySet().removeIf(entry -> entry.getValue().expiresAtMs <= now);
+        if (runtimeCache.size() <= RUNTIME_CACHE_MAX) {
+            return;
+        }
+        runtimeCache.keySet().stream()
+                .limit(Math.max(1, runtimeCache.size() - RUNTIME_CACHE_MAX))
+                .toList()
+                .forEach(runtimeCache::remove);
+    }
+
+    private Long resolveTenantId() {
+        try {
+            Long tenantId = SessionHelper.getTenantId();
+            return tenantId == null ? 1L : tenantId;
+        } catch (Exception ignored) {
+            return 1L;
+        }
+    }
+
+    private record CachedRuntime(BusinessApplicationRuntimeVO value, long expiresAtMs) {
     }
 
     private BusinessApplicationRuntimeVO runtime(BusinessApplicationVO current) {

@@ -1,1036 +1,165 @@
 <template>
-  <section class="online-test-panel">
-    <div class="panel-heading">
-      <div>
-        <h3>测试配置</h3>
-        <p>使用所选客户端的真实认证方式调用开放网关，结果可下载后交给外围系统联调。</p>
-      </div>
-      <n-space>
-        <n-button size="small" :disabled="!guide" @click="downloadIntegrationExample">
-          <template #icon>
-            <i class="i-material-symbols:download-rounded" />
-          </template>
-          下载接入示例
-        </n-button>
-        <n-button size="small" :disabled="!testReport" @click="downloadTestReport">
-          <template #icon>
-            <i class="i-material-symbols:receipt-long-outline-rounded" />
-          </template>
-          下载测试报文
-        </n-button>
-      </n-space>
-    </div>
-
-    <n-alert :type="credentialAutoFilled ? 'success' : 'warning'" :show-icon="true" class="security-alert">
-      <template #header>
-        {{ credentialAutoFilled ? '已带入本次浏览器会话中的一次性凭据' : '需要准备客户端凭据' }}
-      </template>
-      {{ credentialAutoFilled
-        ? '凭据只保存在当前页面内存，刷新浏览器后会清空；下载内容会自动脱敏。'
-        : 'Client Secret、Signing Key 和用户断言私钥无法从服务端反查。请到“客户端工作台 → 概览与凭据”创建或轮换，保存后返回本页会自动带入。' }}
-      <n-button v-if="!credentialAutoFilled" text type="primary" @click="goClientWorkbench">
-        去客户端工作台
+  <section class="test-workspace">
+    <div v-if="!guide?.ready" class="not-ready">
+      <h3>当前还不能发起测试</h3><p>先处理接入检查中的阻断项，再回来准备凭据和参数。</p><n-button type="primary" secondary @click="emit('prepare')">
+        返回接入检查
       </n-button>
-    </n-alert>
-
-    <n-alert
-      v-if="guide?.requestNotes?.length"
-      type="info"
-      :show-icon="true"
-      class="request-note-alert"
-    >
-      <template #header>
-        填写请求前先确认
-      </template>
-      <ul class="request-note-list">
-        <li v-for="note in guide.requestNotes" :key="note">
-          {{ note }}
+    </div>
+    <template v-else>
+      <ol class="test-progress" aria-label="测试进度">
+        <li v-for="(item, index) in stages" :key="item.key" :class="{ active: stage === item.key }" :aria-current="stage === item.key ? 'step' : undefined">
+          <span>{{ index + 1 }}</span>{{ item.label }}
         </li>
-      </ul>
-    </n-alert>
-
-    <div class="test-form-grid">
-      <div class="test-field">
-        <span class="field-label">认证方式</span>
-        <n-select
-          v-model:value="authMode"
-          :options="authOptions"
-          placeholder="请选择认证方式"
-          :disabled="!guide?.ready"
-        />
+      </ol>
+      <div class="test-context">
+        {{ guide.clientName }} · v{{ guide.version }}<span>{{ guide.behavior === 'READ_ONLY' ? '只读调用' : '真实业务操作' }}</span>
       </div>
-      <div class="test-field">
-        <span class="field-label">{{ credentialLabel }}</span>
-        <n-input
-          v-model:value="credential"
-          type="password"
-          show-password-on="click"
-          :placeholder="credentialPlaceholder"
-          :disabled="!authMode"
-          autocomplete="new-password"
-        />
-      </div>
-      <div v-if="requiresSubjectToken" class="test-field test-field-wide">
-        <span class="field-label">真实用户身份来源</span>
-        <n-radio-group v-model:value="subjectTokenMode" type="button" size="small">
-          <n-radio-button value="OIDC">
-            受信 OIDC JWT
-          </n-radio-button>
-          <n-radio-button v-if="guide?.userAssertionEnabled" value="USER_ASSERTION">
-            客户端签名用户断言
-          </n-radio-button>
-        </n-radio-group>
-      </div>
-      <div v-if="requiresSubjectToken && subjectTokenMode === 'OIDC'" class="test-field test-field-wide">
-        <span class="field-label">受信 OIDC subject_token</span>
-        <n-input
-          v-model:value="subjectToken"
-          type="password"
-          show-password-on="click"
-          placeholder="粘贴外围用户的受信 OIDC JWT，仅本次测试使用"
-          autocomplete="off"
-        />
-      </div>
-      <template v-if="requiresSubjectToken && subjectTokenMode === 'USER_ASSERTION'">
-        <div class="test-field">
-          <span class="field-label">外围用户标识（JWT sub）</span>
-          <n-input
-            v-model:value="userAssertionSubject"
-            maxlength="512"
-            placeholder="必须已在客户端页面预绑定"
-            autocomplete="off"
-          />
-        </div>
-        <div v-if="guide?.userAssertionMappingMode === 'VERIFIED_PHONE'" class="test-field">
-          <span class="field-label">已验证手机号（JWT phone_number）</span>
-          <n-input
-            v-model:value="userAssertionPhone"
-            placeholder="首次调用用于租户内唯一匹配，后续复用已固化映射"
-            autocomplete="off"
-          />
-        </div>
-        <div class="test-field">
-          <span class="field-label">Forge 组织 ID（可选）</span>
-          <n-input
-            v-model:value="userAssertionOrgId"
-            placeholder="不填则使用该用户默认组织"
-            autocomplete="off"
-          />
-        </div>
-        <div class="test-field test-field-wide">
-          <span class="field-label">用户断言私钥（PKCS#8 PEM，仅本次测试）</span>
-          <n-input
-            v-model:value="userAssertionPrivateKey"
-            type="textarea"
-            :autosize="{ minRows: 6, maxRows: 10 }"
-            placeholder="粘贴生成密钥时一次性保存的 -----BEGIN PRIVATE KEY----- PEM"
-            autocomplete="off"
-            class="private-key-input"
-          />
-          <div class="assertion-protocol-hint">
-            kid {{ guide.userAssertionKeyId }} · iss {{ guide.userAssertionIssuer }} · aud {{ guide.userAssertionAudience }}
-          </div>
-        </div>
-      </template>
-      <div class="test-field test-field-wide">
-        <div class="body-label-line">
-          <span class="field-label">请求 Body（JSON 对象）</span>
-          <n-button text type="primary" size="tiny" @click="resetBody">
-            恢复示例
+      <fieldset :disabled="testing || confirming" class="test-fields">
+        <CapabilityTestIdentity v-if="stage === 'identity'" :auth-options="authOptions" :credential-label="credentialLabel" :credential-placeholder="credentialPlaceholder" :requires-subject-token="requiresSubjectToken" @manage="emit('manage')" />
+        <CapabilityTestRequest v-else-if="stage === 'request'" @reset="resetBody" />
+        <CapabilityTestResult v-else-if="testReport" @download="downloadTestReport" />
+      </fieldset>
+      <n-alert v-if="inputError" type="error" class="input-error" role="alert">
+        {{ inputError }}
+      </n-alert>
+      <div class="test-actions">
+        <template v-if="stage === 'identity'">
+          <span>密钥只用于本次测试，不会写入接入配置。</span>
+          <n-button type="primary" @click="continueToRequest">
+            下一步：填写参数
           </n-button>
-        </div>
-        <n-input
-          v-model:value="requestBody"
-          type="textarea"
-          :autosize="{ minRows: 7, maxRows: 16 }"
-          placeholder="请输入合法的 JSON 对象"
-          class="json-input"
-        />
-      </div>
-    </div>
-
-    <div class="test-actions">
-      <n-alert v-if="!guide?.ready" type="error" :show-icon="true">
-        当前存在调用阻断，请先处理上方“调用前检查”中的红色项目。
-      </n-alert>
-      <n-button
-        type="primary"
-        :loading="testing"
-        :disabled="!guide?.ready || !authMode"
-        @click="handleTest"
-      >
-        <template #icon>
-          <i class="i-material-symbols:play-arrow-rounded" />
         </template>
-        发起真实调用
-      </n-button>
-    </div>
-
-    <div v-if="testReport" class="test-result">
-      <div class="result-summary">
-        <div>
-          <strong>测试结果</strong>
-          <span>{{ testReport.startedAt }} · {{ testReport.durationMs }} ms</span>
-        </div>
-        <n-tag :type="testReport.success ? 'success' : 'error'" round>
-          {{ testReport.success ? '调用成功' : '调用失败' }}
-        </n-tag>
+        <template v-else-if="stage === 'request'">
+          <n-button :disabled="testing || confirming" @click="stage = 'identity'; inputError = ''">
+            上一步
+          </n-button>
+          <span>{{ testing ? '正在请求，请勿重复提交；关闭页面不代表撤销已发送的业务。' : guide.behavior === 'READ_ONLY' ? '将通过真实网关读取数据。' : '将真实执行业务操作，提交前会再次确认。' }}</span>
+          <n-button type="primary" :loading="testing" :disabled="confirming" @click="handleTest">
+            确认并调用
+          </n-button>
+        </template>
+        <template v-else>
+          <n-button @click="stage = 'request'; inputError = ''">
+            返回参数
+          </n-button><span>不会自动重试。写操作失败时请先核对业务记录和调用日志。</span>
+          <n-button @click="downloadIntegrationExample">
+            导出接入示例
+          </n-button>
+        </template>
       </div>
-      <n-alert v-if="testReport.error" type="error" :show-icon="true" class="result-error">
-        {{ testReport.error }}
-      </n-alert>
-      <n-tabs type="line" animated>
-        <n-tab-pane v-if="testReport.tokenExchange" name="token" tab="Token 报文">
-          <pre class="report-panel"><code>{{ exchangeText(testReport.tokenExchange) }}</code></pre>
-        </n-tab-pane>
-        <n-tab-pane name="invoke" tab="能力调用报文">
-          <pre class="report-panel"><code>{{ exchangeText(testReport.invocation) }}</code></pre>
-        </n-tab-pane>
-      </n-tabs>
-    </div>
+    </template>
   </section>
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import { getCapabilityCredential } from '../capabilityCredentialSession'
+import CapabilityTestIdentity from './CapabilityTestIdentity.vue'
+import CapabilityTestRequest from './CapabilityTestRequest.vue'
+import CapabilityTestResult from './CapabilityTestResult.vue'
+import { useCapabilityOnlineTest } from './useCapabilityOnlineTest'
 
-const props = defineProps({
-  guide: {
-    type: Object,
-    default: null,
-  },
-})
-const router = useRouter()
-
-const authMode = ref(null)
-const credential = ref('')
-const subjectTokenMode = ref('OIDC')
-const subjectToken = ref('')
-const userAssertionSubject = ref('')
-const userAssertionPhone = ref('')
-const userAssertionOrgId = ref('')
-const userAssertionPrivateKey = ref('')
-const requestBody = ref('{}')
-const testing = ref(false)
-const testReport = ref(null)
-const credentialAutoFilled = ref(false)
-
-const authOptions = computed(() => (props.guide?.availableAuthModes || []).map(mode => ({
-  label: mode === 'OAUTH' ? 'OAuth 2.1' : 'AppId + HMAC-SHA256',
-  value: mode,
-})))
-
-const requiresSubjectToken = computed(() => (
-  authMode.value === 'OAUTH' && props.guide?.tokenExchangeRequired
-))
-
-const credentialLabel = computed(() => (
-  authMode.value === 'HMAC' ? '签名密钥 Signing Key' : 'OAuth Client Secret'
-))
-
-const credentialPlaceholder = computed(() => (
-  authMode.value === 'HMAC'
-    ? '粘贴创建或轮换客户端时保存的签名密钥'
-    : '粘贴创建或轮换客户端时保存的 Client Secret'
-))
-
-watch(() => props.guide, (guide) => {
-  authMode.value = guide?.availableAuthModes?.[0] || null
-  subjectTokenMode.value = guide?.userAssertionEnabled ? 'USER_ASSERTION' : 'OIDC'
-  subjectToken.value = ''
-  userAssertionSubject.value = ''
-  userAssertionPhone.value = ''
-  userAssertionOrgId.value = ''
-  userAssertionPrivateKey.value = ''
-  testReport.value = null
-  resetBody()
-  applySessionCredential(guide)
-}, { immediate: true })
-
-watch(authMode, () => {
-  subjectTokenMode.value = props.guide?.userAssertionEnabled ? 'USER_ASSERTION' : 'OIDC'
-  subjectToken.value = ''
-  userAssertionSubject.value = ''
-  userAssertionPhone.value = ''
-  userAssertionOrgId.value = ''
-  userAssertionPrivateKey.value = ''
-  testReport.value = null
-  applySessionCredential(props.guide)
-})
-
-watch(subjectTokenMode, () => {
-  subjectToken.value = ''
-  userAssertionSubject.value = ''
-  userAssertionPhone.value = ''
-  userAssertionOrgId.value = ''
-  userAssertionPrivateKey.value = ''
-  testReport.value = null
-  applySessionCredential(props.guide)
-})
-
-function resetBody() {
-  requestBody.value = JSON.stringify(props.guide?.requestExample || {}, null, 2)
-}
-
-function handleTest() {
-  if (!validateTestInput())
-    return
-  if (props.guide.behavior === 'READ_ONLY') {
-    executeTest()
-    return
-  }
-  window.$dialog.warning({
-    title: '确认执行有副作用的能力',
-    content: '该能力可能启动流程、修改业务数据或触发外部动作。本次测试会真实执行，并自动携带一次性 Idempotency-Key。是否继续？',
-    positiveText: '确认执行',
-    negativeText: '取消',
-    onPositiveClick: executeTest,
-  })
-}
-
-function validateTestInput() {
-  if (!props.guide?.ready) {
-    window.$message.error('当前调用条件未就绪，请先处理阻断项')
-    return false
-  }
-  if (!credential.value.trim()) {
-    window.$message.error(`请输入${credentialLabel.value}`)
-    return false
-  }
-  if (requiresSubjectToken.value) {
-    if (subjectTokenMode.value === 'OIDC' && !subjectToken.value.trim()) {
-      window.$message.error('请提供受信 OIDC subject_token')
-      return false
-    }
-    if (subjectTokenMode.value === 'USER_ASSERTION') {
-      if (!props.guide?.userAssertionEnabled || !props.guide?.userAssertionKeyId) {
-        window.$message.error('当前客户端尚未启用用户断言密钥')
-        return false
-      }
-      if (!userAssertionSubject.value.trim()) {
-        window.$message.error('请输入已预绑定的外围用户标识')
-        return false
-      }
-      if (props.guide?.userAssertionMappingMode === 'VERIFIED_PHONE'
-        && userAssertionPhone.value.trim()
-        && !/^\+?\d{6,20}$/.test(userAssertionPhone.value.trim())) {
-        window.$message.error('手机号必须为 6 至 20 位数字，可带国际区号 +')
-        return false
-      }
-      if (!userAssertionPrivateKey.value.includes('-----BEGIN PRIVATE KEY-----')) {
-        window.$message.error('请粘贴有效的 PKCS#8 PEM 私钥')
-        return false
-      }
-      if (userAssertionOrgId.value.trim() && !/^[1-9]\d*$/.test(userAssertionOrgId.value.trim())) {
-        window.$message.error('Forge 组织 ID 必须是正整数')
-        return false
-      }
-    }
-  }
-  try {
-    const payload = JSON.parse(requestBody.value)
-    if (!payload || Array.isArray(payload) || typeof payload !== 'object')
-      throw new Error('请求 Body 必须是 JSON 对象')
-    if (props.guide?.sourceType === 'FLOW_ACTION')
-      validateFlowActionPayload(payload)
-  }
-  catch (error) {
-    window.$message.error(error?.message || '请求 Body 不是合法 JSON')
-    return false
-  }
-  return true
-}
-
-function validateFlowActionPayload(payload) {
-  if (props.guide?.actionCode === 'SUBMIT') {
-    const data = payload.data
-    if (!data || Array.isArray(data) || typeof data !== 'object')
-      throw new Error('SUBMIT 的 data 必须是包含申请字段的 JSON 对象')
-    if ('recordId' in payload)
-      throw new Error('SUBMIT 会自动创建业务记录，请不要传 recordId')
-    return
-  }
-  if (typeof payload.recordId !== 'string' || !/^[1-9]\d{0,18}$/.test(payload.recordId.trim())) {
-    throw new Error('recordId 必须替换为已经保存、且当前委托用户可见的真实记录 ID')
-  }
-  if (props.guide?.actionCode === 'START') {
-    const argumentsValue = payload.arguments
-    if (!argumentsValue || Array.isArray(argumentsValue) || typeof argumentsValue !== 'object')
-      throw new Error('arguments 必须是 JSON 对象')
-    if (Object.keys(argumentsValue).length)
-      throw new Error('START 的 arguments 必须保持为空对象 {}')
-  }
-}
-
-async function executeTest() {
-  testing.value = true
-  testReport.value = null
-  const startedAt = new Date()
-  try {
-    const report = authMode.value === 'HMAC'
-      ? await executeHmac()
-      : await executeOAuth()
-    testReport.value = {
-      ...report,
-      authMode: authMode.value,
-      userIdentityMode: requiresSubjectToken.value ? subjectTokenMode.value : null,
-      capabilityCode: props.guide.capabilityCode,
-      clientId: props.guide.clientId,
-      startedAt: formatDate(startedAt),
-      durationMs: Date.now() - startedAt.getTime(),
-    }
-    if (testReport.value.success)
-      window.$message.success('能力调用成功，可以下载完整测试报文')
-    else
-      window.$message.error(testReport.value.error || '能力调用失败，请查看返回报文和 requestId')
-  }
-  catch (error) {
-    testReport.value = {
-      success: false,
-      error: error?.message || '网络请求失败',
-      authMode: authMode.value,
-      userIdentityMode: requiresSubjectToken.value ? subjectTokenMode.value : null,
-      capabilityCode: props.guide.capabilityCode,
-      clientId: props.guide.clientId,
-      startedAt: formatDate(startedAt),
-      durationMs: Date.now() - startedAt.getTime(),
-      tokenExchange: null,
-      invocation: null,
-    }
-    window.$message.error(testReport.value.error)
-  }
-  finally {
-    testing.value = false
-  }
-}
-
-async function executeOAuth() {
-  const params = new URLSearchParams()
-  params.set('grant_type', props.guide.tokenExchangeRequired
-    ? 'urn:ietf:params:oauth:grant-type:token-exchange'
-    : 'client_credentials')
-  if (props.guide.tokenExchangeRequired) {
-    const clientAssertion = subjectTokenMode.value === 'USER_ASSERTION'
-    params.set('subject_token', clientAssertion
-      ? await createUserAssertionJwt()
-      : subjectToken.value.trim())
-    params.set('subject_token_type', clientAssertion
-      ? props.guide.userAssertionSubjectTokenType
-      : 'urn:ietf:params:oauth:token-type:jwt')
-    params.set('requested_token_type', 'urn:ietf:params:oauth:token-type:access_token')
-  }
-  params.set('resource', props.guide.openapiResource)
-  params.set('scope', `capability:invoke:${props.guide.capabilityCode}`)
-
-  const tokenStartedAt = Date.now()
-  const tokenResponse = await fetch(backendProxyUrl(props.guide.tokenUrl), {
-    method: 'POST',
-    credentials: 'omit',
-    headers: {
-      'Authorization': `Basic ${basicCredentials(props.guide.clientId, credential.value)}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: params.toString(),
-  })
-  const tokenText = await tokenResponse.text()
-  const tokenPayload = parseBody(tokenText)
-  const tokenExchange = exchangeReport(
-    {
-      method: 'POST',
-      url: props.guide.tokenUrl,
-      headers: {
-        'Authorization': 'Basic <REDACTED>',
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: redactTokenForm(params),
-      rawBody: redactTokenFormString(params),
-    },
-    tokenResponse,
-    redactSensitive(tokenPayload),
-    Date.now() - tokenStartedAt,
-  )
-  const accessToken = tokenPayload?.access_token
-  if (!tokenResponse.ok || !accessToken) {
-    return {
-      success: false,
-      error: `获取访问令牌失败，HTTP ${tokenResponse.status}`,
-      tokenExchange,
-      invocation: null,
-    }
-  }
-
-  const invocation = await invokeGateway({
-    'Authorization': `Bearer ${accessToken}`,
-    'Content-Type': 'application/json',
-  }, {
-    'Authorization': 'Bearer <REDACTED>',
-    'Content-Type': 'application/json',
-  })
-  const success = invocation.response.status >= 200 && invocation.response.status < 300
-  return {
-    success,
-    error: success ? null : gatewayErrorMessage(invocation),
-    tokenExchange,
-    invocation,
-  }
-}
-
-async function createUserAssertionJwt() {
-  if (!globalThis.crypto?.subtle)
-    throw new Error('当前浏览器环境不支持 RSA 签名，请使用 HTTPS 或 localhost')
-  const issuedAt = Math.floor(Date.now() / 1000)
-  const configuredTtl = Number(props.guide?.userAssertionMaxTtlSeconds || 120)
-  const ttlSeconds = Math.min(120, Math.max(30, configuredTtl))
-  const claims = {
-    iss: props.guide.userAssertionIssuer,
-    aud: props.guide.userAssertionAudience,
-    client_id: String(props.guide.clientId),
-    sub: userAssertionSubject.value.trim(),
-    iat: issuedAt,
-    exp: issuedAt + ttlSeconds,
-    jti: globalThis.crypto.randomUUID?.() || fallbackNonce(),
-  }
-  if (props.guide?.userAssertionMappingMode === 'VERIFIED_PHONE'
-    && userAssertionPhone.value.trim()) {
-    claims.phone_number = userAssertionPhone.value.trim()
-  }
-  if (userAssertionOrgId.value.trim())
-    claims.forge_org_id = userAssertionOrgId.value.trim()
-  const header = {
-    alg: 'RS256',
-    typ: 'JWT',
-    kid: props.guide.userAssertionKeyId,
-  }
-  const signingInput = `${base64UrlText(JSON.stringify(header))}.${base64UrlText(JSON.stringify(claims))}`
-  const privateKey = await globalThis.crypto.subtle.importKey(
-    'pkcs8',
-    pemPrivateKeyBytes(userAssertionPrivateKey.value),
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  )
-  const signature = await globalThis.crypto.subtle.sign(
-    'RSASSA-PKCS1-v1_5',
-    privateKey,
-    new TextEncoder().encode(signingInput),
-  )
-  return `${signingInput}.${base64UrlBytes(signature)}`
-}
-
-async function executeHmac() {
-  if (!globalThis.crypto?.subtle)
-    throw new Error('当前浏览器环境不支持 Web Crypto，请使用 HTTPS 或 localhost')
-  const timestamp = String(Date.now())
-  const nonce = globalThis.crypto.randomUUID?.() || fallbackNonce()
-  const bodyHash = await sha256Hex(requestBody.value)
-  const path = new URL(props.guide.invokeUrl).pathname
-  const canonical = [
-    String(props.guide.clientId),
-    timestamp,
-    nonce,
-    'POST',
-    path,
-    bodyHash,
-  ].join('\n')
-  const signature = await hmacSha256Hex(credential.value, canonical)
-  const invocation = await invokeGateway({
-    'X-Forge-App-Id': String(props.guide.clientId),
-    'X-Forge-Timestamp': timestamp,
-    'X-Forge-Nonce': nonce,
-    'X-Forge-Signature': signature,
-    'Content-Type': 'application/json',
-  }, {
-    'X-Forge-App-Id': String(props.guide.clientId),
-    'X-Forge-Timestamp': timestamp,
-    'X-Forge-Nonce': nonce,
-    'X-Forge-Signature': '<REDACTED>',
-    'Content-Type': 'application/json',
-  })
-  const success = invocation.response.status >= 200 && invocation.response.status < 300
-  return {
-    success,
-    error: success ? null : gatewayErrorMessage(invocation),
-    tokenExchange: null,
-    invocation,
-  }
-}
-
-async function invokeGateway(actualHeaders, reportHeaders) {
-  const idempotencyKey = props.guide.behavior === 'READ_ONLY'
-    ? null
-    : (globalThis.crypto?.randomUUID?.() || fallbackNonce())
-  const requestHeaders = { ...actualHeaders }
-  const safeHeaders = { ...reportHeaders }
-  if (idempotencyKey) {
-    requestHeaders['Idempotency-Key'] = idempotencyKey
-    safeHeaders['Idempotency-Key'] = idempotencyKey
-  }
-  const startedAt = Date.now()
-  const response = await fetch(backendProxyUrl(props.guide.invokeUrl), {
-    method: 'POST',
-    credentials: 'omit',
-    headers: requestHeaders,
-    body: requestBody.value,
-  })
-  const responseText = await response.text()
-  const report = exchangeReport({
-    method: 'POST',
-    url: props.guide.invokeUrl,
-    headers: safeHeaders,
-    body: JSON.parse(requestBody.value),
-    rawBody: requestBody.value,
-  }, response, redactSensitive(parseBody(responseText)), Date.now() - startedAt)
-  report.success = response.ok
-  return report
-}
-
-function exchangeReport(request, response, body, durationMs) {
-  return {
-    request,
-    response: {
-      status: response.status,
-      statusText: response.statusText,
-      headers: redactHeaders(response.headers),
-      body,
-      rawBody: typeof body === 'string' ? body : JSON.stringify(body),
-    },
-    durationMs,
-  }
-}
-
-function gatewayErrorMessage(invocation) {
-  const status = invocation?.response?.status
-  const body = invocation?.response?.body
-  const code = body && typeof body === 'object' ? body.code : null
-  const message = body && typeof body === 'object' ? body.message : null
-  if (message)
-    return `${message}${code ? `（${code}）` : ''}`
-  return `能力调用失败，HTTP ${status || '-'}`
-}
-
-function redactTokenForm(params) {
-  const safe = {}
-  for (const [key, value] of params.entries())
-    safe[key] = key === 'subject_token' ? '<REDACTED>' : value
-  return safe
-}
-
-function redactTokenFormString(params) {
-  const safe = new URLSearchParams(params)
-  if (safe.has('subject_token'))
-    safe.set('subject_token', '<REDACTED>')
-  return safe.toString()
-}
-
-function redactSensitive(value) {
-  if (Array.isArray(value))
-    return value.map(redactSensitive)
-  if (!value || typeof value !== 'object')
-    return value
-  return Object.fromEntries(Object.entries(value).map(([key, item]) => [
-    key,
-    /(authorization|token|secret|password|signing.?key|signature)/i.test(key)
-      ? '<REDACTED>'
-      : redactSensitive(item),
-  ]))
-}
-
-function redactHeaders(headers) {
-  const result = {}
-  headers.forEach((value, key) => {
-    result[key] = /(authorization|cookie|token|secret|signature)/i.test(key)
-      ? '<REDACTED>'
-      : value
-  })
-  return result
-}
-
-function parseBody(text) {
-  if (!text)
-    return null
-  try {
-    return JSON.parse(text)
-  }
-  catch {
-    return text
-  }
-}
-
-function backendProxyUrl(absoluteUrl) {
-  const parsed = new URL(absoluteUrl, window.location.origin)
-  const prefix = String(import.meta.env.VITE_REQUEST_PREFIX || '').replace(/\/$/, '')
-  return `${prefix}${parsed.pathname}${parsed.search}`
-}
-
-function basicCredentials(clientId, secret) {
-  const bytes = new TextEncoder().encode(`${clientId}:${secret}`)
-  let binary = ''
-  for (const byte of bytes)
-    binary += String.fromCharCode(byte)
-  return btoa(binary)
-}
-
-function pemPrivateKeyBytes(pem) {
-  const normalized = pem
-    .replace('-----BEGIN PRIVATE KEY-----', '')
-    .replace('-----END PRIVATE KEY-----', '')
-    .replace(/\s/g, '')
-  let binary
-  try {
-    binary = atob(normalized)
-  }
-  catch {
-    throw new Error('用户断言私钥不是有效的 PKCS#8 PEM')
-  }
-  const bytes = new Uint8Array(binary.length)
-  for (let index = 0; index < binary.length; index += 1)
-    bytes[index] = binary.charCodeAt(index)
-  return bytes.buffer
-}
-
-function base64UrlText(value) {
-  return base64UrlBytes(new TextEncoder().encode(value))
-}
-
-function base64UrlBytes(value) {
-  const bytes = value instanceof Uint8Array ? value : new Uint8Array(value)
-  let binary = ''
-  for (const byte of bytes)
-    binary += String.fromCharCode(byte)
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
-
-async function sha256Hex(value) {
-  const digest = await globalThis.crypto.subtle.digest(
-    'SHA-256',
-    new TextEncoder().encode(value),
-  )
-  return bytesToHex(digest)
-}
-
-async function hmacSha256Hex(key, value) {
-  const cryptoKey = await globalThis.crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(key),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  )
-  const signature = await globalThis.crypto.subtle.sign(
-    'HMAC',
-    cryptoKey,
-    new TextEncoder().encode(value),
-  )
-  return bytesToHex(signature)
-}
-
-function bytesToHex(buffer) {
-  return [...new Uint8Array(buffer)]
-    .map(value => value.toString(16).padStart(2, '0'))
-    .join('')
-}
-
-function fallbackNonce() {
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`
-}
-
-function exchangeText(exchange) {
-  return exchange ? JSON.stringify(exchange, null, 2) : '未发起请求'
-}
-
-function applySessionCredential(guide) {
-  const session = getCapabilityCredential(guide?.clientId)
-  const nextCredential = authMode.value === 'HMAC'
-    ? session?.signingKey
-    : session?.clientSecret
-  credential.value = nextCredential || ''
-  userAssertionPrivateKey.value = session?.privateKeyPem || ''
-  const needsPrivateKey = authMode.value === 'OAUTH'
-    && guide?.tokenExchangeRequired
-    && subjectTokenMode.value === 'USER_ASSERTION'
-  credentialAutoFilled.value = !!nextCredential
-    && (!needsPrivateKey || !!session?.privateKeyPem)
-}
-
-function goClientWorkbench() {
-  router.push({ path: '/open-platform/capability-client', query: { clientId: props.guide?.clientId } })
-}
-
-function downloadTestReport() {
-  if (!testReport.value)
-    return
-  downloadText(
-    JSON.stringify({
-      securityNotice: '本报文已自动脱敏，不包含 Client Secret、Signing Key、用户断言私钥或可用 Token。',
-      ...testReport.value,
-    }, null, 2),
-    `${fileStem()}-test-report.json`,
-    'application/json;charset=UTF-8',
-  )
-}
-
-function downloadIntegrationExample() {
-  if (!props.guide)
-    return
-  const guide = props.guide
-  const sections = [
-    `# ${guide.capabilityName} 外围系统接入示例`,
-    '',
-    '> 安全提示：示例和测试报文均已脱敏，请从密钥管理系统注入真实凭据。',
-    '',
-    '## 接口信息',
-    '',
-    `- 能力编码：\`${guide.capabilityCode}\``,
-    `- 能力版本：\`${guide.version || '-'}\``,
-    `- 调用地址：\`${guide.invokeUrl}\``,
-    `- Token 地址：\`${guide.tokenUrl}\``,
-    `- OAuth Resource：\`${guide.openapiResource}\``,
-    `- 客户端 ID / AppId：\`${guide.clientId}\``,
-    `- 用户身份方案：\`${guide.userAssertionEnabled ? '客户端 RS256 用户断言' : '受信 OIDC JWT'}\``,
-    ...(guide.userAssertionEnabled
-      ? [
-          `- 用户断言 kid：\`${guide.userAssertionKeyId}\``,
-          `- 用户断言 Issuer：\`${guide.userAssertionIssuer}\``,
-          `- 用户断言 Audience：\`${guide.userAssertionAudience}\``,
-          `- Subject Token Type：\`${guide.userAssertionSubjectTokenType}\``,
-        ]
-      : []),
-    ...(guide.requestNotes?.length
-      ? [
-          '',
-          '## 请求前提',
-          '',
-          ...guide.requestNotes.map(note => `- ${note}`),
-        ]
-      : []),
-    '',
-    '## 请求 Body',
-    '',
-    '```json',
-    JSON.stringify(guide.requestExample || {}, null, 2),
-    '```',
-  ]
-  appendFieldTable(sections, '请求参数', guide.requestFields)
-  appendFieldTable(sections, '返回参数', guide.responseFields)
-  if (guide.responseNotes?.length) {
-    sections.push('', '### 返回说明', '', ...guide.responseNotes.map(note => `- ${note}`))
-  }
-  if (guide.businessRules?.length) {
-    sections.push('', '## 业务校验', '', ...guide.businessRules.map((rule, index) => `${index + 1}. ${rule}`))
-  }
-  const currentCurl = authMode.value === 'HMAC' ? guide.hmacExample : guide.oauthExample
-  const currentJava = authMode.value === 'HMAC'
-    ? guide.hmacJavaExample
-    : subjectTokenMode.value === 'USER_ASSERTION' && guide.userAssertionJavaExample
-      ? guide.userAssertionJavaExample
-      : guide.oauthJavaExample
-  appendCodeSection(sections, 'Curl 示例', 'bash', currentCurl)
-  appendCodeSection(sections, 'Java 17 示例', 'java', currentJava)
-  if (testReport.value)
-    appendCodeSection(sections, '最近一次测试报文（已脱敏）', 'json', JSON.stringify(testReport.value, null, 2))
-  downloadText(
-    sections.join('\n'),
-    `${fileStem()}-integration-example.md`,
-    'text/markdown;charset=UTF-8',
-  )
-}
-
-function appendFieldTable(sections, title, fields = []) {
-  sections.push('', `## ${title}`, '')
-  if (!fields.length) {
-    sections.push('当前版本未声明字段。')
-    return
-  }
-  sections.push('| 中文名称 | 字段编码 | 类型 | 必填 | 含义与约束 | 示例 |')
-  sections.push('| --- | --- | --- | --- | --- | --- |')
-  fields.forEach((field) => {
-    sections.push(`| ${markdownCell(field.fieldLabel)} | \`${markdownCell(field.fieldCode)}\` | ${markdownCell(field.type)} | ${field.required ? '是' : '否'} | ${markdownCell(field.description)} | ${markdownCell(formatMarkdownExample(field.example))} |`)
-  })
-}
-
-function markdownCell(value) {
-  return String(value ?? '-').replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>')
-}
-
-function formatMarkdownExample(value) {
-  if (value == null)
-    return '-'
-  return typeof value === 'string' ? value : JSON.stringify(value)
-}
-
-function appendCodeSection(sections, title, language, content) {
-  if (!content)
-    return
-  sections.push('', `## ${title}`, '', `\`\`\`${language}`, content, '\`\`\`')
-}
-
-function downloadText(content, filename, type) {
-  const url = URL.createObjectURL(new Blob([content], { type }))
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
-}
-
-function fileStem() {
-  return `${props.guide?.capabilityCode || 'capability'}-${props.guide?.version || 'latest'}`
-}
-
-function formatDate(date) {
-  return new Intl.DateTimeFormat('zh-CN', {
-    dateStyle: 'medium',
-    timeStyle: 'medium',
-    hour12: false,
-  }).format(date)
-}
+const props = defineProps({ guide: { type: Object, default: null } })
+const emit = defineEmits(['prepare', 'manage'])
+const { stage, inputError, testing, confirming, testReport, authOptions, credentialLabel, credentialPlaceholder, requiresSubjectToken, resetBody, continueToRequest, handleTest, downloadTestReport, downloadIntegrationExample } = useCapabilityOnlineTest(props)
+const stages = [{ key: 'identity', label: '准备身份' }, { key: 'request', label: '填写参数' }, { key: 'result', label: '查看结果' }]
 </script>
 
 <style scoped>
-.online-test-panel {
-  padding: 0 0 4px;
+.test-workspace {
+  padding-top: 20px;
+  min-width: 0;
 }
-
-.panel-heading,
-.result-summary,
-.body-label-line,
+.test-progress {
+  list-style: none;
+  display: flex;
+  gap: 26px;
+  padding: 0;
+  margin: 0 0 16px;
+}
+.test-progress li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+.test-progress span {
+  border: 1px solid var(--border-light);
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+.test-progress .active {
+  color: var(--primary-color);
+  font-weight: 500;
+}
+.active span {
+  border-color: var(--primary-color);
+}
+.test-context {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border-light);
+}
+.test-context span {
+  margin-left: 16px;
+}
+.test-fields {
+  border: 0;
+  padding: 20px 0 0;
+  margin: 0;
+  min-width: 0;
+}
+.test-fields:disabled {
+  pointer-events: none;
+  opacity: 0.7;
+}
 .test-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-light);
 }
-
-.panel-heading {
-  align-items: flex-start;
-  margin-bottom: 14px;
-}
-
-.panel-heading h3 {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.panel-heading p {
-  margin: 5px 0 0;
-  color: var(--text-tertiary);
+.test-actions span {
+  flex: 1;
   font-size: 12px;
-}
-
-.security-alert {
-  margin-bottom: 16px;
-}
-
-.request-note-alert {
-  margin-bottom: 16px;
-}
-
-.request-note-list {
-  margin: 0;
-  padding-left: 18px;
-  line-height: 1.8;
-}
-
-.test-form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.test-field-wide {
-  grid-column: 1 / -1;
-}
-
-.field-label {
-  display: block;
-  margin-bottom: 7px;
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-
-.body-label-line .field-label {
-  margin-bottom: 7px;
-}
-
-.json-input :deep(textarea),
-.private-key-input :deep(textarea),
-.report-panel {
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
-}
-
-.assertion-protocol-hint {
-  margin-top: 6px;
+  line-height: 1.6;
   color: var(--text-tertiary);
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
-  font-size: 11px;
-  overflow-wrap: anywhere;
 }
-
-.test-actions {
-  align-items: flex-start;
+.input-error {
   margin-top: 16px;
 }
-
-.test-actions .n-alert {
-  flex: 1;
+.not-ready {
+  padding: 30px 0;
 }
-
-.test-result {
-  margin-top: 20px;
-  padding: 16px;
-  border: 1px solid var(--border-light);
-  border-radius: 8px;
-  background: var(--bg-secondary);
+.not-ready h3 {
+  font-size: 15px;
 }
-
-.result-summary strong,
-.result-summary span {
-  display: block;
-}
-
-.result-summary span {
-  margin-top: 4px;
+.not-ready p {
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: 13px;
 }
-
-.result-error {
-  margin-top: 12px;
-}
-
-.report-panel {
-  max-height: 420px;
-  overflow: auto;
-  margin: 0;
-  padding: 14px;
-  border-radius: 6px;
-  background: #111827;
-  color: #e5e7eb;
-  font-size: 12px;
-  line-height: 1.65;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-@media (max-width: 760px) {
-  .panel-heading,
+@media (max-width: 640px) {
+  .test-progress {
+    gap: 14px;
+  }
+  .test-progress li {
+    gap: 5px;
+    font-size: 12px;
+  }
   .test-actions {
-    flex-direction: column;
-    align-items: stretch;
+    flex-wrap: wrap;
   }
-
-  .test-form-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .test-field-wide {
-    grid-column: auto;
+  .test-actions span {
+    flex-basis: 100%;
+    order: -1;
   }
 }
 </style>

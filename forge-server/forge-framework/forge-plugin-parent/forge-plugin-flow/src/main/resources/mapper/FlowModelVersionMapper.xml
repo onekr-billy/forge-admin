@@ -119,8 +119,12 @@
         WHERE model_id = #{modelId}
           AND tenant_id = #{tenantId}
           AND del_flag = 0
-        ORDER BY version DESC, create_time DESC, id DESC
-        LIMIT 500
+        <!--
+            Keep this lock query free of sorting and row-count clauses.  The tenant and data-scope
+            interceptors re-render SQL with JSqlParser, which moves FOR UPDATE ahead
+            of those clauses and produces invalid MySQL syntax.  The service applies
+            the stable version ordering after this query returns.
+        -->
         FOR UPDATE
     </select>
 </mapper>

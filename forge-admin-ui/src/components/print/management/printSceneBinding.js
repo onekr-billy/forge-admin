@@ -28,18 +28,37 @@ function sameScenes(left, right) {
   return a.length === b.length && a.every(scene => b.includes(scene))
 }
 
+function unwrapSavedBinding(result) {
+  if (!result || typeof result !== 'object')
+    return null
+  return result.data && typeof result.data === 'object' ? result.data : result
+}
+
+function sceneCode(value) {
+  if (value == null)
+    return ''
+  if (typeof value === 'object' && value.code != null)
+    return String(value.code)
+  return String(value)
+}
+
+/**
+ * Sync enabled scenes for a template. Returns the next bindings array (local patch),
+ * so callers can skip a full list/bindings reload.
+ */
 export async function syncPrintTemplateScenes({ source, templateId, scenes, bindings = [], save, remove }) {
   const wanted = normalizePrintScenes(scenes)
-  const current = (Array.isArray(bindings) ? bindings : [])
-    .filter(item => String(item.templateId) === String(templateId))
+  let next = (Array.isArray(bindings) ? bindings : []).map(item => ({ ...item }))
+  const current = next.filter(item => String(item.templateId) === String(templateId))
   const enabled = current.filter(item => Number(item.status) === 1)
   if (sameScenes(enabled.map(item => item.scene), wanted))
-    return
+    return next
+
   for (const scene of wanted) {
-    const existing = current.find(item => item.scene === scene)
+    const existing = current.find(item => sceneCode(item.scene) === scene)
     if (existing && Number(existing.status) === 1)
       continue
-    await save({
+    const saved = unwrapSavedBinding(await save({
       source,
       templateId,
       scene,
@@ -48,10 +67,36 @@ export async function syncPrintTemplateScenes({ source, templateId, scenes, bind
       isDefault: true,
       status: 1,
       sortOrder: existing?.sortOrder ?? 0,
-    })
+    }))
+    if (saved?.id != null) {
+      const patched = {
+        ...existing,
+        ...saved,
+        templateId: saved.templateId ?? templateId,
+        scene: sceneCode(saved.scene) || scene,
+        status: saved.status ?? 1,
+        bindingRevision: saved.bindingRevision ?? existing?.bindingRevision,
+      }
+      const idx = next.findIndex(item =>
+        String(item.id) === String(saved.id)
+        || (String(item.templateId) === String(templateId) && sceneCode(item.scene) === scene))
+      if (idx >= 0)
+        next[idx] = { ...next[idx], ...patched }
+      else
+        next.push(patched)
+    }
+    else if (existing) {
+      const idx = next.findIndex(item => String(item.id) === String(existing.id))
+      if (idx >= 0)
+        next[idx] = { ...next[idx], status: 1 }
+    }
   }
+
   for (const binding of enabled) {
-    if (!wanted.includes(binding.scene))
+    if (!wanted.includes(sceneCode(binding.scene))) {
       await remove(binding.id, binding.bindingRevision)
+      next = next.filter(item => String(item.id) !== String(binding.id))
+    }
   }
+  return next
 }

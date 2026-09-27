@@ -154,7 +154,7 @@ export function createViewSchemaFromPageSchema(pageSchema = {}, fields = [], cur
     .filter(([fieldCode]) => fieldCode))
   const base = createDefaultViewSchema({ fields })
   const current = sanitizeViewSchemaFieldRefs(currentSchema || {}, fields)
-  const searchZone = findZone(pageSchema, 'search')
+  const searchZone = resolveSearchZoneForViewSchema(pageSchema)
   const tableZone = findZone(pageSchema, 'table')
   const detailZone = findZone(pageSchema, 'detail')
 
@@ -398,7 +398,7 @@ function findZone(pageSchema = {}, zoneKey) {
 function resolveSearchComponent(field = {}) {
   if (field.dictType || ['select', 'radio', 'checkbox', 'dictSelect'].includes(field.componentType))
     return 'dictSelect'
-  if (['orgTreeSelect', 'regionTreeSelect'].includes(field.componentType))
+  if (['orgTreeSelect', 'regionTreeSelect', 'treeSelect'].includes(field.componentType))
     return field.componentType
   if (field.componentType === 'userSelect')
     return 'userSelect'
@@ -437,4 +437,27 @@ function cloneValue(value) {
 
 function isPlainObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value)
+}
+
+/**
+ * 列表设计器以 AiCrudPage.props.searchFieldRefs 为查询条件事实来源；
+ * 生成 viewSchema 时优先读网格配置，避免 search zone 滞后导致保存丢失。
+ */
+function resolveSearchZoneForViewSchema(pageSchema = {}) {
+  const searchZone = findZone(pageSchema, 'search') || {}
+  const items = pageSchema?.listGridLayout?.items
+    || (pageSchema?.pages || []).find(page => page?.pageKey === 'list')?.gridLayout?.items
+    || []
+  const crud = (Array.isArray(items) ? items : []).find(item => item?.blockType === 'AiCrudPage')
+  if (!crud || !Object.prototype.hasOwnProperty.call(crud.props || {}, 'searchFieldRefs'))
+    return searchZone
+  return {
+    ...searchZone,
+    enabled: searchZone.enabled !== false,
+    fieldRefs: Array.isArray(crud.props.searchFieldRefs) ? crud.props.searchFieldRefs : [],
+    props: {
+      ...(searchZone.props || {}),
+      fieldSettings: crud.props.searchFieldSettings || searchZone.props?.fieldSettings || {},
+    },
+  }
 }

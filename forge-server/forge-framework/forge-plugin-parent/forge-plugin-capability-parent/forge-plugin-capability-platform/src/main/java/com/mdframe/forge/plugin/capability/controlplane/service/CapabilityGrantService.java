@@ -143,7 +143,7 @@ public class CapabilityGrantService {
     }
 
     private String writeFieldPolicy(JsonNode fieldPolicy) {
-        if (fieldPolicy == null) {
+        if (isEmptyPolicy(fieldPolicy)) {
             return null;
         }
         try {
@@ -263,9 +263,17 @@ public class CapabilityGrantService {
     }
 
     private void validateSystemServicePolicy(JsonNode grantPolicy) {
-        if (grantPolicy != null && (!grantPolicy.isObject() || !grantPolicy.isEmpty())) {
+        if (!isEmptyPolicy(grantPolicy)) {
             throw new BusinessException("系统服务不接受客户端自定义字段或操作策略");
         }
+    }
+
+    /**
+     * JSON 请求体中的 null 会被 Jackson 绑定为 NullNode，而不是 Java null。
+     * 系统服务没有客户端级字段策略，因此缺省、JSON null 与空对象使用同一语义并统一落库为 NULL。
+     */
+    private boolean isEmptyPolicy(JsonNode policy) {
+        return policy == null || policy.isNull() || policy.isObject() && policy.isEmpty();
     }
 
     private JsonNode readJson(String json, String message) {

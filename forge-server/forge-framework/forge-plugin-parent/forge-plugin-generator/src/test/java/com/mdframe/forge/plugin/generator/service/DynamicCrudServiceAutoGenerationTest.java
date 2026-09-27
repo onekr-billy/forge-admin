@@ -136,6 +136,37 @@ class DynamicCrudServiceAutoGenerationTest {
     }
 
     @Test
+    @DisplayName("normalizes legacy tree configuration aliases")
+    void normalizesLegacyTreeConfigurationAliases() throws Exception {
+        AiCrudConfig config = materialConfig();
+        config.setOptions("""
+                {
+                  "treeConfig": {
+                    "nodeKeyField": "categoryId",
+                    "parentIdField": "parentCategoryId",
+                    "displayField": "categoryName",
+                    "nodeValueField": "businessObjectId",
+                    "rightFilterField": "categoryId",
+                    "title": "分类",
+                    "lazy": true
+                  }
+                }
+                """);
+
+        Method method = DynamicCrudService.class.getDeclaredMethod("resolveTreeConfig", AiCrudConfig.class);
+        method.setAccessible(true);
+        var treeConfig = (com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeTreeConfig) method.invoke(service, config);
+
+        assertEquals("categoryId", treeConfig.getKeyField());
+        assertEquals("parentCategoryId", treeConfig.getParentField());
+        assertEquals("categoryName", treeConfig.getLabelField());
+        assertEquals("businessObjectId", treeConfig.getTargetField());
+        assertEquals("categoryId", treeConfig.getFilterField());
+        assertEquals("分类", treeConfig.getTreeTitle());
+        assertEquals("lazy", treeConfig.getLoadMode());
+    }
+
+    @Test
     @DisplayName("does not apply conventional fallback when generation is explicitly configured")
     void doesNotApplyFallbackWhenGenerationExplicitlyConfigured() throws Exception {
         AiCrudConfig config = materialConfigWithDisabledGeneration();

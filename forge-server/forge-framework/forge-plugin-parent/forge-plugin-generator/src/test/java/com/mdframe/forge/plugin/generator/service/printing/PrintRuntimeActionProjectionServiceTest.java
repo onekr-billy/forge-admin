@@ -1,7 +1,10 @@
 package com.mdframe.forge.plugin.generator.service.printing;
 
+import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessApplication;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessApplicationVersion;
 import com.mdframe.forge.plugin.generator.dto.AiCrudConfigRenderVO;
+import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationMapper;
+import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationObjectMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationVersionMapper;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationRuntimeService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.*;
@@ -26,20 +29,28 @@ class PrintRuntimeActionProjectionServiceTest {
     final PrintIdentity identity = mock(PrintIdentity.class);
     final BusinessApplicationRuntimeService runtime = mock(BusinessApplicationRuntimeService.class);
     final BusinessApplicationVersionMapper versions = mock(BusinessApplicationVersionMapper.class);
+    final BusinessApplicationMapper applications = mock(BusinessApplicationMapper.class);
+    final BusinessApplicationObjectMapper applicationObjects = mock(BusinessApplicationObjectMapper.class);
     final PrintTemplateMapper templates = mock(PrintTemplateMapper.class);
     final PrintBindingMapper bindings = mock(PrintBindingMapper.class);
     ValidatorFactory factory; MockedStatic<SessionHelper> session;
     PrintRuntimeActionProjectionService service; AiCrudConfigRenderVO config;
     BusinessApplicationRuntimeVO portal; PrintTemplate template; AiBusinessApplicationVersion version;
+    AiBusinessApplication draftApp; BusinessApplicationObjectVO draftObject;
+
     @BeforeEach void setup() throws Exception {
         factory = Validation.buildDefaultValidatorFactory(); session = mockStatic(SessionHelper.class);
         session.when(() -> SessionHelper.hasPermission("print:execute")).thenReturn(true);
         session.when(() -> SessionHelper.hasPermission("ai:business:purchase:query")).thenReturn(true);
         when(identity.current()).thenReturn(ACTOR);
-        var application = new BusinessApplicationVO(); application.setOptions(JSON.readTree(PrintLowcodeTestData.snapshot()).path("application").path("options").toString());
-        var object = new BusinessApplicationObjectVO(); object.setObjectId(3L); object.setObjectCode("purchase"); object.setConfigKey("purchase");
-        portal = new BusinessApplicationRuntimeVO(); portal.setApplication(application); portal.setObjects(List.of(object)); portal.setVersionNo(1);
+        String optionsJson = JSON.readTree(PrintLowcodeTestData.snapshot()).path("application").path("options").toString();
+        var application = new BusinessApplicationVO(); application.setOptions(optionsJson);
+        draftObject = new BusinessApplicationObjectVO(); draftObject.setObjectId(3L); draftObject.setObjectCode("purchase"); draftObject.setConfigKey("purchase");
+        portal = new BusinessApplicationRuntimeVO(); portal.setApplication(application); portal.setObjects(List.of(draftObject)); portal.setVersionNo(1);
         when(runtime.runtimeById(2L)).thenReturn(portal);
+        draftApp = new AiBusinessApplication(); draftApp.setId(2L); draftApp.setOptions(optionsJson);
+        when(applications.selectEntityById(1L, 2L)).thenReturn(draftApp);
+        when(applicationObjects.selectByApplicationId(1L, 2L)).thenReturn(List.of(draftObject));
         version = new AiBusinessApplicationVersion(); version.setSnapshotJson(PrintApplicationTestData.snapshot(binding(10, true),
                 new PrintApplicationSnapshotCodec.Binding(SOURCE, PrintScene.LIST, 10L, 20L, HASH, true, 0)));
         when(versions.selectVersion(1L, 2L, 1)).thenReturn(version);
@@ -47,7 +58,8 @@ class PrintRuntimeActionProjectionServiceTest {
         when(templates.selectScoped(1L, 10L)).thenReturn(template);
         config = new AiCrudConfigRenderVO(); config.setRowKey("documentKey"); config.setOptions(Map.of("runtimeActions", List.of(Map.of("key", "existing", "position", "row"))));
         config.setColumnsSchema(List.of(Map.of("key", "name", "title", "名称")));
-        service = new PrintRuntimeActionProjectionService(identity, runtime, versions, new PrintApplicationSnapshotCodec(factory.getValidator()),
+        service = new PrintRuntimeActionProjectionService(identity, runtime, versions, applications, applicationObjects,
+                new PrintApplicationSnapshotCodec(factory.getValidator()),
                 new LowcodePrintSourceResolver(), templates, bindings, JSON);
     }
     @AfterEach void close() { session.close(); factory.close(); }
@@ -81,14 +93,46 @@ class PrintRuntimeActionProjectionServiceTest {
         assertThat(actions.size()).isEqualTo(2);
         assertThat(actions.get(1).path("key").asText()).isEqualTo("forgePrint:LIST");
         assertThat(actions.get(1).path("position").asText()).isEqualTo("row");
-        verifyNoInteractions(versions);
+        verifyNoInteractions(versions, runtime);
+        verify(applications).selectEntityById(1L, 2L);
         verify(bindings).selectApplicationEnabled(1L, 2L);
     }
+
+    @Test void designPreviewUsesDraftPageTreeWhenPageNotYetPublished() throws Exception {
+        // 发布门户没有新页面；草稿 options 有 page_page_wzss79
+        portal.getApplication().setOptions("{\"inAppBuilder\":{\"nodes\":[],\"pages\":{}}}");
+        String draftOptions = """
+            {"inAppBuilder":{"nodes":[{"id":"page_page_wzss79","type":"page",
+              "objectRef":{"objectId":"3","objectCode":"purchase","configKey":"purchase"}}],
+              "pages":{"page_page_wzss79":{}}}}
+            """;
+        draftApp.setOptions(draftOptions);
+        var unpublished = new com.mdframe.forge.plugin.print.spi.PrintSourceRequest(
+                2L, com.mdframe.forge.plugin.print.enums.PrintSourceType.LOWCODE,
+                "page_page_wzss79", null, "purchase");
+        var row = new PrintBinding();
+        row.setApplicationId(2L);
+        row.setSourceType("LOWCODE");
+        row.setPageId("page_page_wzss79");
+        row.setObjectCode("purchase");
+        row.setSourceKey(unpublished.key());
+        row.setTemplateId(10L);
+        row.setScene("LIST");
+        row.setStatus(1);
+        template.setSourceKey(unpublished.key());
+        when(bindings.selectApplicationEnabled(1L, 2L)).thenReturn(List.of(row));
+        service.overlay("purchase", 2L, "page_page_wzss79", config, true);
+        var actions = JSON.valueToTree(config.getOptions()).path("runtimeActions");
+        assertThat(actions.size()).isEqualTo(2);
+        assertThat(actions.get(1).path("key").asText()).isEqualTo("forgePrint:LIST");
+        verifyNoInteractions(runtime);
+    }
+
     @Test void noPrintPermissionDoesNotReadApplication() {
         session.when(() -> SessionHelper.hasPermission("print:execute")).thenReturn(false);
         service.overlay("purchase", 2L, "page_purchase", config, false);
         service.overlay("purchase", 2L, "page_purchase", config, true);
-        verifyNoInteractions(runtime, versions, templates, bindings);
+        verifyNoInteractions(runtime, versions, templates, bindings, applications);
     }
     @Test void unrelatedPageOrConfigCannotReuseAnotherPageBinding() {
         service.overlay("purchase", 2L, "page_other", config, false);
@@ -146,6 +190,7 @@ class PrintRuntimeActionProjectionServiceTest {
         assertThat(actions.size()).isEqualTo(2);
         assertThat(actions.get(1).path("key").asText()).isEqualTo("forgePrint:LIST");
         verify(bindings).selectApplicationEnabled(1L, 2L);
+        verify(applications).selectEntityById(1L, 2L);
     }
     @Test void invalidManifestIsNotSilentlyAccepted() {
         version.setSnapshotJson("{\"printing\":null}");

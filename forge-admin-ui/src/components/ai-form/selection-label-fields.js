@@ -24,11 +24,13 @@ export const ORG_SELECT_FIELD_TYPES = new Set([
 ])
 
 export function isUserSelectLikeField(field = {}) {
-  return USER_SELECT_FIELD_TYPES.has(String(field.type || field.componentType || '').trim())
+  const candidates = [field.type, field.componentType, field.componentKey]
+  return candidates.some(value => USER_SELECT_FIELD_TYPES.has(String(value || '').trim()))
 }
 
 export function isOrgSelectLikeField(field = {}) {
-  return ORG_SELECT_FIELD_TYPES.has(String(field.type || field.componentType || '').trim())
+  const candidates = [field.type, field.componentType, field.componentKey]
+  return candidates.some(value => ORG_SELECT_FIELD_TYPES.has(String(value || '').trim()))
 }
 
 export function resolveSelectionLabelFields(field = {}, selectionType = '') {
@@ -49,6 +51,18 @@ export function resolveSelectionLabelFields(field = {}, selectionType = '') {
   ]
   if (fieldName) {
     candidates.push(`${fieldName}Name`)
+    // snake_case 字段（field_select）冗余列常为 field_select_name；camel 读模型为 fieldSelectName
+    if (fieldName.includes('_')) {
+      candidates.push(`${fieldName}_name`)
+      const camel = fieldName.replace(/_([a-zA-Z0-9])/g, (_, ch) => String(ch).toUpperCase())
+      if (camel && camel !== fieldName)
+        candidates.push(`${camel}Name`)
+    }
+    else {
+      const snake = fieldName.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()
+      if (snake && snake !== fieldName)
+        candidates.push(`${snake}_name`)
+    }
     if (fieldName.endsWith('UserId')) {
       candidates.push(fieldName.replace(/UserId$/, 'UserName'))
       candidates.push(fieldName.replace(/UserId$/, 'Name'))
@@ -72,4 +86,40 @@ export function resolveSelectionLabelFields(field = {}, selectionType = '') {
   return candidates
     .map(value => String(value || '').trim())
     .filter((value, index, all) => value && value !== fieldName && all.indexOf(value) === index)
+}
+
+/** 从表单/子表行里读伴随显示名：精确键 → camel/snake 别名 */
+export function readSelectionLabelFromData(formData = {}, field = {}, selectionType = '') {
+  if (!formData || typeof formData !== 'object')
+    return ''
+  for (const candidate of resolveSelectionLabelFields(field, selectionType)) {
+    const value = readDataFieldValue(formData, candidate)
+    if (value !== null && value !== undefined && String(value).trim() !== '')
+      return value
+  }
+  return ''
+}
+
+export function readDataFieldValue(data = {}, fieldName = '') {
+  const key = String(fieldName || '').trim()
+  if (!key || !data || typeof data !== 'object')
+    return undefined
+  if (Object.prototype.hasOwnProperty.call(data, key) && data[key] !== undefined)
+    return data[key]
+  const aliases = []
+  if (key.includes('_')) {
+    const camel = key.replace(/_([a-zA-Z0-9])/g, (_, ch) => String(ch).toUpperCase())
+    if (camel && camel !== key)
+      aliases.push(camel)
+  }
+  else {
+    const snake = key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()
+    if (snake && snake !== key)
+      aliases.push(snake)
+  }
+  for (const alias of aliases) {
+    if (Object.prototype.hasOwnProperty.call(data, alias) && data[alias] !== undefined)
+      return data[alias]
+  }
+  return undefined
 }

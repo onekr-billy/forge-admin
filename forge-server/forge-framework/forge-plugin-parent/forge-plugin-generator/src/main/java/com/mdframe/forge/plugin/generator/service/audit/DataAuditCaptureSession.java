@@ -77,6 +77,15 @@ public class DataAuditCaptureSession {
                              String primaryKeyColumn,
                              Object recordId,
                              DataAuditTransactionHolder.WriteKind kind) {
+        prepareWrite(binding, tableName, primaryKeyColumn, recordId, kind, null);
+    }
+
+    public void prepareWrite(DataAuditPolicyIndex.TableBinding binding,
+                             String tableName,
+                             String primaryKeyColumn,
+                             Object recordId,
+                             DataAuditTransactionHolder.WriteKind kind,
+                             Map<String, Object> beforeSnapshot) {
         assertOpen();
         // 自增主键在 prepare 阶段可能为空，先保存读取信息，afterWrite 再绑定实际行 ID。
         RowRead rowRead = new RowRead(primaryKeyColumn, rowReader.capture());
@@ -91,7 +100,10 @@ public class DataAuditCaptureSession {
                 binding.relationKey() == null ? "" : binding.relationKey());
         rowReads.putIfAbsent(rowKey, rowRead);
         if (kind != DataAuditTransactionHolder.WriteKind.INSERT && rowId != null && !state.before.containsKey(rowKey)) {
-            Map<String, Object> snapshot = rowRead.reader().lockAndRead(tableName, primaryKeyColumn, recordId);
+            // 批量删除等场景可直接传入已查快照，避免再逐条 SELECT FOR UPDATE
+            Map<String, Object> snapshot = beforeSnapshot != null
+                    ? beforeSnapshot
+                    : rowRead.reader().lockAndRead(tableName, primaryKeyColumn, recordId);
             state.before.put(rowKey, snapshot);
         }
         if (kind == DataAuditTransactionHolder.WriteKind.INSERT) {

@@ -20,6 +20,17 @@ public final class DataAuditRecordMetaBuilder {
         record.put(DataAuditPayloadSupport.PAYLOAD_KEY, meta);
     }
 
+    /**
+     * 列表场景只挂策略级元数据（是否启用、是否要原因），不查 cursor，避免分页 N+1。
+     * 删除侧据此即可决定走审计批量删除，无需再逐条拉详情。
+     */
+    public static void attachPolicyOnly(Map<String, Object> record,
+                                        Long tenantId,
+                                        AiBusinessObject object) {
+        DataAuditRecordMetaVO meta = build(record, tenantId, object, null);
+        record.put(DataAuditPayloadSupport.PAYLOAD_KEY, meta);
+    }
+
     public static DataAuditRecordMetaVO build(Map<String, Object> record,
                                               Long tenantId,
                                               AiBusinessObject object,

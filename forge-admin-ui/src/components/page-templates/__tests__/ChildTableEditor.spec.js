@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { readSplitVueSource } from '@/test-utils/read-split-vue-source'
 
 const childTableEditorSource = readFileSync(resolve('src/components/page-templates/ChildTableEditor.vue'), 'utf8')
-const aiFormItemSource = readFileSync(resolve('src/components/ai-form/AiFormItem.vue'), 'utf8')
+const aiFormItemSource = readSplitVueSource('src/components/ai-form/AiFormItem.vue', 'useAiFormItem')
 
 describe('child table editor runtime cells', () => {
   it('does not fall class through onto fragment-rooted AiFormItem', () => {
@@ -27,8 +28,28 @@ describe('child table editor runtime cells', () => {
     expect(childTableEditorSource).toContain('child.modelCode || child.relationKey || child.key || child.tableName')
   })
 
-  it('lets AiFormItem inherit class/style onto n-form-item instead of a fragment root', () => {
-    expect(aiFormItemSource).toContain('defineOptions({ inheritAttrs: false })')
-    expect(aiFormItemSource).toMatch(/<n-form-item[\s\S]*v-bind="\$attrs"/)
+  it('keeps optionSource when building AiFormItem runtime cell field', () => {
+    expect(childTableEditorSource).toContain('function mergeChildFieldRuntimeProps')
+    expect(childTableEditorSource).toContain('禁止在这里套 resolveControlProps')
+    expect(childTableEditorSource).toContain("'switch'")
+    expect(childTableEditorSource).toContain('min-width: 160px')
+    expect(childTableEditorSource).toContain('preloadChildQuerySourceOptions')
+    expect(childTableEditorSource).toContain('allowOptionSourceFetch: true')
+    expect(childTableEditorSource).toContain('只要配了动态选项源，一律走 AiFormItem')
+    expect(childTableEditorSource).toContain('[forge-child-select] ChildTableEditor setup v4')
+    expect(childTableEditorSource).toContain('[forge-child-select] module imported v4')
+  })
+
+  it('coerces string optionSource.params before QUERY_SOURCE execute', () => {
+    expect(aiFormItemSource).toContain('params 可能是 JSON 字符串')
+    expect(aiFormItemSource).toContain('if (typeof next.params === \'string\')')
+    expect(aiFormItemSource).toContain('sourceType === \'BUSINESS_OBJECT\'')
+  })
+
+  it('routes user/org aliases through AiFormItem runtime cells', () => {
+    expect(childTableEditorSource).toContain('isUserSelectLikeField(field)')
+    expect(childTableEditorSource).toContain('isOrgSelectLikeField(field)')
+    expect(childTableEditorSource).toContain("type = 'userSelect'")
+    expect(childTableEditorSource).toContain("type = 'orgTreeSelect'")
   })
 })

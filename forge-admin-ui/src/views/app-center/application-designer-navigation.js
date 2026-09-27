@@ -50,6 +50,11 @@ const objectDesignerSectionConfig = {
     initialPanel: 'relations',
     navPanels: ['relations'],
   },
+  // 旧书签兼容：树形模型已迁到「列表设计」，深链仍打开独立面板以免 404。
+  'data-tree-model': {
+    initialPanel: 'tree-model',
+    navPanels: ['tree-model'],
+  },
 }
 
 export function normalizeApplicationDesignerSection(value) {
@@ -81,7 +86,7 @@ export function buildApplicationDesignerResourceGroups(options = {}) {
     {
       key: 'data',
       label: '数据',
-      // 数据结构与关系拆成两个节点，避免内嵌设计器再多一层中间导航栏。
+      // 数据结构 / 关系拆成独立节点；树形模型统一在「列表设计」中配置。
       nodes: objectNodes.flatMap(item => [
         createObjectNode(item, 'data-fields', `${item.objectName} · 数据结构`, true),
         createObjectNode(item, 'data-relations', `${item.objectName} · 关系与级联`, item.relationConfigured),
@@ -122,6 +127,20 @@ export function findApplicationDesignerResource(groups = [], resourceKey = '', l
     const matched = nodes.find(node => node.key === requested)
     if (matched)
       return matched
+    // 个人工作台等系统自由布局页不在导航 nodes 里，不能回落到第一个业务页
+    if (requested.startsWith('page-custom:')) {
+      const pageId = requested.slice('page-custom:'.length)
+      if (pageId)
+        return {
+          key: requested,
+          groupKey: 'pages',
+          kind: 'page-custom',
+          label: pageId.startsWith('system:') ? '个人工作台' : '页面',
+          pageId,
+          configured: true,
+          editable: true,
+        }
+    }
     // 兼容拆分前的 data:<objectId> 旧链接，落到该对象的数据结构节点。
     if (requested.startsWith('data:')) {
       const legacyObjectId = requested.slice('data:'.length)
@@ -195,6 +214,7 @@ function normalizeObjectResource(object = {}, designersByObjectId = {}) {
     formConfigured: hasFormConfiguration(designer.formDesignerSchema),
     listConfigured: hasListConfiguration(designer.viewSchema),
     relationConfigured: hasRelationConfiguration(designer.relationSchema),
+    treeConfigured: hasTreeConfiguration(designer.modelSchema || designer.pageSchema),
   }
 }
 
@@ -227,6 +247,14 @@ function hasRelationConfiguration(value) {
   return hasItems(schema.relations)
     || hasItems(schema.linkages)
     || hasItems(schema.cascades)
+}
+
+function hasTreeConfiguration(value) {
+  const schema = parseObject(value)
+  if (schema.treeConfig?.enabled === true || String(schema.appType || '').toUpperCase() === 'TREE')
+    return true
+  const zones = Array.isArray(schema.zones) ? schema.zones : []
+  return zones.some(zone => zone?.props?.treeConfig?.enabled === true)
 }
 
 function hasFormConfiguration(value) {

@@ -5,6 +5,7 @@ import { getPermissions, getUserInfo } from '@/store/helper'
 import { initWebSocketClient, lStorage, request } from '@/utils'
 import { initKeyExchange } from '@/utils/crypto/key-exchange'
 import { applyTenantConfig } from '@/utils/tenant-config'
+import { canAccessHiddenOpenPlatformTool, normalizeOpenPlatformPath } from '../open-platform-routes'
 import { recoverFromAuthBootstrapFailure } from './auth-bootstrap-recovery'
 
 const AUTH_ROUTE_ALLOWLIST = new Set([
@@ -39,8 +40,8 @@ function escapeRegExp(value) {
 }
 
 function isSameRoutePath(routePath, targetPath) {
-  const normalizedRoutePath = normalizeRoutePath(routePath)
-  const normalizedTargetPath = normalizeRoutePath(targetPath)
+  const normalizedRoutePath = normalizeOpenPlatformPath(normalizeRoutePath(routePath))
+  const normalizedTargetPath = normalizeOpenPlatformPath(normalizeRoutePath(targetPath))
   if (!normalizedRoutePath || !normalizedTargetPath)
     return false
   if (normalizedRoutePath === normalizedTargetPath)
@@ -59,7 +60,7 @@ export function isApplicationPortalPath(path) {
   return targetPath === '/app' || (targetPath.startsWith('/app/') && !targetPath.startsWith('/app-center'))
 }
 
-export function canAccessRoute(to, permissionStore) {
+export function canAccessRoute(to, permissionStore, userStore) {
   const targetPath = normalizeRoutePath(to.path)
   if (!targetPath)
     return true
@@ -70,6 +71,7 @@ export function canAccessRoute(to, permissionStore) {
     return true
   }
   return (permissionStore.accessRoutes || []).some(route => isSameRoutePath(route.path, targetPath))
+    || canAccessHiddenOpenPlatformTool(targetPath, userStore)
 }
 
 function buildUnauthorizedRouteTarget(from) {
@@ -279,7 +281,7 @@ export function createPermissionGuard(router) {
         }
       }
 
-      if (permissionStore.menuDataLoaded && !canAccessRoute(to, permissionStore)) {
+      if (permissionStore.menuDataLoaded && !canAccessRoute(to, permissionStore, userStore)) {
         appStore.setRouteGuardCompleted(true)
         next(buildUnauthorizedRouteTarget(from))
         return

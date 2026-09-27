@@ -138,17 +138,15 @@ class BusinessObjectDatabaseSyncServiceTest {
     }
 
     @Test
-    @DisplayName("managed page forms execute safe DDLs and report unsafe ones separately")
+    @DisplayName("managed page forms execute safe DDLs and silently skip leftover unsafe ones")
     void managedPageFormPartialSyncsUnsafeDdl() {
         StubDdlService ddlService = new StubDdlService(
                 "ALTER TABLE crm_customer MODIFY COLUMN customer_name varchar(32)", true);
         TestableTableMappingService service = service(ddlService, false, managedContext());
 
-        BusinessException error = assertThrows(BusinessException.class,
-                () -> service.syncManagedDatabase(201L, 10L, "form_customer"));
+        service.syncManagedDatabase(201L, 10L, "form_customer");
 
-        assertTrue(error.getMessage().contains("需在高级数据设置中确认"));
-        assertTrue(error.getMessage().contains("已自动同步 0 项新增字段"));
+        assertFalse(ddlService.safeDdlExecuted);
     }
 
     @Test
@@ -159,11 +157,8 @@ class BusinessObjectDatabaseSyncServiceTest {
         ddlService.addDdl("ALTER TABLE crm_customer MODIFY COLUMN old_field varchar(128)");
         TestableTableMappingService service = service(ddlService, false, managedContext());
 
-        BusinessException error = assertThrows(BusinessException.class,
-                () -> service.syncManagedDatabase(201L, 10L, "form_customer"));
+        service.syncManagedDatabase(201L, 10L, "form_customer");
 
-        assertTrue(error.getMessage().contains("已自动同步 1 项新增字段"));
-        assertTrue(error.getMessage().contains("1 项字段类型调整"));
         assertTrue(ddlService.safeDdlExecuted);
     }
 
@@ -275,6 +270,7 @@ class BusinessObjectDatabaseSyncServiceTest {
                     .count();
             if (safeCount > 0) {
                 safeDdlExecuted = true;
+                executed = true;
             }
             return safeCount;
         }

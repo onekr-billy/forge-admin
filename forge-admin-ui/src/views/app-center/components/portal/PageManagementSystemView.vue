@@ -1,7 +1,17 @@
 <template>
   <section class="page-management-system-view">
     <div class="page-management-system-body">
-      <WorkspaceSummary v-if="view === 'workbench'" :route-targets="navigationRoutes" />
+      <WorkspaceSummary
+        v-if="view === 'workbench'"
+        :route-targets="navigationRoutes"
+        :page="workbenchPage"
+        :page-id="workbenchPageId"
+        :objects="objects"
+        :entries="entries"
+        :extensions="extensions"
+        :application-id="applicationId"
+        :application-code="applicationCode"
+      />
       <WorkspaceTodo v-else-if="view === 'todo'" />
       <WorkspaceDone v-else-if="view === 'done'" />
       <WorkspaceStarted v-else-if="view === 'sent'" />
@@ -13,6 +23,7 @@
 
 <script setup>
 import MessageList from '@/views/message/message-list.vue'
+import { WORKBENCH_PAGE_ID } from '@/views/app-center/in-app-builder/workbench-page'
 import WorkspaceCc from '@/views/workspace/cc.vue'
 import WorkspaceDone from '@/views/workspace/done.vue'
 import WorkspaceStarted from '@/views/workspace/started.vue'
@@ -32,6 +43,19 @@ defineProps({
     type: Object,
     default: () => ({}),
   },
+  workbenchPage: {
+    type: Object,
+    default: null,
+  },
+  workbenchPageId: {
+    type: String,
+    default: WORKBENCH_PAGE_ID,
+  },
+  objects: { type: Array, default: () => [] },
+  entries: { type: Array, default: () => [] },
+  extensions: { type: Array, default: () => [] },
+  applicationId: { type: String, default: '' },
+  applicationCode: { type: String, default: '' },
 })
 </script>
 

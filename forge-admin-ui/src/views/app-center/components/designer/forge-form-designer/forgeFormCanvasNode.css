@@ -1,0 +1,603 @@
+.node-wrap {
+  min-width: 0;
+}
+
+.subtable-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px dashed var(--n-border-color, #d9dfe8);
+  border-radius: 6px;
+  background: rgba(32, 128, 240, 0.03);
+}
+
+.subtable-preview.unconfigured {
+  border-style: dashed;
+  border-color: #e5e7eb;
+  background: #fafbfc;
+}
+
+.subtable-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.subtable-preview-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #1f2329;
+}
+
+.subtable-preview-title svg {
+  flex-shrink: 0;
+  color: var(--primary-color, #2080f0);
+}
+
+.subtable-preview-title strong {
+  font-weight: 500;
+}
+
+.subtable-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.subtable-mode-badge {
+  font-size: 11px;
+  color: #8a919f;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.subtable-preview-empty {
+  font-size: 12px;
+  color: #8a919f;
+  padding: 4px 0 2px;
+}
+
+.subtable-preview-meta {
+  font-size: 11px;
+  color: #64748b;
+  padding: 0 2px;
+}
+
+.subtable-preview-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-top: 2px;
+}
+
+.subtable-field-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: #334155;
+  background: rgba(32, 128, 240, 0.06);
+  border: 1px solid rgba(32, 128, 240, 0.12);
+  border-radius: 3px;
+  line-height: 1.4;
+}
+
+.subtable-field-more {
+  display: inline-block;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: #8a919f;
+}
+
+.subtable-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.subtable-preview-cell {
+  height: 28px;
+  border-radius: 4px;
+  background: rgba(32, 128, 240, 0.08);
+}
+
+.drop-line {
+  position: relative;
+  height: 8px;
+  grid-column: 1 / -1;
+  margin: -4px 0;
+  overflow: visible;
+  border-radius: 6px;
+  pointer-events: none;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease;
+}
+
+.drop-line.active {
+  height: var(--forge-designer-drag-height, var(--drop-placeholder-height, 72px));
+  margin: 4px 0;
+  border: 1px dashed #9ca3af;
+  background: #f3f4f6;
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.drop-line::before {
+  display: none;
+}
+
+.drop-line.active::before {
+  display: none;
+}
+
+.canvas-node {
+  container-type: inline-size;
+  position: relative;
+  min-width: 0;
+  /* 固定宽度的组件（__designerStyle.width）拖入更窄的容器（如栅格格子）时，
+     视觉宽度不超过所在格位，避免组件横向溢出栅格 */
+  max-width: 100%;
+  border: 1px solid transparent;
+  border-radius: var(--forge-node-radius, 6px);
+  background: transparent;
+  padding: 32px 8px 8px;
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.canvas-node:hover,
+.canvas-node:focus {
+  border-color: #93c5fd;
+  background: #f8fbff;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.08);
+  outline: none;
+}
+
+.canvas-node.selected {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.14);
+}
+
+.canvas-node.dragging {
+  opacity: 0.72;
+  border-color: #93c5fd;
+  background: #f8fbff;
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.08);
+}
+
+:global(.drag-follow-clone) {
+  box-sizing: border-box;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 2147483647;
+  pointer-events: none;
+  border: 1px solid #2563eb;
+  border-radius: 6px;
+  background: #fff;
+  opacity: 0.96;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18);
+  transform-origin: 0 0;
+  will-change: transform;
+  transition: none !important;
+}
+
+:global(.drag-follow-clone .designer-node-overlay) {
+  display: none;
+}
+
+:global(.forge-pointer-dragging),
+:global(.forge-pointer-dragging *) {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
+.canvas-node.node-row,
+.canvas-node.node-fcRow {
+  border-color: transparent;
+  background: var(--forge-node-background, #fbfdff);
+  padding: 24px 6px 6px;
+}
+
+.canvas-node.structural-slot {
+  border-color: transparent;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+}
+
+/* 栅格格子：顶部预留 30px 自身操作条。此前格子操作浮层（全宽、top 6px）与列内
+   组件的快捷操作按钮在格子顶部重叠并拦截指针，导致「组件删除按钮点不到/靠近即消失」；
+   预留条让格子删除按钮与组件操作按钮物理隔离，互不遮挡 */
+.canvas-node.node-col {
+  padding-top: 30px;
+}
+
+.canvas-node.node-row > .layout-children,
+.canvas-node.node-fcRow > .layout-children {
+  gap: inherit;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.canvas-node.node-table,
+.canvas-node.node-fcTable {
+  border-color: transparent;
+  background: var(--forge-node-background, #fbfdff);
+}
+
+.canvas-node.node-tableGrid,
+.canvas-node.node-fcTableGrid {
+  min-height: 82px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.canvas-node.node-crudBlock,
+.canvas-node.node-AiCrudPage {
+  border-color: #cbd5e1;
+  background: #fff;
+}
+
+.canvas-node.structural-slot:hover,
+.canvas-node.structural-slot:focus {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* 栅格格子 hover：恢复可视化边框，让「格子本身可交互」可感知。
+   必须置于上方 structural-slot 透明规则之后，否则同优先级下会被覆盖（此前的
+   hover 高亮正是被该旧规则整体压掉，格子 hover 无任何视觉反馈） */
+.canvas-node.node-col:hover {
+  border-color: #93c5fd;
+  background: rgba(147, 197, 253, 0.08);
+}
+
+.canvas-node.structural-slot .layout-children {
+  min-height: var(--forge-slot-min-height, 96px);
+  align-content: start;
+  border-color: transparent;
+  background: #f8fafc;
+  box-shadow: none;
+}
+
+.canvas-node.node-row > .layout-children,
+.canvas-node.node-fcRow > .layout-children,
+.canvas-node.node-table > .layout-children,
+.canvas-node.node-fcTable > .layout-children {
+  min-height: var(--forge-slot-min-height, auto);
+}
+
+.canvas-node.node-row:hover,
+.canvas-node.node-fcRow:hover,
+.canvas-node.node-table:hover,
+.canvas-node.node-fcTable:hover,
+.canvas-node.structural-slot:hover .layout-children,
+.canvas-node.structural-slot:focus .layout-children {
+  border-color: #dbe3ee;
+}
+
+.canvas-node.structural-slot .layout-children.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  box-shadow:
+    inset 0 0 0 1px rgba(37, 99, 235, 0.2),
+    0 6px 16px rgba(37, 99, 235, 0.12);
+}
+
+.canvas-node.structural-slot.selected .layout-children {
+  border-color: #2563eb;
+  background: #eff6ff;
+  box-shadow:
+    inset 0 0 0 1px rgba(37, 99, 235, 0.24),
+    0 10px 22px rgba(37, 99, 235, 0.1);
+}
+
+.canvas-node.layout.selected,
+.canvas-node.node-row.selected,
+.canvas-node.node-fcRow.selected,
+.canvas-node.node-table.selected,
+.canvas-node.node-fcTable.selected {
+  border-color: #2563eb !important;
+  background: #eff6ff;
+  box-shadow:
+    0 0 0 2px rgba(37, 99, 235, 0.18),
+    0 10px 22px rgba(37, 99, 235, 0.1);
+}
+
+/* 栅格格子选中态排除在外：保留 .canvas-node.layout.selected 的蓝色 !important 边框，
+   让用户能明确看到「格子被选中」；其余 structural slot 维持透明 */
+.canvas-node.structural-slot:not(.node-col).selected {
+  border-color: transparent !important;
+  background: transparent;
+  box-shadow: none;
+}
+
+.canvas-node.border-hidden:not(.selected),
+.canvas-node.border-hidden:not(.selected):hover,
+.canvas-node.border-hidden:not(.selected):focus {
+  border-color: transparent !important;
+  box-shadow: none;
+}
+
+.canvas-node.border-hidden > .layout-children:not(.active),
+.canvas-node.border-hidden .canvas-node.structural-slot:not(.selected) > .layout-children:not(.active),
+.canvas-node.border-hidden .empty-child-zone:not(.active) {
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.canvas-node.border-hidden > .table-layout-children:not(.active) {
+  gap: 8px;
+  padding: 0;
+}
+
+.canvas-node.border-hidden :deep(.n-card),
+.canvas-node.border-hidden :deep(.n-card.n-card--bordered),
+.canvas-node.border-hidden :deep(.n-tabs-pane-wrapper),
+.canvas-node.border-hidden :deep(.n-collapse),
+.canvas-node.border-hidden :deep(.n-collapse-item) {
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.node-resize-handles {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+}
+
+.resize-anchor {
+  position: absolute;
+  display: block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #2563eb;
+  box-shadow: 0 2px 7px rgba(37, 99, 235, 0.32);
+  pointer-events: auto;
+}
+
+.anchor-n {
+  top: -6px;
+  left: 50%;
+  cursor: ns-resize;
+  transform: translateX(-50%);
+}
+
+.anchor-e {
+  top: 50%;
+  right: -6px;
+  cursor: ew-resize;
+  transform: translateY(-50%);
+}
+
+.anchor-s {
+  bottom: -6px;
+  left: 50%;
+  cursor: ns-resize;
+  transform: translateX(-50%);
+}
+
+.anchor-w {
+  top: 50%;
+  left: -6px;
+  cursor: ew-resize;
+  transform: translateY(-50%);
+}
+
+.anchor-ne {
+  top: -6px;
+  right: -6px;
+  cursor: nesw-resize;
+}
+
+.anchor-nw {
+  top: -6px;
+  left: -6px;
+  cursor: nwse-resize;
+}
+
+.anchor-se {
+  right: -6px;
+  bottom: -6px;
+  cursor: nwse-resize;
+}
+
+.anchor-sw {
+  bottom: -6px;
+  left: -6px;
+  cursor: nesw-resize;
+}
+
+/* 统一操作条可见性：由父级 hover/selected 驱动（样式由 designer-core node-overlay.css 提供） */
+.canvas-node:hover .designer-node-overlay,
+.canvas-node.selected .designer-node-overlay {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.crud-preview {
+  display: grid;
+  gap: 10px;
+}
+
+.crud-live-preview {
+  overflow: hidden;
+  border: 1px solid #dbe3ee;
+  border-radius: 6px;
+  background: #fff;
+  padding: 8px;
+  pointer-events: none;
+}
+
+.crud-empty-drop {
+  border: 1px dashed #bfdbfe;
+  border-radius: 6px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 12px;
+  line-height: 18px;
+  padding: 12px;
+  text-align: center;
+}
+
+.crud-empty-drop.active {
+  border-color: #2563eb;
+  background: #dbeafe;
+}
+
+.crud-live-preview :deep(.ai-crud-page) {
+  min-height: 0;
+}
+
+.crud-live-preview :deep(.ai-crud-search) {
+  margin-bottom: 8px;
+}
+
+.crud-live-preview :deep(.ai-crud-table) {
+  min-height: 0;
+}
+
+.crud-live-preview :deep(.n-data-table-empty) {
+  min-height: 56px;
+}
+
+.crud-layout-children {
+  background: #fbfdff;
+}
+
+.real-layout {
+  overflow: hidden;
+  border-radius: var(--forge-node-radius, 6px);
+  background: var(--forge-node-background, #fff);
+}
+
+.real-layout-card :deep(.n-card-header) {
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.real-layout-card :deep(.n-card__content) {
+  padding: 10px;
+}
+
+.real-layout-tabs :deep(.n-tabs-nav) {
+  padding: 0 4px;
+}
+
+.real-layout-tabs :deep(.n-tab-pane) {
+  padding: 8px 0 0;
+}
+
+.tab-pane-drop-zone {
+  min-height: 84px;
+}
+
+.real-layout-collapse :deep(.n-collapse-item__header) {
+  padding: 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.real-layout-collapse :deep(.n-collapse-item__content-inner) {
+  padding-top: 6px;
+}
+
+.real-layout-children {
+  background: var(--forge-node-background, #fff);
+}
+
+.layout-children {
+  display: grid;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: var(--forge-node-radius, 7px);
+  background: var(--forge-node-background, #f8fafc);
+  padding: 10px;
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.layout-children.active {
+  border-color: #60a5fa;
+  background: #eff6ff;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.12);
+}
+
+/* 栅格行容器：覆盖 .layout-children 的 grid 布局，由 DesignerGridRenderer 接管 */
+.grid-row-container {
+  display: block;
+  gap: 0;
+}
+
+.grid-row-container > .designer-grid-renderer {
+  min-height: 80px;
+}
+
+.grid-layout-children {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.table-layout-children {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px;
+  background: #f1f5f9;
+}
+
+.table-layout-children > :deep(.node-wrap) {
+  min-height: 78px;
+}
+
+.empty-child-zone {
+  display: grid;
+  place-items: center;
+  min-height: 64px;
+  border: 0;
+  border-radius: 7px;
+  background: #fff;
+  color: #2563eb;
+  font-size: 12px;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgba(191, 219, 254, 0.42);
+  transition:
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.canvas-node :deep(.n-form-item) {
+  margin-bottom: 0;
+}
+
+.canvas-node :deep(.n-form-item-label) {
+  font-size: 13px;
+}
+
+.empty-child-zone.active {
+  background: #dbeafe;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.28);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drop-line,
+  .canvas-node {
+    transition: none;
+  }
+}

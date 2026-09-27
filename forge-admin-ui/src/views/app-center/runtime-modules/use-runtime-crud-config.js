@@ -45,8 +45,11 @@ export function useRuntimeCrudConfig({ application, workspaceEntries, pageId, ca
           const config = (await crudConfigRender(configKey, true, options)).data
           return { config, designPreview: true }
         }
-        catch {
-          // 草稿预览拿不到时退回已发布配置
+        catch (error) {
+          const message = String(error?.message || error?.msg || '')
+          // 草稿预览因未发布/无权限失败时，再打正式配置只会重复报「尚未发布」
+          if (message.includes('尚未发布') || message.includes('无业务对象设计') || message.includes('不能预览设计草稿'))
+            throw error
           const config = (await crudConfigRender(configKey, false, options)).data
           return { config, designPreview: false }
         }

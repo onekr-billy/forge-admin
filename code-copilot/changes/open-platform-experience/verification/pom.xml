@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 临时绕开无关测试编译错误的可复跑验证入口，不参与生产 reactor。 -->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.mdframe.forge</groupId><artifactId>forge-server</artifactId><version>1.0.0</version>
+        <relativePath>../../../../forge-server/pom.xml</relativePath>
+    </parent>
+    <artifactId>open-platform-experience-verification</artifactId><version>1.0.0</version>
+    <dependencies>
+        <dependency><groupId>com.h2database</groupId><artifactId>h2</artifactId><scope>test</scope></dependency>
+        <dependency><groupId>com.mdframe.forge</groupId><artifactId>forge-plugin-capability-actions</artifactId><version>1.0.0</version></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
+    </dependencies>
+    <build>
+        <!-- 仅编译以下白名单测试，补入本轮公共新增 Controller 的既有回归。 -->
+        <testSourceDirectory>${project.basedir}/../../../../forge-server/forge-framework/forge-plugin-parent</testSourceDirectory>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <testIncludes>
+                        <testInclude>**/ApplicationProcessStartSystemServiceTest.java</testInclude>
+                        <testInclude>**/BusinessProcessOrchestratorTest.java</testInclude>
+                        <testInclude>**/RestEndpointSystemServiceTest.java</testInclude>
+                        <testInclude>**/LowcodeFormSystemServiceTest.java</testInclude>
+                        <testInclude>**/LowcodeFormInvocationGuardTest.java</testInclude>
+                        <testInclude>**/LowcodeFormCreateChainTest.java</testInclude>
+                        <testInclude>**/DynamicCrudControllerTest.java</testInclude>
+                        <testInclude>**/SystemServiceCapabilityPublisherTest.java</testInclude>
+                        <testInclude>**/SystemServiceDefinitionRegistryTest.java</testInclude>
+                        <testInclude>**/SystemServiceOpenGatewayAdapterTest.java</testInclude>
+                        <testInclude>**/CapabilityGrantServiceTest.java</testInclude>
+                        <testInclude>**/SecureActionAutoConfigurationTest.java</testInclude>
+                        <testInclude>**/FlowActionAutoConfigurationTest.java</testInclude>
+                        <testInclude>**/FlowActionCapabilityPublisherTest.java</testInclude>
+                        <testInclude>**/FlowActionExecutionAdapterTest.java</testInclude>
+                    </testIncludes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -26,6 +26,10 @@ class LowcodePrintDataProviderTest {
     final PrintIdentity identity = mock(PrintIdentity.class);
     final BusinessApplicationRuntimeService runtime = mock(BusinessApplicationRuntimeService.class);
     final BusinessApplicationVersionMapper versions = mock(BusinessApplicationVersionMapper.class);
+    final com.mdframe.forge.plugin.generator.mapper.BusinessApplicationMapper applications =
+            mock(com.mdframe.forge.plugin.generator.mapper.BusinessApplicationMapper.class);
+    final com.mdframe.forge.plugin.generator.mapper.BusinessApplicationObjectMapper applicationObjects =
+            mock(com.mdframe.forge.plugin.generator.mapper.BusinessApplicationObjectMapper.class);
     final com.mdframe.forge.plugin.print.mapper.PrintTemplateVersionMapper templateVersions = mock(com.mdframe.forge.plugin.print.mapper.PrintTemplateVersionMapper.class);
     final PrintMetadataResolver metadata = mock(PrintMetadataResolver.class);
     final LowcodePrintRecordReader records = mock(LowcodePrintRecordReader.class);
@@ -68,6 +72,7 @@ class LowcodePrintDataProviderTest {
         });
         var access = new PrintDocumentAccess(JSON);
         provider = new LowcodePrintDataProvider(identity, mock(PrintApplicationAccessAdapter.class), runtime, versions,
+                applications, applicationObjects,
                 new PrintApplicationSnapshotCodec(factory.getValidator()), metadata, new LowcodePrintSourceResolver(),
                 new LowcodePrintCatalogBuilder(access), records, mock(LowcodePrintResourceAccess.class), access, JSON,
                 templateVersions, mock(com.mdframe.forge.plugin.print.mapper.PrintTemplateMapper.class),
@@ -92,6 +97,56 @@ class LowcodePrintDataProviderTest {
         assertThatThrownBy(() -> provider.authorize(ACTOR, request)).isInstanceOf(RuntimeException.class);
         verifyNoInteractions(records);
     }
+
+    @Test void designerTrialPrintUsesDraftPageTreeWhenPageNotPublished() throws Exception {
+        session.when(() -> SessionHelper.hasPermission("print:template:view")).thenReturn(true);
+        // 发布门户没有该页
+        portal.getApplication().setOptions("{\"inAppBuilder\":{\"nodes\":[],\"pages\":{}}}");
+        var draft = new AiBusinessApplication();
+        draft.setOptions(JSON.readTree(PrintLowcodeTestData.snapshot()).path("application").path("options").toString());
+        when(applications.selectEntityById(1L, 2L)).thenReturn(draft);
+        var object = new BusinessApplicationObjectVO();
+        object.setObjectId(3L); object.setObjectCode("purchase"); object.setConfigKey("purchase");
+        when(applicationObjects.selectByApplicationId(1L, 2L)).thenReturn(List.of(object));
+        when(metadata.draft(eq(ACTOR), eq(SOURCE))).thenReturn(
+                new PrintMetadataResolver.Metadata(
+                        new PrintMetadataResolver.Model(new AiCrudConfig(), new LowcodeModelSchema(), new LowcodePageSchema()),
+                        List.of()));
+        var bindingRow = new com.mdframe.forge.plugin.print.entity.PrintBinding();
+        bindingRow.setSourceKey(SOURCE.key());
+        bindingRow.setScene("DETAIL");
+        bindingRow.setTemplateId(10L);
+        bindingRow.setIsDefault(true);
+        bindingRow.setSortOrder(0);
+        var templates = mock(com.mdframe.forge.plugin.print.mapper.PrintTemplateMapper.class);
+        var bindings = mock(com.mdframe.forge.plugin.print.mapper.PrintBindingMapper.class);
+        when(bindings.selectApplicationEnabled(1L, 2L)).thenReturn(List.of(bindingRow));
+        var template = new com.mdframe.forge.plugin.print.entity.PrintTemplate();
+        template.setId(10L); template.setStatus(1); template.setPublishedVersionId(20L); template.setSourceKey(SOURCE.key());
+        when(templates.selectScoped(1L, 10L)).thenReturn(template);
+        var published = new com.mdframe.forge.plugin.print.entity.PrintTemplateVersion();
+        published.setId(20L); published.setSchemaHash(HASH);
+        when(templateVersions.selectScoped(1L, 10L, 20L)).thenReturn(published);
+        var access = new PrintDocumentAccess(JSON);
+        provider = new LowcodePrintDataProvider(identity, mock(PrintApplicationAccessAdapter.class), runtime, versions,
+                applications, applicationObjects,
+                new PrintApplicationSnapshotCodec(factory.getValidator()), metadata, new LowcodePrintSourceResolver(),
+                new LowcodePrintCatalogBuilder(access), records, mock(LowcodePrintResourceAccess.class), access, JSON,
+                templateVersions, templates, bindings, flowContexts, mock(FlowPrintAccessPolicy.class), flowHistory);
+        // empty snapshot printing → live refs
+        when(versions.selectVersion(1L, 2L, 1)).thenAnswer(inv -> {
+            var v = new AiBusinessApplicationVersion();
+            v.setId(100L);
+            v.setSnapshotJson("{}");
+            return v;
+        });
+        var context = provider.authorize(ACTOR, request);
+        assertThat(context.versions()).isNotEmpty();
+        verify(applications).selectEntityById(1L, 2L);
+        verify(metadata).draft(ACTOR, SOURCE);
+        verify(records).assertReadable(any(), eq("saved-record"));
+    }
+
     @Test void revokedObjectPermissionAndOtherActorAreDenied() {
         session.when(() -> SessionHelper.hasPermission("ai:business:purchase:query")).thenReturn(false);
         assertThatThrownBy(() -> provider.authorize(ACTOR, request)).isInstanceOf(RuntimeException.class);

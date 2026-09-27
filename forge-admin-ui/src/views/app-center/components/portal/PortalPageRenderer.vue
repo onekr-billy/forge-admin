@@ -15,10 +15,21 @@
       sandbox="allow-forms allow-modals allow-popups allow-same-origin allow-scripts"
     />
     <div
+      v-else-if="showContentSkeleton"
+      class="portal-content-skeleton"
+      aria-busy="true"
+      aria-label="页面内容加载中"
+    >
+      <n-skeleton height="36px" :sharp="false" />
+      <n-skeleton text :repeat="3" />
+      <n-skeleton height="220px" :sharp="false" style="margin-top: 12px" />
+      <n-skeleton height="220px" :sharp="false" style="margin-top: 12px" />
+    </div>
+    <div
       v-else-if="blocks.length"
       class="portal-page-flow"
       :class="{ 'is-fill': fillHost, 'is-content-sized': contentSizedFlow }"
-      :style="fillHost || contentSizedFlow ? undefined : { minHeight: `${pageHeight}px` }"
+      :style="portalFlowStyle"
     >
       <section
         v-for="(block, index) in blocks"
@@ -28,6 +39,7 @@
           'is-fill': fillHost && blocks.length === 1,
           'is-runtime-form': isRuntimeAutoHeightBlock(block),
         }"
+        :data-page-block-type="block.blockType"
         :style="resolveBlockShellStyle(block, index)"
       >
         <GridBlockRenderer
@@ -42,8 +54,10 @@
           :runtime-crud-props-resolver="resolveRuntimeCrudProps"
           :runtime-crud-loading-resolver="isRuntimeCrudLoading"
           :data-source-configured-resolver="isDataSourceConfigured"
+          :runtime-tree-active-key="runtimeTreeActiveKey"
           :selected="false"
           :readonly="!configurable"
+          @runtime-tree-select="handleRuntimeTreeSelect"
         />
       </section>
     </div>
@@ -58,10 +72,17 @@
 </template>
 
 <script setup>
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { NSkeleton } from 'naive-ui'
+import { computed, defineAsyncComponent, h, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { crudConfigRender } from '@/api/ai'
 import { executePublishedExtensionHook } from '@/api/business-extension'
 import { buildRuntimeCrudProps } from '@/components/lowcode-builder/shared/runtime-crud-props'
+import {
+  alignSearchSchemaWithLeftTree,
+  buildLeftTreeFilterParams,
+  findTreePanelProps,
+} from '@/components/lowcode-builder/shared/runtime-tree-table'
 import ExtensionSandboxHost from '@/components/lowcode-extension/js/ExtensionSandboxHost.vue'
 import {
   materializeRuntimeScopedCss,
@@ -69,10 +90,28 @@ import {
   selectScopedCssExtensions,
 } from '@/components/lowcode-extension/runtime/application-extension-runtime'
 import RuntimeScopedStyles from '@/components/lowcode-extension/runtime/RuntimeScopedStyles'
-import { isRuntimeAutoHeightBlock, shouldUseContentSizedFlow } from './portal-page-runtime-layout'
+import { isRuntimeAutoHeightBlock, resolvePortalPageBlocks, shouldUseContentSizedFlow, sortBlocksByPageFlowY } from './portal-page-runtime-layout'
+import { normalizePagePadding, resolvePagePaddingCss, resolvePageBlockShellStyle as computePageBlockShellStyle, DEFAULT_PAGE_PADDING } from '@/views/app-center/runtime-modules/page-flow-geometry'
 import PortalEmptyState from './PortalEmptyState.vue'
+import { isDataFieldBlockType } from '@/components/lowcode-builder/page/page-schema'
 
-const GridBlockRenderer = defineAsyncComponent(() => import('@/components/lowcode-builder/page/GridBlockRenderer.vue'))
+const PortalBlockAsyncLoader = {
+  name: 'PortalBlockAsyncLoader',
+  render() {
+    return h('div', { class: 'portal-content-skeleton portal-content-skeleton--block', 'aria-busy': 'true' }, [
+      h(NSkeleton, { height: '32px', sharp: false }),
+      h(NSkeleton, { text: true, repeat: 4 }),
+    ])
+  },
+}
+
+const GridBlockRenderer = defineAsyncComponent({
+  delay: 0,
+  loadingComponent: PortalBlockAsyncLoader,
+  loader: () => import('@/components/lowcode-builder/page/GridBlockRenderer.vue'),
+})
+
+const route = useRoute()
 
 const props = defineProps({
   node: { type: Object, default: null },
@@ -87,12 +126,22 @@ const props = defineProps({
   designPreview: { type: Boolean, default: false },
   fillHost: { type: Boolean, default: false },
   /**
+   * 表单/对象保存后由父级递增。用于清空本组件 CRUD 缓存并带上请求参数，
+   * 避免返回页面管理后仍用旧的 render 结果（新增表单配置不生效）。
+   */
+  crudConfigRevision: { type: [Number, String], default: 0 },
+  /**
    * 外部注入的表单字段解析函数。
    * 当 PortalPageRenderer 渲染包含表单设计器 Schema 的区块时，
    * 该函数负责从表单资产中提取字段（含 widget 虚拟组件），
    * 并与后端 CRUD fieldCatalog 合并后作为 GridBlockRenderer 的 fields。
    */
   formFieldsResolver: { type: Function, default: null },
+  /**
+   * 父级在骨架阶段预热好的 CRUD props（objectKey → props）。
+   * 有 seed 时首屏可直接渲染，避免壳出来后再等 render。
+   */
+  seedRuntimeCrudProps: { type: Object, default: () => ({}) },
 })
 
 const runtimeCrudPropsByKey = ref({})
@@ -101,6 +150,10 @@ const unavailableKeys = ref(new Set())
 const extensionSandboxRef = ref(null)
 const pageInitKeys = ref(new Set())
 const pageInitDefaultsByObject = ref({})
+const contentBootstrapStarted = ref(false)
+// 树节点高亮是区块级状态；树对右表的筛选是页面级状态，避免左树 blockId 与右表 blockId 不一致时过滤失效。
+const runtimeTreeFilter = ref({})
+const runtimeTreeActiveKey = ref('__all__')
 
 const extensionPageContext = computed(() => ({
   applicationId: props.applicationId,
@@ -119,25 +172,76 @@ const runtimeScopedStyles = computed(() => scopedCssExtensions.value
   }))
   .filter(item => item.css.trim()))
 
+const contentSizedOptions = computed(() => ({
+  fillHost: props.fillHost,
+  runtimePreview: true,
+  pageId: props.pageId || props.node?.id || '',
+}))
+
 const blocks = computed(() => {
-  const layout = props.page?.layout || {}
-  const rawItems = Array.isArray(layout.gridLayout?.items)
-    ? layout.gridLayout.items
-    : Array.isArray(layout.items) ? layout.items.map(normalizeLegacyBlock) : []
-  const items = rawItems.filter(item => item?.blockType !== 'page-title')
-  if (items.length)
-    return items
-  if (props.node?.pageType === 'object' && resolveObjectRef(props.node)) {
-    return [{
-      id: `portal-object-${props.node.id}`,
-      blockType: 'AiCrudPage',
-      props: {
-        objectRef: resolveObjectRef(props.node),
-        style: { widthMode: 'full', heightMode: 'full', pageFlowHeight: 640 },
-      },
-    }]
+  const items = resolvePortalPageBlocks({
+    page: props.page,
+    node: props.node,
+    resolveObjectRef,
+    normalizeLegacyBlock,
+  })
+  return shouldUseContentSizedFlow(items, contentSizedOptions.value)
+    ? sortBlocksByPageFlowY(items)
+    : items
+})
+
+const contentSizedFlow = computed(() => shouldUseContentSizedFlow(blocks.value, contentSizedOptions.value))
+
+/** 有数据块但 CRUD 尚未就绪时，整页内容骨架代替空白 */
+const showContentSkeleton = computed(() => {
+  if (!blocks.value.length || externalUrl.value)
+    return false
+  const dataBlocks = []
+  visitBlocks(blocks.value, (block) => {
+    if (isRuntimeDataBlock(block))
+      dataBlocks.push(block)
+  })
+  if (!dataBlocks.length)
+    return false
+  const anyReady = dataBlocks.some((block) => {
+    const key = resolveObjectKey(resolveObjectRef(block) || resolveObjectRef(props.node || {}))
+    return Boolean(key && runtimeCrudPropsByKey.value[key])
+  })
+  if (anyReady)
+    return false
+  const stillLoading = dataBlocks.some((block) => {
+    const key = resolveObjectKey(resolveObjectRef(block) || resolveObjectRef(props.node || {}))
+    return Boolean(key && loadingKeys.value.has(key))
+  })
+  // 刚挂载、预加载尚未写入 loadingKeys 时也先盖骨架，避免闪空白
+  return stillLoading || !contentBootstrapStarted.value
+})
+
+const pagePaddingCss = computed(() => resolvePagePaddingCss(
+  resolvePortalRuntimePagePadding(
+    props.page?.layout?.gridLayout?.pagePadding || props.page?.layout?.pagePadding,
+  ),
+))
+
+/** 门户正式页：默认 8px；历史默认 24 四边收敛为 8，避免灰底大留白 */
+function resolvePortalRuntimePagePadding(raw) {
+  const pad = normalizePagePadding(raw, DEFAULT_PAGE_PADDING)
+  const looksLikeLegacyDefault = [pad.top, pad.right, pad.bottom, pad.left].every(v => v === 24)
+  if (looksLikeLegacyDefault || raw == null || raw === '')
+    return { ...DEFAULT_PAGE_PADDING }
+  return {
+    top: Math.min(pad.top, 12),
+    right: Math.min(pad.right, 12),
+    bottom: Math.min(pad.bottom, 12),
+    left: Math.min(pad.left, 12),
   }
-  return []
+}
+
+const portalFlowStyle = computed(() => {
+  const style = { padding: pagePaddingCss.value }
+  if (!props.fillHost && !contentSizedFlow.value)
+    style.minHeight = `${pageHeight.value}px`
+  return style
 })
 
 const externalUrl = computed(() => {
@@ -156,8 +260,6 @@ const externalUrl = computed(() => {
   }
 })
 
-const contentSizedFlow = computed(() => shouldUseContentSizedFlow(blocks.value, { fillHost: props.fillHost }))
-
 const pageHeight = computed(() => blocks.value.reduce((bottom, block, index) => {
   const style = block.props?.style || {}
   const top = finiteNumber(style.pageFlowY, resolveDefaultBlockY(block, index))
@@ -168,14 +270,58 @@ const pageHeight = computed(() => blocks.value.reduce((bottom, block, index) => 
   return Math.max(bottom, top + height + 28)
 }, 620))
 
-watch(() => [props.node?.id, blocks.value, props.designPreview, props.configurable], () => {
-  runtimeCrudPropsByKey.value = {}
-  loadingKeys.value = new Set()
-  unavailableKeys.value = new Set()
-  pageInitKeys.value = new Set()
-  pageInitDefaultsByObject.value = {}
-  visitBlocks(blocks.value, preloadRuntimeCrudProps)
-}, { immediate: true, deep: true })
+watch(
+  () => [props.node?.id, blocks.value, props.designPreview, props.configurable, props.crudConfigRevision, props.seedRuntimeCrudProps],
+  (next, prev) => {
+    const nextPreview = next?.[2]
+    const nextConfigurable = next?.[3]
+    const nextRevision = next?.[4]
+    const prevPreview = prev?.[2]
+    const prevConfigurable = prev?.[3]
+    const prevRevision = prev?.[4]
+    // 换页时保留已加载的对象 render 缓存，避免同对象反复打 /render + designPreview 草稿准备
+    const invalidateAll = !prev
+      || nextPreview !== prevPreview
+      || nextConfigurable !== prevConfigurable
+      || nextRevision !== prevRevision
+    if (invalidateAll) {
+      runtimeCrudPropsByKey.value = {}
+      loadingKeys.value = new Set()
+      unavailableKeys.value = new Set()
+    }
+    if (!prev || next?.[0] !== prev?.[0] || next?.[1] !== prev?.[1]) {
+      runtimeTreeFilter.value = {}
+      runtimeTreeActiveKey.value = '__all__'
+    }
+    applySeedRuntimeCrudProps()
+    // PAGE_INIT 默认值按页隔离
+    pageInitKeys.value = new Set()
+    pageInitDefaultsByObject.value = {}
+    contentBootstrapStarted.value = false
+    visitBlocks(blocks.value, preloadRuntimeCrudProps)
+    contentBootstrapStarted.value = true
+  },
+  { immediate: true, deep: true },
+)
+
+function applySeedRuntimeCrudProps() {
+  const seed = props.seedRuntimeCrudProps
+  if (!seed || typeof seed !== 'object')
+    return
+  const entries = Object.entries(seed).filter(([, value]) => value && typeof value === 'object')
+  if (!entries.length)
+    return
+  const next = { ...runtimeCrudPropsByKey.value }
+  let changed = false
+  entries.forEach(([key, value]) => {
+    if (!key || next[key])
+      return
+    next[key] = value
+    changed = true
+  })
+  if (changed)
+    runtimeCrudPropsByKey.value = next
+}
 
 function resolveObjectRef(source = {}) {
   const raw = source.objectRef || source.props?.objectRef || source.props?.runtimeObjectRef
@@ -207,7 +353,10 @@ function resolveObjectKey(objectRef) {
 }
 
 function preloadRuntimeCrudProps(block) {
-  const objectRef = resolveObjectRef(block) || (block === blocks.value[0] ? resolveObjectRef(props.node || {}) : null)
+  // 提示面板等装饰块不能参与 CRUD 预加载，否则会把对象 key 标成 unavailable，拖垮同页 AiCrudPage
+  if (!isRuntimeDataBlock(block))
+    return
+  const objectRef = resolveObjectRef(block) || resolveObjectRef(props.node || {})
   const key = resolveObjectKey(objectRef)
   if (!key || runtimeCrudPropsByKey.value[key] || loadingKeys.value.has(key) || unavailableKeys.value.has(key))
     return
@@ -226,25 +375,28 @@ async function loadRuntimeCrudProps(configKey, objectRef, key) {
     // 正式门户 configurable=false，仍只走已发布配置。
     let designPreview = props.designPreview || props.configurable
     const runtimeEntryId = resolveRuntimeEntryId(configKey)
+    const revision = String(props.crudConfigRevision || '').trim()
+    const renderOptions = {
+      needTip: false,
+      appId: runtimeEntryId,
+      applicationId: props.applicationId,
+      pageId: props.pageId || String(props.node?.id || ''),
+      // 表单保存后 revision 变化，避免沿用同 URL 的旧 render 结果
+      ...(revision ? { params: { configRev: revision } } : {}),
+    }
     let config = null
     try {
-      config = (await crudConfigRender(configKey, designPreview, {
-        needTip: false,
-        appId: runtimeEntryId,
-        applicationId: props.applicationId,
-        pageId: props.pageId || String(props.node?.id || ''),
-      })).data
+      config = (await crudConfigRender(configKey, designPreview, renderOptions)).data
     }
     catch (error) {
       if (!designPreview)
         throw error
+      // 设计预览失败时，未发布配置再打正式 render 只会再报「尚未发布」，直接放弃
+      const message = String(error?.message || error?.msg || '')
+      if (message.includes('尚未发布') || message.includes('无业务对象设计') || message.includes('不能预览设计草稿'))
+        throw error
       designPreview = false
-      config = (await crudConfigRender(configKey, false, {
-        needTip: false,
-        appId: runtimeEntryId,
-        applicationId: props.applicationId,
-        pageId: props.pageId || String(props.node?.id || ''),
-      })).data
+      config = (await crudConfigRender(configKey, false, renderOptions)).data
     }
     if (!config || typeof config !== 'object')
       throw new Error('业务对象运行配置为空')
@@ -277,6 +429,8 @@ function resolveRuntimeEntryId(configKey) {
 }
 
 function resolveRuntimeCrudProps(block) {
+  if (!isRuntimeDataBlock(block))
+    return null
   const objectRef = resolveObjectRef(block) || resolveObjectRef(props.node || {})
   const key = resolveObjectKey(objectRef)
   if (key && !runtimeCrudPropsByKey.value[key] && !loadingKeys.value.has(key) && !unavailableKeys.value.has(key))
@@ -284,13 +438,73 @@ function resolveRuntimeCrudProps(block) {
   const runtimeProps = key ? runtimeCrudPropsByKey.value[key] || null : null
   if (!runtimeProps)
     return null
+  const treeFilter = runtimeTreeFilter.value
+  const treePanelProps = findTreePanelProps(blocks.value) || {}
+  const hasTreePanel = Boolean(treePanelProps && Object.keys(treePanelProps).length)
+    || blocks.value.some(item => item?.blockType === 'tree-panel')
+  const searchSchema = alignSearchSchemaWithLeftTree(runtimeProps.searchSchema, {
+    treePanelProps,
+    runtimeProps,
+  })
+  const pageRouteParams = resolveDeclaredPageRouteParams()
+  // 页面已有 tree-panel 时，不要再套 TreeCrudTemplate，也不要把右表渲成嵌套树
+  if (hasTreePanel && block?.blockType === 'AiCrudPage') {
+    const { treeConfig: _treeConfig, ...runtimeOptions } = runtimeProps.options || {}
+    return {
+      ...runtimeProps,
+      suppressTreeCrudShell: true,
+      treeConfig: {},
+      options: runtimeOptions,
+      searchSchema,
+      publicParams: {
+        ...(runtimeProps.publicParams || {}),
+        ...pageRouteParams,
+        ...(treeFilter || {}),
+      },
+      formDefaultValues: {
+        ...(runtimeProps.formDefaultValues || {}),
+        ...pageRouteParams,
+        ...(pageInitDefaultsByObject.value[key] || {}),
+      },
+    }
+  }
   return {
     ...runtimeProps,
+    searchSchema,
+    publicParams: {
+      ...(runtimeProps.publicParams || {}),
+      ...pageRouteParams,
+      ...(treeFilter || {}),
+    },
     formDefaultValues: {
       ...(runtimeProps.formDefaultValues || {}),
+      ...pageRouteParams,
       ...(pageInitDefaultsByObject.value[key] || {}),
     },
   }
+}
+
+/** 把页面声明的入参从 route.query 取出，供列表过滤 / 表单默认值使用。 */
+function resolveDeclaredPageRouteParams() {
+  const declared = props.node?.pageParams
+    || props.node?.settings?.pageParams
+    || props.page?.params
+    || []
+  if (!Array.isArray(declared) || !declared.length)
+    return {}
+  const query = route.query || {}
+  const result = {}
+  declared.forEach((item) => {
+    const name = String(item?.name || '').trim()
+    if (!name)
+      return
+    const raw = query[name]
+    if (raw !== undefined && raw !== null && String(raw) !== '')
+      result[name] = Array.isArray(raw) ? raw[0] : raw
+    else if (item.defaultValue !== undefined && item.defaultValue !== null && String(item.defaultValue) !== '')
+      result[name] = item.defaultValue
+  })
+  return result
 }
 
 function blockForObjectKey(key) {
@@ -383,6 +597,24 @@ function isDataSourceConfigured(block) {
   return Boolean(resolveObjectKey(resolveObjectRef(block) || resolveObjectRef(props.node || {})))
 }
 
+function isRuntimeDataBlock(block = {}) {
+  return isDataFieldBlockType(block?.blockType) || block?.blockType === 'tree-panel'
+}
+
+function handleRuntimeTreeSelect(payload = {}) {
+  runtimeTreeActiveKey.value = payload.clear || !payload.key ? '__all__' : String(payload.key)
+  if (!payload.filterField || payload.clear || payload.value === undefined || payload.value === null || payload.value === '') {
+    runtimeTreeFilter.value = {}
+    return
+  }
+  runtimeTreeFilter.value = buildLeftTreeFilterParams({
+    filterField: payload.filterField,
+    value: payload.value,
+    includeChildren: payload.includeChildren !== false,
+    expandedValues: payload.expandedValues,
+  })
+}
+
 function resolveBlockFields(block) {
   const runtimeFields = resolveRuntimeCrudProps(block)?.fieldCatalog
   // 通过外部注入的 formFieldsResolver 合并表单设计器字段（含 widget 虚拟组件）
@@ -449,44 +681,67 @@ function resolveBlockShellStyle(block, index) {
     }
   }
   const style = block.props?.style || {}
-  const widthMode = style.widthMode || 'full'
   const heightMode = style.heightMode || 'fixed'
-  const customX = finiteNumber(style.pageFlowX, 24)
-  const customY = finiteNumber(style.pageFlowY, resolveDefaultBlockY(block, index))
   const customHeight = finiteNumber(style.pageFlowHeight, readLength(style.height) || resolveDefaultBlockHeight(block))
-  const runtimeAutoHeight = isRuntimeAutoHeightBlock(block)
+  const runtimeAutoHeight = isRuntimeAutoHeightBlock(block) && heightMode !== 'fixed'
   const contentSized = contentSizedFlow.value
-  const position = {
-    position: contentSized ? 'relative' : 'absolute',
-    left: contentSized ? 'auto' : `${customX}px`,
-    top: contentSized ? 'auto' : `${customY}px`,
-    height: runtimeAutoHeight || heightMode === 'auto' || contentSized ? 'auto' : `${customHeight}px`,
-    textAlign: style.textAlign || block.props?.textAlign || block.props?.align || 'left',
+  const isContainer = ['grid-layout', 'card', 'box-layout', 'tabs'].includes(block.blockType)
+
+  // 文档流：彻底丢掉 pageFlowX/Y，避免 top 残留把块钉死在旧坐标
+  if (contentSized) {
+    const shell = {
+      position: 'relative',
+      left: 'auto',
+      top: 'auto',
+      right: 'auto',
+      bottom: 'auto',
+      width: '100%',
+      height: 'auto',
+      textAlign: style.textAlign || block.props?.textAlign || block.props?.align || 'left',
+      boxSizing: 'border-box',
+      overflow: 'visible',
+    }
+    if (isContainer && heightMode !== 'full') {
+      shell.minHeight = `${Math.max(40, customHeight)}px`
+      return shell
+    }
+    if (heightMode === 'fixed') {
+      shell.height = `${Math.max(40, customHeight)}px`
+      shell.minHeight = `${Math.max(40, customHeight)}px`
+    }
+    else if (['AiCrudPage', 'AiTable', 'data-table'].includes(block.blockType) && !runtimeAutoHeight) {
+      // 左树右表 + 搜索/工具栏需要更高可视区，过小会被 overflow:hidden 压成“有数据看不见”
+      const minHeight = Math.max(customHeight, 560)
+      shell.height = `${minHeight}px`
+      shell.minHeight = `${minHeight}px`
+    }
+    else {
+      shell.minHeight = `${Math.max(40, customHeight)}px`
+    }
+    return shell
   }
-  if (!runtimeAutoHeight && !contentSized && heightMode === 'full') {
-    position.height = 'auto'
-    position.bottom = '24px'
-  }
-  if (widthMode === 'full')
-    return { ...position, left: contentSized ? 'auto' : '24px', width: contentSized ? '100%' : 'calc(100% - 48px)' }
-  const rawWidth = String(style.pageFlowWidth || '').trim()
-  const frameWidth = readLength(style.width)
-  if (widthMode === 'auto')
-    return { ...position, width: rawWidth || `min(${Math.max(280, Math.min(560, frameWidth || 520))}px, calc(100% - 48px))` }
-  if (widthMode === 'fixed' && frameWidth > 0)
-    return { ...position, width: rawWidth || `min(${frameWidth}px, calc(100% - 48px))` }
-  return { ...position, width: rawWidth || (contentSized ? '100%' : 'calc(100% - 48px)') }
+
+  const gridLayout = props.page?.layout?.gridLayout || {}
+  const pagePadding = resolvePortalRuntimePagePadding(gridLayout.pagePadding || props.page?.layout?.pagePadding)
+  return computePageBlockShellStyle(block, blocks.value, {
+    pageId: props.pageId || props.node?.id || '',
+    pagePadding,
+    pageFlowCoordSpace: gridLayout.pageFlowCoordSpace,
+    // 强制走绝对布局分支（调用方已排除文档流）
+    fillHost: false,
+    runtimePreview: true,
+  })
 }
 
 function resolveDefaultBlockHeight(block = {}) {
   if (block.blockType === 'page-title')
-    return 176
+    return 96
   if (['divider', 'custom-html'].includes(block.blockType))
     return 88
   if (['stats-strip', 'info-panel', 'AiForm'].includes(block.blockType))
     return 128
   if (['AiCrudPage', 'AiTable', 'data-table', 'search-form', 'toolbar'].includes(block.blockType))
-    return 420
+    return 560
   return 116
 }
 
@@ -556,6 +811,24 @@ function readLength(value) {
   flex-direction: column;
 }
 
+.portal-content-skeleton {
+  display: grid;
+  flex: 1;
+  align-content: start;
+  gap: 10px;
+  min-height: 320px;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.portal-content-skeleton--block {
+  min-height: 160px;
+  padding: 12px;
+  border: 1px dashed #e5e7eb;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
 .portal-page-flow {
   position: relative;
   width: 100%;
@@ -567,8 +840,7 @@ function readLength(value) {
   display: flex;
   min-height: 0;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px 24px 24px;
+  gap: 8px;
   box-sizing: border-box;
 }
 
@@ -578,6 +850,12 @@ function readLength(value) {
   min-height: 0;
   flex: 1;
   flex-direction: column;
+  box-sizing: border-box;
+  /* 单页填满时由内部 AiCrudPage / 表格滚动；外层 auto 会在 padding+100% 时误出竖条 */
+  overflow: hidden;
+}
+
+.portal-page-flow.is-fill.is-content-sized {
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -589,7 +867,8 @@ function readLength(value) {
 
 .portal-page-block {
   min-width: 0;
-  border-radius: 6px;
+  overflow: hidden;
+  border-radius: 0;
 }
 
 .portal-page-block :deep(.grid-block) {
@@ -597,24 +876,62 @@ function readLength(value) {
   min-height: 0;
 }
 
-.portal-page-block.is-runtime-form :deep(.grid-block.block-AiForm),
-.portal-page-block.is-runtime-form :deep(.grid-block.block-AiCrudPage),
-.portal-page-block.is-runtime-form :deep(.system-component-preview),
-.portal-page-block.is-runtime-form :deep(.ai-crud-page) {
+.portal-page-block.is-runtime-form :deep(.grid-block),
+.portal-page-block[data-page-block-type='page-title'] :deep(.grid-block),
+.portal-page-block[data-page-block-type='workspace-summary-metrics'] :deep(.grid-block),
+.portal-page-block[data-page-block-type='info-panel'] :deep(.grid-block),
+.portal-page-block[data-page-block-type='empty-state'] :deep(.grid-block),
+.portal-page-block[data-page-block-type='stats-strip'] :deep(.grid-block),
+.portal-page-block[data-page-block-type='custom-html'] :deep(.grid-block) {
   height: auto !important;
-  min-height: 0 !important;
+  min-height: 0;
   overflow: visible;
 }
 
 .portal-page-flow.is-content-sized .portal-page-block {
   position: relative !important;
-  inset: auto !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
   width: 100% !important;
+  overflow: visible;
+  /* 高度交给 resolveBlockShellStyle 的内联 style；不能 min-height:0，
+   * 否则 AiCrudPage（flex + overflow:hidden）会在运行态被压成空白。 */
+}
+
+.portal-page-flow.is-content-sized .portal-page-block.is-runtime-form,
+.portal-page-flow.is-content-sized .portal-page-block[data-page-block-type='page-title'],
+.portal-page-flow.is-content-sized .portal-page-block[data-page-block-type='workspace-summary-metrics'],
+.portal-page-flow.is-content-sized .portal-page-block[data-page-block-type='info-panel'],
+.portal-page-flow.is-content-sized .portal-page-block[data-page-block-type='empty-state'],
+.portal-page-flow.is-content-sized .portal-page-block[data-page-block-type='stats-strip'],
+.portal-page-flow.is-content-sized .portal-page-block[data-page-block-type='custom-html'] {
   height: auto !important;
   min-height: 0 !important;
 }
 
 .portal-page-flow.is-content-sized .portal-page-block :deep(.grid-block) {
+  height: 100% !important;
+}
+
+/* 左树右表 / 列表块：防止内容流高度不足把表格压成空白 */
+.portal-page-block[data-page-block-type='AiCrudPage'] {
+  min-height: 560px;
+}
+
+.portal-page-block[data-page-block-type='AiCrudPage'] :deep(.tree-crud-layout),
+.portal-page-block[data-page-block-type='AiCrudPage'] :deep(.ai-crud-preview) {
+  min-height: 520px;
+}
+
+.portal-page-flow.is-content-sized .portal-page-block.is-runtime-form :deep(.grid-block),
+.portal-page-flow.is-content-sized .portal-page-block[data-page-block-type='page-title'] :deep(.grid-block),
+.portal-page-flow.is-content-sized .portal-page-block[data-page-block-type='workspace-summary-metrics'] :deep(.grid-block),
+.portal-page-flow.is-content-sized .portal-page-block[data-page-block-type='info-panel'] :deep(.grid-block),
+.portal-page-flow.is-content-sized .portal-page-block[data-page-block-type='empty-state'] :deep(.grid-block),
+.portal-page-flow.is-content-sized .portal-page-block[data-page-block-type='stats-strip'] :deep(.grid-block),
+.portal-page-flow.is-content-sized .portal-page-block[data-page-block-type='custom-html'] :deep(.grid-block) {
   height: auto !important;
 }
 
@@ -623,7 +940,7 @@ function readLength(value) {
   min-height: 0 !important;
   height: auto;
   flex-direction: column;
-  padding: 16px 24px 24px;
+  padding: 8px;
   box-sizing: border-box;
 }
 
@@ -651,9 +968,9 @@ function readLength(value) {
 @media (max-width: 768px) {
   .portal-page-flow {
     display: grid;
-    gap: 12px;
+    gap: 8px;
     min-height: 0 !important;
-    padding: 12px;
+    padding: 8px;
   }
 
   .portal-page-block {

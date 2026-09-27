@@ -59,4 +59,24 @@
           AND event_id = #{eventId}
         <include refid="Visible_Filter"/>
     </select>
+
+    <insert id="insertBatch">
+        INSERT INTO ai_data_audit_field (
+            id, tenant_id, event_id, target_object_id, target_model_id, target_record_id, relation_key,
+            field_path, field_code, column_name, field_label, field_type, field_metadata, change_type,
+            source_type, before_state, after_state, before_value, after_value, before_display, after_display,
+            value_protection, key_version, create_by, create_time, create_dept, update_by, update_time
+        ) VALUES
+        <foreach collection="items" item="item" separator=",">
+            (
+                #{item.id}, #{item.tenantId}, #{item.eventId}, #{item.targetObjectId}, #{item.targetModelId},
+                #{item.targetRecordId}, #{item.relationKey}, #{item.fieldPath}, #{item.fieldCode},
+                #{item.columnName}, #{item.fieldLabel}, #{item.fieldType}, #{item.fieldMetadata},
+                #{item.changeType}, #{item.sourceType}, #{item.beforeState}, #{item.afterState},
+                #{item.beforeValue}, #{item.afterValue}, #{item.beforeDisplay}, #{item.afterDisplay},
+                #{item.valueProtection}, #{item.keyVersion}, #{item.createBy}, #{item.createTime},
+                #{item.createDept}, #{item.updateBy}, #{item.updateTime}
+            )
+        </foreach>
+    </insert>
 </mapper>

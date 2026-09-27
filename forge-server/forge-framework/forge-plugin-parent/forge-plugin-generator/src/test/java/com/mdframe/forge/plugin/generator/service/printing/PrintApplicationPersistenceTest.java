@@ -63,7 +63,6 @@ class PrintApplicationPersistenceTest {
     private PrintTemplateVersion version;
     private String candidate;
     private com.mdframe.forge.plugin.print.mapper.PrintBindingMapper bindingMapper;
-    private PrintBindingValidationService bindingValidation;
     private PrintTemplateMapper templateMapper;
     private PrintTemplateVersionMapper printVersionMapper;
     private com.mdframe.forge.plugin.generator.mapper.AiCrudConfigMapper configs;
@@ -115,7 +114,6 @@ class PrintApplicationPersistenceTest {
         bindingMapper = session.getMapper(com.mdframe.forge.plugin.print.mapper.PrintBindingMapper.class);
         templateMapper = templates; printVersionMapper = printVersions;
         configs = session.getMapper(com.mdframe.forge.plugin.generator.mapper.AiCrudConfigMapper.class);
-        bindingValidation = mock(PrintBindingValidationService.class);
         template = new PrintTemplate(); template.setTenantId(1L); template.setApplicationId(2L);
         template.setTemplateCode("synthetic"); template.setTemplateName("合成模板"); template.setStatus(1);
         template.setSourceType("LOWCODE"); template.setPageId(SOURCE.pageId()); template.setSourceKey(SOURCE.key());
@@ -137,8 +135,7 @@ class PrintApplicationPersistenceTest {
         when(identity.current()).thenReturn(new PrintActor(1L, 9L, 1L));
         lock = new PrintApplicationLock(applications);
         guard = new PrintApplicationVersionGuard(identity, lock,
-                new PrintApplicationSnapshotCodec(validation.getValidator()), templates, printVersions, new PrintProtocolValidator(),
-                bindingValidation, mock(PrintMetadataResolver.class));
+                new PrintApplicationSnapshotCodec(validation.getValidator()), templates, printVersions, new PrintProtocolValidator());
         service = service(applications);
     }
 
@@ -225,13 +222,12 @@ class PrintApplicationPersistenceTest {
         assertThat(configs.countActiveRuntimeConfig(1L, 13L, "purchase")).isZero();
     }
 
-    @Test void fieldValidationFailureDoesNotAdvanceApplicationVersion() {
+    @Test void fieldCatalogMismatchDoesNotBlockApplicationVersion() {
         commit(service, 1, "{}", false);
-        doThrow(new BusinessException("synthetic invalid published field"))
-                .when(bindingValidation).validate(any(), any(), anyString(), any(), eq(true));
-        assertThatThrownBy(() -> commit(service, 2, candidate, false)).hasMessageContaining("published field");
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM ai_business_application_version", Integer.class)).isEqualTo(1);
-        assertThat(jdbc.queryForObject("SELECT last_publish_version FROM ai_business_application WHERE id=2", Integer.class)).isEqualTo(1);
+        // 应用发布不再走页面字段目录校验；引用完整时版本应可前进。
+        assertThatCode(() -> commit(service, 2, candidate, false)).doesNotThrowAnyException();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM ai_business_application_version", Integer.class)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT last_publish_version FROM ai_business_application WHERE id=2", Integer.class)).isEqualTo(2);
     }
 
     @Test void realBindingMapperCapturesOnlyActiveApplicationRowsAndPinsImmutableVersion() {
@@ -248,11 +244,11 @@ class PrintApplicationPersistenceTest {
         var codec = new PrintApplicationSnapshotCodec(validation.getValidator());
         var json = new com.fasterxml.jackson.databind.ObjectMapper();
         var capture = new PrintApplicationSnapshotContributor(identity, lock, bindingMapper, templateMapper,
-                printVersionMapper, new PrintProtocolValidator(), codec, json, bindingValidation);
+                printVersionMapper, new PrintProtocolValidator(), codec, json);
         var result = tx.execute(status -> {
             assertThat(bindingMapper.selectApplication(2L, 2L)).isEmpty();
             assertThat(bindingMapper.selectApplication(1L, 3L)).isEmpty();
-            return capture.capture(2L, Map.of());
+            return capture.capture(2L);
         });
         assertThat(((java.util.List<?>) result.get("bindings"))).hasSize(1);
         jdbc.update("UPDATE sys_print_binding SET status=0 WHERE id=?", row.getId());

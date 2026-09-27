@@ -137,7 +137,7 @@ public class BusinessApplicationSnapshotService {
         snapshot.put("publishedObjectVersions", new ArrayList<>());
         snapshot.put("publishedProcessVersions", new ArrayList<>());
         snapshot.put("runtimeActions", new ArrayList<>());
-        snapshot.put("printing", printSnapshots.capture(applicationId, snapshot));
+        snapshot.put("printing", printSnapshots.capture(applicationId));
         return bundle(snapshot);
     }
 
@@ -261,6 +261,7 @@ public class BusinessApplicationSnapshotService {
     private Map<String, Object> objectSnapshot(BusinessApplicationObjectVO object) {
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("objectId", String.valueOf(object.getObjectId()));
+        item.put("suiteCode", object.getSuiteCode());
         item.put("objectCode", object.getObjectCode());
         item.put("objectName", object.getObjectName());
         item.put("objectRole", object.getObjectRole());

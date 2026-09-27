@@ -8,6 +8,7 @@ import {
   getComponentSpec,
   isPaletteUnionSpec,
   LIST_CANVAS_PENDING_TYPES,
+  LIST_PALETTE_EXCLUDED_TYPES,
   listAllComponents,
   listComponents,
   PALETTE_ZONE_ONLY_TYPES,
@@ -381,5 +382,15 @@ describe('bridge Palette Union (B1/B2 统一合集两侧同显红线)', () => {
     for (const type of LIST_CANVAS_PENDING_TYPES) {
       expect(types.has(type)).toBe(false)
     }
+  })
+
+  it('lIST_PALETTE_EXCLUDED_TYPES hides low-value list palette noise without removing catalog render support', () => {
+    expect(LIST_PALETTE_EXCLUDED_TYPES).toContain('watermark')
+    expect(LIST_PALETTE_EXCLUDED_TYPES).toContain('vue-component')
+    expect(LIST_PALETTE_EXCLUDED_TYPES).toContain('AiTable')
+    // catalog 仍保留类型以便存量节点渲染；仅面板过滤
+    const types = new Set(toListPageBlockCatalog().map(i => i.blockType))
+    expect(types.has('watermark')).toBe(true)
+    expect(types.has('AiCrudPage')).toBe(true)
   })
 })

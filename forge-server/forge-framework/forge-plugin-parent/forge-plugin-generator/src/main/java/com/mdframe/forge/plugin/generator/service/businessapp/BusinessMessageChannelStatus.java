@@ -16,6 +16,9 @@ public class BusinessMessageChannelStatus {
 
     private String sendChannel;
 
+    /** Trusted connection resolved from the persisted channel, not business form data. */
+    private Long connectionId;
+
     private Boolean enabled;
 
     private Boolean internalChannel;

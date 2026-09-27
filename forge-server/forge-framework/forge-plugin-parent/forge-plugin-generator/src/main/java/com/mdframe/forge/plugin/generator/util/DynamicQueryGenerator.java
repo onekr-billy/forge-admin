@@ -129,12 +129,30 @@ public class DynamicQueryGenerator {
 
             // 获取搜索类型
             String searchType = searchTypeMap.getOrDefault(fieldName, "eq");
+            // 多值（本级+子集展开）即使标注 eq 也按 in 处理
+            if (isMultiSearchValue(value) && ("eq".equalsIgnoreCase(searchType) || StringUtils.isBlank(searchType))) {
+                searchType = "in";
+            }
             
             // 构建查询条件
             addQueryCondition(queryWrapper, columnName, searchType, value);
         }
 
         return queryWrapper;
+    }
+
+    private static boolean isMultiSearchValue(Object value) {
+        if (value instanceof Collection<?> collection) {
+            return collection.size() > 1
+                    || (collection.size() == 1 && String.valueOf(collection.iterator().next()).contains(","));
+        }
+        if (value instanceof Object[] array) {
+            return array.length > 1;
+        }
+        if (value instanceof String text) {
+            return text.contains(",");
+        }
+        return false;
     }
 
     /**

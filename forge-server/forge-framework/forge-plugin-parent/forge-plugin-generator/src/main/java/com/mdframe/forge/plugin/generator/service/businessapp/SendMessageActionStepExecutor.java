@@ -47,6 +47,7 @@ public class SendMessageActionStepExecutor implements BusinessActionStepExecutor
         MessageSendRequestDTO request = new MessageSendRequestDTO();
         request.setTemplateCode(templateCode);
         request.setChannel(StringUtils.defaultIfBlank(channelStatus.getSendChannel(), "WEB"));
+        request.setConnectionId(channelStatus.getConnectionId());
         request.setType("SYSTEM");
         request.setBizType("BUSINESS_ACTION");
         request.setBizKey(context.getRequest().getObjectCode() + ":" + context.getRequest().getRecordId());

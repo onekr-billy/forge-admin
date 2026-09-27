@@ -72,8 +72,7 @@ public class BusinessApplicationRuntimeConfigOverlayService {
             return null;
         }
         try {
-            return applicationObjectService.list(requestedApplicationId).stream()
-                    .anyMatch(object -> StringUtils.equals(configKey, object.getConfigKey()))
+            return applicationObjectService.containsConfigKey(requestedApplicationId, configKey)
                     ? requestedApplicationId : null;
         } catch (BusinessException ignored) {
             return null;

@@ -25,6 +25,16 @@ export { buildFieldEventParams, mapFieldEventResult }
 const FIELD_EVENT_TRIGGERS = new Set(['FORM_LOAD', 'CHANGE', 'BLUR', 'MANUAL', 'SCAN_COMPLETE'])
 const ERROR_MODES = new Set(['MESSAGE', 'SILENT'])
 
+function businessObjectQueryFields(rule) {
+  const fields = ['id']
+  for (const mapping of Array.isArray(rule?.resultMappings) ? rule.resultMappings : []) {
+    const from = String(mapping?.from || '').split('.')[0].trim()
+    if (from && !fields.includes(from))
+      fields.push(from)
+  }
+  return fields
+}
+
 function normalizeScanRuntimeContext(runtime = {}) {
   const scan = runtime?.scan
   if (!scan || typeof scan !== 'object')
@@ -163,11 +173,14 @@ export function createFieldEventRuntime(options = {}) {
         sourceType: rule.sourceType,
         sourceKey: rule.sourceKey,
         params,
-        ...(rule.sourceType === 'DATASET'
+        ...(['DATASET', 'BUSINESS_OBJECT'].includes(rule.sourceType)
           ? {
               pageNum: rule.pageNum || 1,
               pageSize: rule.pageSize || 20,
               maxRows: rule.maxRows || rule.pageSize || 20,
+              ...(rule.sourceType === 'BUSINESS_OBJECT'
+                ? { fields: businessObjectQueryFields(rule) }
+                : {}),
             }
           : {}),
       }, {
@@ -303,7 +316,10 @@ function normalizeFieldEventRule(candidate, knownFields) {
   const sourceField = String(candidate.sourceField || '').trim()
   const sourceType = String(candidate.sourceType || '').trim().toUpperCase()
   const sourceKey = String(candidate.sourceKey || '').trim()
-  const resultMode = String(candidate.resultMode || 'ROOT').trim().toUpperCase()
+  // 列表型查询源（数据集 / 业务对象）返回数组，ROOT 无法按字段路径回填；统一收敛为 FIRST_ROW
+  let resultMode = String(candidate.resultMode || 'ROOT').trim().toUpperCase()
+  if (['DATASET', 'BUSINESS_OBJECT'].includes(sourceType) && resultMode === 'ROOT')
+    resultMode = 'FIRST_ROW'
   const errorMode = String(candidate.errorMode || 'MESSAGE').trim().toUpperCase()
   if (!IDENTIFIER_PATTERN.test(id)
     || !FIELD_EVENT_TRIGGERS.has(trigger)
@@ -313,6 +329,7 @@ function normalizeFieldEventRule(candidate, knownFields) {
     || !ERROR_MODES.has(errorMode)) {
     return null
   }
+  // 触发字段未知时丢弃整条规则；回填/参数字段未知则只跳过该项，避免一条脏映射把整条查询搞丢
   if (trigger !== 'FORM_LOAD' && (!sourceField || (knownFields.size && !knownFields.has(sourceField))))
     return null
 
@@ -380,8 +397,13 @@ function normalizeParamMappings(mappings, knownFields) {
       || !PARAM_SOURCE_TYPES.has(source)) {
       return null
     }
-    if (source === 'FORM_FIELD' && (!field || !isSafePath(field) || (knownFields.size && !knownFields.has(field))))
-      return null
+    // 表单字段不在当前 schema 时跳过该参数（页面 fieldRefs 裁剪常见），不拖垮整条规则
+    if (source === 'FORM_FIELD') {
+      if (!field || !isSafePath(field))
+        return null
+      if (knownFields.size && !knownFields.has(field))
+        continue
+    }
     if (source !== 'FORM_FIELD' && !isSafePath(path))
       return null
     seen.add(param)
@@ -406,8 +428,9 @@ function normalizeResultMappings(mappings, knownFields) {
     const whenMissing = String(item.whenMissing || 'CLEAR').trim().toUpperCase()
     if ((from && !isSafePath(from)) || !to || seen.has(to) || !MISSING_MODES.has(whenMissing))
       return null
+    // 回填目标不在当前可见 schema 时跳过该项，保留其余合法回填
     if (knownFields.size && !knownFields.has(to))
-      return null
+      continue
     seen.add(to)
     result.push({ from, to, whenMissing })
   }

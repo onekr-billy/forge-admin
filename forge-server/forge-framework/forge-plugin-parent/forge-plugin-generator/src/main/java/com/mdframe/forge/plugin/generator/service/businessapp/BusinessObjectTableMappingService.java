@@ -170,13 +170,91 @@ public class BusinessObjectTableMappingService {
         }
         int unsafeCount = totalDdl - executed;
         if (unsafeCount > 0) {
-            persistSyncResult(context, "PARTIAL",
-                    "已自动同步 " + executed + " 项新增字段，" + unsafeCount + " 项字段类型调整需人工确认",
-                    executed);
-            throw new BusinessException("已自动同步 " + executed + " 项新增字段；另有 " + unsafeCount
-                    + " 项字段类型调整需在高级数据设置中确认数据库调整");
+            String detail = describeUnsafeColumnChanges(preview);
+            String summary = "已自动同步 " + executed + " 项安全变更；另有 " + unsafeCount
+                    + " 项高风险差异已跳过（缩长度/改类型/收紧必填等）"
+                    + (StringUtils.isBlank(detail) ? "" : "：" + detail);
+            // 页面表单自动同步：安全变更已落地即可，剩余差异留给高级数据设置，不阻断保存、不弹提示。
+            persistSyncResult(context, "PARTIAL", summary, executed);
+            return;
         }
         persistSyncResult(context, "IN_SYNC", "页面表单数据表同步成功", executed);
+    }
+
+    /**
+     * 从 DDL 预览里抽出“已有列需调整”的说明。加子表/保存草稿只会触发全量对比，
+     * 容易把主表上早已存在的模型与库不一致误当成“我改了字段类型”。
+     */
+    private String describeUnsafeColumnChanges(LowcodeDdlPreviewVO preview) {
+        if (preview == null) {
+            return "";
+        }
+        List<String> details = new ArrayList<>();
+        if (preview.getWarnings() != null) {
+            for (String warning : preview.getWarnings()) {
+                if (StringUtils.isBlank(warning)) {
+                    continue;
+                }
+                if (warning.contains("数据库类型将从") || warning.contains("长度变小")) {
+                    details.add(warning);
+                }
+            }
+        }
+        if (!details.isEmpty()) {
+            return String.join("；", details);
+        }
+        if (preview.getDdlStatements() == null) {
+            return "";
+        }
+        List<String> columns = new ArrayList<>();
+        for (String ddl : preview.getDdlStatements()) {
+            String normalized = StringUtils.upperCase(StringUtils.defaultString(ddl), Locale.ROOT);
+            if (!normalized.contains(" MODIFY COLUMN ") && !normalized.contains(" ALTER COLUMN ")) {
+                continue;
+            }
+            String column = extractModifyColumnName(ddl);
+            if (StringUtils.isNotBlank(column)) {
+                columns.add(column);
+            }
+        }
+        return columns.isEmpty() ? "" : "涉及列 " + String.join("、", columns);
+    }
+
+    private String extractModifyColumnName(String ddl) {
+        String text = StringUtils.defaultString(ddl);
+        int modifyIdx = StringUtils.indexOfIgnoreCase(text, "MODIFY COLUMN ");
+        if (modifyIdx >= 0) {
+            return firstIdentifier(text.substring(modifyIdx + "MODIFY COLUMN ".length()));
+        }
+        int alterIdx = StringUtils.indexOfIgnoreCase(text, "ALTER COLUMN ");
+        if (alterIdx >= 0) {
+            return firstIdentifier(text.substring(alterIdx + "ALTER COLUMN ".length()));
+        }
+        return null;
+    }
+
+    private String firstIdentifier(String fragment) {
+        String trimmed = StringUtils.trimToEmpty(fragment);
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        char quote = trimmed.charAt(0);
+        if (quote == '`' || quote == '"' || quote == '[') {
+            char end = quote == '[' ? ']' : quote;
+            int close = trimmed.indexOf(end, 1);
+            if (close > 1) {
+                return trimmed.substring(1, close);
+            }
+        }
+        int end = 0;
+        while (end < trimmed.length()) {
+            char ch = trimmed.charAt(end);
+            if (!(Character.isLetterOrDigit(ch) || ch == '_')) {
+                break;
+            }
+            end++;
+        }
+        return end > 0 ? trimmed.substring(0, end) : null;
     }
 
     protected boolean hasDdlPermission() {

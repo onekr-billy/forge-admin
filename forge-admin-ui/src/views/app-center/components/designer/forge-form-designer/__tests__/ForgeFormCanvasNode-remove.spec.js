@@ -5,6 +5,11 @@ import ForgeFormCanvasNode from '../ForgeFormCanvasNode.vue'
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: {}, params: {}, path: '/', fullPath: '/', name: 'canvas-node-remove-test' }),
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  createRouter: vi.fn(),
+  createWebHistory: vi.fn(),
+  createWebHashHistory: vi.fn(),
+  RouterLink: { name: 'RouterLink', template: '<a><slot /></a>' },
+  RouterView: { name: 'RouterView', template: '<div><slot /></div>' },
 }))
 
 const naiveStubs = {

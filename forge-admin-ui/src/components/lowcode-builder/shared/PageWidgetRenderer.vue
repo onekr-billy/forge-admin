@@ -445,6 +445,11 @@
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { request } from '@/utils'
 import { buildTemplateRefSignature, interpolateTemplate, safeHtml, safeJsonParseObject } from './page-widget-schema'
+import { isComposeDisplayEnabled, resolveComposeDisplayValue } from './widget-field-catalog'
+import {
+  buildBindingPreviewRecord,
+  hasResolvedBindingValues,
+} from './widget-binding-slots'
 
 const props = defineProps({
   componentKey: { type: String, required: true },
@@ -809,14 +814,25 @@ function resolveBoundData() {
   const binding = props.propsData.dataBinding || {}
   if (binding.enabled !== true || binding.sourceType === 'static')
     return null
-  const source = binding.sourceType === 'remote'
-    ? remoteBindingData.value
-    : props.dataContext
-  if (!source)
-    return null
-  const dataPath = binding.sourceType === 'context'
-    ? binding.contextPath
-    : binding.dataPath
+  if (binding.sourceType === 'remote') {
+    const source = remoteBindingData.value
+    if (!source)
+      return null
+    const dataPath = binding.dataPath
+    if (!dataPath)
+      return source
+    const nested = getNestedValue(source, dataPath)
+    return nested === undefined || nested === null ? source : nested
+  }
+  const realRecord = props.dataContext || {}
+  let source = realRecord
+  if (!hasResolvedBindingValues(realRecord, binding, props.componentKey, [])) {
+    const preview = buildBindingPreviewRecord(binding, [], props.componentKey)
+    if (Array.isArray(preview))
+      return preview
+    source = { ...preview, ...realRecord }
+  }
+  const dataPath = binding.contextPath
   if (!dataPath)
     return source
   const nested = getNestedValue(source, dataPath)
@@ -824,25 +840,35 @@ function resolveBoundData() {
 }
 
 function resolveBoundValue(fallback, defaultField = 'value') {
+  const binding = props.propsData.dataBinding || {}
   const data = boundData.value
+  if (isComposeDisplayEnabled(binding) && data && typeof data === 'object' && !Array.isArray(data)) {
+    const composed = resolveComposeDisplayValue(data, binding, getNestedValue)
+    if (composed !== '')
+      return composed
+  }
   if (data === null || data === undefined)
     return fallback
   if (typeof data !== 'object')
     return data
-  const binding = props.propsData.dataBinding || {}
   const field = binding.valueField || binding.totalField || defaultField
   return getNestedValue(data, field) ?? data.value ?? data.total ?? fallback
 }
 
 function resolveBoundContent(fallback, defaultField = 'content') {
+  const binding = props.propsData.dataBinding || {}
   const data = boundData.value
+  if (isComposeDisplayEnabled(binding) && data && typeof data === 'object' && !Array.isArray(data)) {
+    const composed = resolveComposeDisplayValue(data, binding, getNestedValue)
+    if (composed !== '')
+      return composed
+  }
   if (data === null || data === undefined)
     return fallback
   if (typeof data === 'string')
     return data
   if (Array.isArray(data))
     return data.map(item => typeof item === 'string' ? item : JSON.stringify(item)).join('\n')
-  const binding = props.propsData.dataBinding || {}
   const field = binding[`${defaultField}Field`] || binding.contentField || defaultField
   return getNestedValue(data, field) ?? data[defaultField] ?? fallback
 }

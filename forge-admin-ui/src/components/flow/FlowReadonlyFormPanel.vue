@@ -45,6 +45,7 @@
           :grid-cols="businessFormGridCols"
           :label-placement="businessFormLabelPlacement"
           :label-width="businessFormLabelWidth"
+          :size="businessFormSize"
           :context="businessFormRenderContext"
           :form-assets="businessFormContext.formAssets || []"
         />
@@ -99,8 +100,10 @@ import FlowBusinessForm from '@/components/common/FlowBusinessForm.vue'
 import FlowApprovalChecklist from '@/components/flow/FlowApprovalChecklist.vue'
 import ChildTableEditor from '@/components/page-templates/ChildTableEditor.vue'
 import { pickFirstNonEmptyFieldPermissions, pickFirstNonEmptyPermissionSource } from '@/utils/field-permissions'
+import { childTableKeysAlias } from '@/utils/flow-field-permissions'
 import { compactParams } from '@/views/flow/utils/monitorAdmin'
 import { getBusinessFormDisplayTitle } from '@/views/flow/utils/processDisplay'
+import { resolveBusinessTaskAiFormSchema } from '@/views/flow/utils/resolveBusinessTaskAiFormSchema'
 
 const props = defineProps({
   row: { type: Object, default: () => ({}) },
@@ -149,11 +152,16 @@ const businessFormLabelPlacement = computed(() => ['left', 'top'].includes(busin
   ? businessFormContext.value.labelPlacement
   : 'left')
 const businessFormLabelWidth = computed(() => businessFormContext.value?.labelWidth || '100')
+const businessFormSize = computed(() => ['small', 'medium', 'large'].includes(businessFormContext.value?.size)
+  ? businessFormContext.value.size
+  : 'medium')
 const businessFormRenderContext = computed(() => ({
   task: props.row,
   taskFormInfo: taskFormInfo.value,
   businessFormContext: businessFormContext.value,
   formAssets: businessFormContext.value?.formAssets || [],
+  protocolVersion: businessFormContext.value?.protocolVersion || null,
+  uiDocument: businessFormContext.value?.uiDocument || null,
 }))
 const readonlyBusinessFormFieldPermissions = computed(() => {
   return pickFirstNonEmptyFieldPermissions([
@@ -170,7 +178,7 @@ const readonlyDynamicFormFieldPermissions = computed(() => {
 })
 const readonlyDynamicFormSchema = computed(() => dynamicFormSchema.value.map(toReadonlyField))
 const readonlyBusinessFormFields = computed(() => {
-  return (businessFormContext.value?.fields || []).map(toReadonlyField)
+  return resolveBusinessTaskAiFormSchema(businessFormContext.value).map(toReadonlyField)
 })
 const showNoFormContent = computed(() => {
   if (formInfoLoading.value || businessFormLoading.value)
@@ -262,15 +270,53 @@ function normalizeBusinessChildrenData(recordData) {
     ? recordData.children
     : {}
   const result = {}
+  const usedSourceKeys = new Set()
   businessFormChildrenConfig.value.forEach((child) => {
     const key = resolveBusinessChildKey(child)
-    result[key] = Array.isArray(source[key]) ? source[key] : []
+    const matched = findBusinessChildRows(source, child, usedSourceKeys)
+    result[key] = matched.rows
+    if (matched.sourceKey)
+      usedSourceKeys.add(matched.sourceKey)
   })
   return result
 }
 
+function findBusinessChildRows(source = {}, child = {}, usedSourceKeys = new Set()) {
+  const candidates = [
+    child.modelCode,
+    child.relationKey,
+    child.key,
+    child.tableName,
+  ].map(value => String(value || '').trim()).filter(Boolean)
+
+  for (const candidate of candidates) {
+    if (usedSourceKeys.has(candidate))
+      continue
+    if (Array.isArray(source[candidate]))
+      return { rows: source[candidate], sourceKey: candidate }
+  }
+
+  let bestKey = ''
+  let bestDelta = Number.POSITIVE_INFINITY
+  Object.keys(source || {}).forEach((dataKey) => {
+    if (usedSourceKeys.has(dataKey) || !Array.isArray(source[dataKey]))
+      return
+    const matched = candidates.some(candidate => childTableKeysAlias(candidate, dataKey))
+    if (!matched)
+      return
+    const delta = Math.min(...candidates.map(candidate => Math.abs(candidate.length - dataKey.length)))
+    if (delta < bestDelta) {
+      bestDelta = delta
+      bestKey = dataKey
+    }
+  })
+  if (bestKey)
+    return { rows: source[bestKey], sourceKey: bestKey }
+  return { rows: [], sourceKey: '' }
+}
+
 function resolveBusinessChildKey(child = {}) {
-  return child.key || child.modelCode || child.tableName || 'children'
+  return child.modelCode || child.relationKey || child.key || child.tableName || 'children'
 }
 
 async function loadReadonlyBusinessTaskFormContext(row, formInfo) {

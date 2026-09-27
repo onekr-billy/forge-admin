@@ -81,6 +81,82 @@ class PrintMetadataResolverTest {
         when(versions.selectVersionById(1L, 13L, 130L)).thenReturn(v);
         reject(snapshot());
     }
+
+    @Test void draftSkipsBrokenChildRelationInsteadOfBlockingMainSource() {
+        var purchase = draftConfig(13, "purchase", true);
+        purchase.setPageSchema(page(true).replace("purchase_id", "missing_foreign_key"));
+        when(drafts.selectByConfigKey(1L, "purchase")).thenReturn(purchase);
+        when(drafts.selectByConfigKey(1L, "item")).thenReturn(draftConfig(14, "item", false));
+        var result = resolver.candidate(ACTOR, SOURCE, resolver.parse(snapshot()));
+        assertThat(result.main().config().getId()).isEqualTo(13);
+        assertThat(result.children()).isEmpty();
+    }
+
+    @Test void resolvesCamelCaseRelationFieldAgainstSnakeCaseColumn() {
+        var purchase = draftConfig(13, "purchase", true);
+        purchase.setPageSchema(page(true).replace("purchase_id", "purchaseId"));
+        when(drafts.selectByConfigKey(1L, "purchase")).thenReturn(purchase);
+        when(drafts.selectByConfigKey(1L, "item")).thenReturn(draftConfig(14, "item", false));
+        var result = resolver.candidate(ACTOR, SOURCE, resolver.parse(snapshot()));
+        assertThat(result.children()).hasSize(1);
+        assertThat(result.children().get(0).childColumn()).isEqualTo("purchase_id");
+    }
+
+    @Test void resolvesDigitPrefixedObjectCodeForeignKey() {
+        // objectCode=business_object_0eq3 → FK businessObject0eq3Id
+        // 设计器落库列名是 business_object0eq3_id（字母数字间无下划线）
+        var purchase = draftConfig(13, "purchase", true);
+        purchase.setPageSchema(page(true).replace("purchase_id", "businessObject0eq3Id"));
+        var item = draftConfig(14, "item", false);
+        try {
+            var root = JSON.readTree(item.getModelSchema());
+            ((com.fasterxml.jackson.databind.node.ArrayNode) root.path("fields")).addObject()
+                    .put("field", "businessObject0eq3Id")
+                    .put("columnName", "business_object0eq3_id")
+                    .put("dataType", "bigint");
+            item.setModelSchema(root.toString());
+        } catch (Exception ex) {
+            throw new AssertionError(ex);
+        }
+        when(drafts.selectByConfigKey(1L, "purchase")).thenReturn(purchase);
+        when(drafts.selectByConfigKey(1L, "item")).thenReturn(item);
+        var result = resolver.candidate(ACTOR, SOURCE, resolver.parse(snapshot()));
+        assertThat(result.children()).hasSize(1);
+        assertThat(result.children().get(0).childColumn()).isEqualTo("business_object0eq3_id");
+    }
+
+    @Test void infersDesignerForeignKeyColumnWhenMissingFromChildSchema() {
+        // 真实故障：关系声明了 businessObject0eq3Id，库列已有，但子表 model_schema 漏字段
+        var purchase = draftConfig(13, "purchase", true);
+        purchase.setPageSchema(page(true).replace("purchase_id", "businessObject0eq3Id"));
+        when(drafts.selectByConfigKey(1L, "purchase")).thenReturn(purchase);
+        when(drafts.selectByConfigKey(1L, "item")).thenReturn(draftConfig(14, "item", false));
+        var result = resolver.candidate(ACTOR, SOURCE, resolver.parse(snapshot()));
+        assertThat(result.children()).hasSize(1);
+        assertThat(result.children().get(0).childColumn()).isEqualTo("business_object0eq3_id");
+    }
+
+    @Test void resolvesRelationFieldWhenOnlySnakeColumnExists() {
+        var purchase = draftConfig(13, "purchase", true);
+        purchase.setPageSchema(page(true).replace("purchase_id", "businessObject0eq3Id"));
+        var item = draftConfig(14, "item", false);
+        try {
+            var root = JSON.readTree(item.getModelSchema());
+            ((com.fasterxml.jackson.databind.node.ArrayNode) root.path("fields")).addObject()
+                    .put("field", "business_object0eq3_id")
+                    .put("columnName", "business_object0eq3_id")
+                    .put("dataType", "bigint");
+            item.setModelSchema(root.toString());
+        } catch (Exception ex) {
+            throw new AssertionError(ex);
+        }
+        when(drafts.selectByConfigKey(1L, "purchase")).thenReturn(purchase);
+        when(drafts.selectByConfigKey(1L, "item")).thenReturn(item);
+        var result = resolver.candidate(ACTOR, SOURCE, resolver.parse(snapshot()));
+        assertThat(result.children()).hasSize(1);
+        assertThat(result.children().get(0).childColumn()).isEqualTo("business_object0eq3_id");
+    }
+
     @Test void publishedChildDisplayColumnsAndMainPageFieldsFurtherRestrictCatalog() {
         var v = version(130, 13, "purchase", true);
         v.setOptions("""

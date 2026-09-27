@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.mdframe.forge.plugin.generator.constant.BusinessExtensionStatus;
+import com.mdframe.forge.plugin.generator.constant.BusinessObjectDesignStatus;
 import com.mdframe.forge.plugin.generator.businessprocess.schema.BusinessProcessSchema;
 import com.mdframe.forge.plugin.generator.businessprocess.validation.BusinessProcessSchemaValidator;
 import com.mdframe.forge.plugin.generator.businessprocess.validation.BusinessProcessValidationContext;
@@ -22,8 +23,6 @@ import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectTableFieldMappingVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectTableMappingVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessPermissionSummaryVO;
-import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessPublishCheckItemVO;
-import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessPublishCheckVO;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessValidationVO;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
@@ -71,11 +70,26 @@ public class BusinessApplicationReadinessService {
     }
 
     ResolvedPublishCheck resolvePublishCheck(Long applicationId, BusinessApplicationPublishDTO dto) {
+        return resolvePublishCheck(applicationId, dto, false);
+    }
+
+    /**
+     * 应用协调发布专用门禁：只拦应用本身不可发布的问题，不做对象/页面/权限/流程深检。
+     */
+    ResolvedPublishCheck resolveStatusPublishCheck(Long applicationId, BusinessApplicationPublishDTO dto) {
+        return resolvePublishCheck(applicationId, dto, true);
+    }
+
+    private ResolvedPublishCheck resolvePublishCheck(Long applicationId,
+                                                     BusinessApplicationPublishDTO dto,
+                                                     boolean statusOnly) {
         BusinessApplicationVO application = applicationService.publishContext(applicationId);
         BusinessApplicationAssetSelectionService.ResolvedSelection resolved
                 = selectionService.resolveContext(applicationId, dto);
         BusinessApplicationAssetSelectionVO selection = resolved.selection();
-        EvaluationResult evaluation = evaluate(application, resolved);
+        EvaluationResult evaluation = statusOnly
+                ? evaluateStatusOnly(application, resolved)
+                : evaluate(application, resolved);
         BusinessApplicationReadinessVO readiness = evaluation.readiness();
         BusinessApplicationPublishCheckVO result = new BusinessApplicationPublishCheckVO();
         result.setApplicationId(applicationId);
@@ -89,6 +103,25 @@ public class BusinessApplicationReadinessService {
         return new ResolvedPublishCheck(
                 result, application, resolved, evaluation.permissionSummaries(), evaluation.bindings(),
                 evaluation.objectContexts());
+    }
+
+    /** 状态发布门禁：应用启用、业务域、门户地址。 */
+    private EvaluationResult evaluateStatusOnly(
+            BusinessApplicationVO application,
+            BusinessApplicationAssetSelectionService.ResolvedSelection resolved) {
+        List<BusinessApplicationReadinessIssueVO> issues = new ArrayList<>();
+        if (!EnableStatus.ENABLED.matches(application.getStatus())) {
+            issues.add(issue("APPLICATION_DISABLED", BLOCK, "应用已停用",
+                    "停用应用不能发布，请先启用应用。", "overview", "overview", "APPLICATION",
+                    application.getId(), application.getApplicationCode()));
+        }
+        if (StringUtils.isBlank(application.getSuiteName())) {
+            issues.add(issue("SUITE_UNAVAILABLE", BLOCK, "所属业务域不可用",
+                    "业务域不存在、已删除或当前租户无权访问。", "overview", "overview", "APPLICATION",
+                    application.getId(), application.getApplicationCode()));
+        }
+        checkPortalConfiguration(application, issues);
+        return new EvaluationResult(buildReadiness(issues), List.of(), null, Map.of());
     }
 
     private EvaluationResult evaluate(
@@ -116,9 +149,14 @@ public class BusinessApplicationReadinessService {
         checkPortalConfiguration(application, issues);
         BusinessApplicationPageDependencyInspector.InspectionResult dependencyInspection
                 = pageDependencyInspector.inspect(application, selectedObjectList);
-        dependencyInspection.issues().forEach(item -> issues.add(issue(
-                item.code(), BLOCK, item.title(), item.message(),
-                "objects", "objects", "PAGE", application.getId(), item.pageId())));
+        dependencyInspection.issues().forEach(item -> {
+            // 页面对象引用属于页面级问题：发布只提醒，不阻断应用状态切换。
+            boolean pageLevel = item.code() != null && item.code().startsWith("PAGE_");
+            issues.add(issue(
+                    item.code(), pageLevel ? WARN : BLOCK, item.title(), item.message(),
+                    "objects", "objects", pageLevel ? "PAGE" : "APPLICATION",
+                    application.getId(), item.pageId()));
+        });
         Map<Long, com.mdframe.forge.plugin.generator.domain.entity.AiBusinessApp> selectedEntries
                 = resolved.entries().stream()
                 .filter(entry -> selection.getEntryIds().contains(entry.getId()))
@@ -327,25 +365,11 @@ public class BusinessApplicationReadinessService {
                     object.getObjectId(), object.getObjectCode()));
         }
         checkDatabaseMapping(object, objectName, issues);
-        BusinessObjectPublishService.ResolvedObjectCheck resolvedObjectCheck = objectPublishService
-                .publishCheckResolved(object.getObjectId(), permissionSummary);
-        objectContexts.put(object.getObjectId(), resolvedObjectCheck.context());
-        BusinessPublishCheckVO objectCheck = resolvedObjectCheck.check();
-        if (Boolean.FALSE.equals(objectCheck.getPublishable())) {
-            List<BusinessPublishCheckItemVO> blocks = objectCheck.getBlockItems() == null
-                    ? List.of() : objectCheck.getBlockItems();
-            String detail = blocks.stream().limit(5)
-                    .map(item -> {
-                        String title = StringUtils.defaultString(item.getTitle());
-                        String message = StringUtils.defaultString(item.getMessage());
-                        return StringUtils.isNotBlank(message) ? title + "：" + message : title;
-                    })
-                    .filter(StringUtils::isNotBlank)
-                    .reduce((left, right) -> left + "；" + right)
-                    .orElse("对象发布检查未通过");
-            issues.add(issue("OBJECT_PUBLISH_BLOCKED", BLOCK, "对象发布检查未通过",
-                    objectName + "：" + detail, "objects", "objects", "OBJECT",
-                    object.getObjectId(), object.getObjectCode()));
+        // 应用发布只做应用级门禁；对象级页面/公式/单据等 publishCheck 不在此执行。
+        // 未发布对象仍加载上下文，供后续 OBJECTS 步骤复用；已 PUBLISHED 对象正式步骤会跳过。
+        if (!BusinessObjectDesignStatus.PUBLISHED.matches(object.getDesignStatus())) {
+            objectContexts.put(object.getObjectId(),
+                    objectPublishService.loadContextForApplicationPublish(object.getObjectId()));
         }
         if (permissionSummary != null && Boolean.FALSE.equals(permissionSummary.getAllRequiredConfigured())) {
             issues.add(issue("OBJECT_PERMISSION_MISSING", BLOCK, "对象必需权限未配置",
@@ -365,6 +389,10 @@ public class BusinessApplicationReadinessService {
             BusinessApplicationObjectVO object,
             String objectName,
             List<BusinessApplicationReadinessIssueVO> issues) {
+        // 关联对象摘要已带 designer_options.databaseSync.status；IN_SYNC 时跳过实时 DDL 探查。
+        if ("IN_SYNC".equalsIgnoreCase(StringUtils.trimToEmpty(object.getSyncStatus()))) {
+            return;
+        }
         BusinessObjectTableMappingVO mapping;
         try {
             mapping = tableMappingService.getTableMapping(object.getObjectId());

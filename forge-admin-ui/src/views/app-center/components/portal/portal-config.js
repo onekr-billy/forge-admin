@@ -1,4 +1,5 @@
 import { buildH5RuntimeUrl } from '../app-entry-targets'
+import { resolvePortalShellLayout, syncPortalShellNavigationFields } from './portal-shell-layouts'
 
 export const RESERVED_PORTAL_SLUGS = Object.freeze([
   'admin',
@@ -25,6 +26,8 @@ export const RESERVED_PORTAL_SLUGS = Object.freeze([
 
 export const DEFAULT_PORTAL_CONFIG = Object.freeze({
   themeColor: '#3370ff',
+  /** 门户壳布局（复用系统布局语义）：normal / top-menu / business-workbench ... */
+  shellLayout: 'normal',
   navigation: {
     style: 'side',
     showLogo: true,
@@ -80,7 +83,7 @@ export function parseJsonObject(value, fallback = {}) {
 
 export function normalizePortalConfig(value) {
   const source = parseJsonObject(value)
-  return {
+  const merged = {
     ...clone(DEFAULT_PORTAL_CONFIG),
     ...source,
     navigation: { ...DEFAULT_PORTAL_CONFIG.navigation, ...(source.navigation || {}) },
@@ -90,6 +93,13 @@ export function normalizePortalConfig(value) {
     advanced: { ...DEFAULT_PORTAL_CONFIG.advanced, ...(source.advanced || {}) },
     distribution: { ...DEFAULT_PORTAL_CONFIG.distribution, ...(source.distribution || {}) },
   }
+  const sourceHasShellLayout = Object.prototype.hasOwnProperty.call(source, 'shellLayout')
+    && String(source.shellLayout || '').trim() !== ''
+  // 旧配置只有 navigation.style：从 style 推断壳；新配置以 shellLayout 为准
+  merged.shellLayout = sourceHasShellLayout
+    ? resolvePortalShellLayout(merged)
+    : resolvePortalShellLayout({ navigation: merged.navigation })
+  return syncPortalShellNavigationFields(merged)
 }
 
 export function resolvePortalRuntimeConfigKey(application = {}, { pageId = '', objects = [] } = {}) {

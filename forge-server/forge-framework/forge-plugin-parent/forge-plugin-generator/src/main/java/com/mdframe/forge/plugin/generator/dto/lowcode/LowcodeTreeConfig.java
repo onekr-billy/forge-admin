@@ -14,6 +14,8 @@ public class LowcodeTreeConfig {
 
     private String sourceTableName;
 
+    private String sourceConfigKey;
+
     private String keyField;
 
     private String parentField;

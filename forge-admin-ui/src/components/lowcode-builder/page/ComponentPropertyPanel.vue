@@ -227,6 +227,16 @@
 
         <template v-if="layoutType === 'tree-crud'">
           <n-divider>树形导航</n-divider>
+          <div class="field-help-text tree-config-help">
+            左侧树负责筛选右侧列表。节点标识用于展开层级，节点取值会写入右侧过滤字段。
+          </div>
+          <n-form-item label="树数据来源">
+            <n-input
+              :value="treeConfig.sourceModelName || '当前业务对象'"
+              readonly
+              placeholder="当前业务对象"
+            />
+          </n-form-item>
           <n-form-item label="树标题">
             <n-input
               :value="treeConfig.treeTitle"
@@ -234,10 +244,19 @@
               @update:value="updateTreeConfig('treeTitle', $event)"
             />
           </n-form-item>
+          <n-form-item label="节点唯一标识">
+            <n-select
+              :value="treeConfig.keyField"
+              :options="treeFieldOptions"
+              filterable
+              placeholder="请选择节点唯一标识"
+              @update:value="updateTreeConfig('keyField', $event)"
+            />
+          </n-form-item>
           <n-form-item label="父级字段">
             <n-select
               :value="treeConfig.parentField"
-              :options="fieldOptions"
+              :options="treeFieldOptions"
               placeholder="请选择父级字段"
               @update:value="updateTreeConfig('parentField', $event)"
             />
@@ -245,9 +264,27 @@
           <n-form-item label="显示字段">
             <n-select
               :value="treeConfig.labelField"
-              :options="fieldOptions"
+              :options="treeFieldOptions"
               placeholder="请选择树节点显示字段"
               @update:value="updateTreeConfig('labelField', $event)"
+            />
+          </n-form-item>
+          <n-form-item label="节点取值字段">
+            <n-select
+              :value="treeConfig.targetField || treeConfig.nodeValueField"
+              :options="treeFieldOptions"
+              filterable
+              placeholder="通常选择节点唯一标识"
+              @update:value="updateTreeConfig('targetField', $event)"
+            />
+          </n-form-item>
+          <n-form-item label="右侧过滤字段">
+            <n-select
+              :value="treeConfig.filterField || treeConfig.rightFilterField"
+              :options="fieldOptions"
+              filterable
+              placeholder="请选择右侧列表接收的过滤字段"
+              @update:value="updateTreeConfig('filterField', $event)"
             />
           </n-form-item>
           <n-form-item label="加载方式">
@@ -301,6 +338,11 @@ const alignOptions = [
 
 const fieldOptions = computed(() => props.fields.map(field => ({
   label: field.label ? `${field.label}（${field.field}）` : field.field,
+  value: field.field,
+})))
+
+const treeFieldOptions = computed(() => props.fields.map(field => ({
+  label: field.label || field.field,
   value: field.field,
 })))
 
@@ -365,6 +407,8 @@ function ensureTreeConfig() {
           labelField,
           childrenField: 'children',
           treeTitle: '树形导航',
+          filterField: parentField || 'parentId',
+          targetField: 'id',
           loadMode: 'full',
         },
       },

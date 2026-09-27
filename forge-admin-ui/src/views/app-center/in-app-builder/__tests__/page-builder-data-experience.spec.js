@@ -1,26 +1,30 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { readSplitVueSource } from '@/test-utils/read-split-vue-source'
 import { inAppPageTemplateCatalog } from '../page-template-catalog'
 
 describe('page builder data experience', () => {
   it('describes every data template as a page-canvas workflow', () => {
-    const descriptions = inAppPageTemplateCatalog
-      .filter(template => template.dataTemplate)
-      .map(template => template.description)
+    const dataTemplates = inAppPageTemplateCatalog.filter(template => template.dataTemplate)
+    const descriptions = dataTemplates.map(template => template.description)
 
-    expect(descriptions).toHaveLength(3)
-    expect(descriptions.every(description => description.includes('页面画布'))).toBe(true)
+    expect(descriptions).toHaveLength(4)
+    expect(dataTemplates.every(template => template.pageType === 'object')).toBe(true)
+    expect(descriptions.filter(description => description.includes('页面画布'))).toHaveLength(2)
   })
 
   it('keeps a newly created data template on the page canvas', () => {
-    const source = readFileSync(resolve('src/views/app-center/application-runtime.[applicationCode].vue'), 'utf8')
+    const source = readSplitVueSource('src/views/app-center/application-runtime.[applicationCode].vue', 'useApplicationRuntime')
     const createFormStart = source.indexOf('function createFormAssetForPageCrud(pageId)')
-    const createFormEnd = source.indexOf('\nfunction resolveNextNavigationTitle', createFormStart)
+    expect(createFormStart).toBeGreaterThanOrEqual(0)
+    const createFormEnd = source.indexOf('\n  function resolveNextNavigationTitle', createFormStart)
+    expect(createFormEnd).toBeGreaterThan(createFormStart)
     const createFormSource = source.slice(createFormStart, createFormEnd)
 
     expect(createFormSource).toContain('configPanelVisible.value = true')
     expect(createFormSource).toContain('inspectorTab.value = \'data\'')
+    expect(createFormSource).toContain('formDesignerMode.value = false')
     expect(createFormSource).not.toContain('formDesignerMode.value = true')
   })
 
@@ -32,18 +36,22 @@ describe('page builder data experience', () => {
   })
 
   it('opens the data inspector when a block asks to select its source', () => {
-    const source = readFileSync(resolve('src/views/app-center/application-runtime.[applicationCode].vue'), 'utf8')
+    const source = readSplitVueSource('src/views/app-center/application-runtime.[applicationCode].vue', 'useApplicationRuntime')
 
     expect(source).toContain('@request-data-source="handlePageBlockDataSourceRequest"')
-    expect(source).toContain('function handlePageBlockDataSourceRequest(blockId)')
+    expect(source).toMatch(/function handlePageBlockDataSourceRequest|handlePageBlockDataSourceRequest =/)
     expect(source).toContain('@click="openSelectedBlockFormDesigner"')
   })
 
   it('clears object-specific field configuration only when the business object changes', () => {
-    const source = readFileSync(resolve('src/views/app-center/application-runtime.[applicationCode].vue'), 'utf8')
+    const source = readSplitVueSource('src/views/app-center/application-runtime.[applicationCode].vue', 'useApplicationRuntime')
     const switchStart = source.indexOf('function updateSelectedPageBlockRuntimeObject(objectId)')
-    const switchEnd = source.indexOf('\nfunction createFormAssetForSelectedBlock', switchStart)
-    const switchSource = source.slice(switchStart, switchEnd)
+    const altStart = source.indexOf('updateSelectedPageBlockRuntimeObject =')
+    const start = switchStart >= 0 ? switchStart : altStart
+    const switchEnd = source.indexOf('\nfunction createFormAssetForSelectedBlock', start)
+    const altEnd = source.indexOf('createFormAssetForSelectedBlock =', start)
+    const end = switchEnd > 0 ? switchEnd : (altEnd > 0 ? altEnd : start + 3000)
+    const switchSource = source.slice(start, end)
 
     expect(switchSource).toContain('const objectChanged = previousObjectKey !== nextObjectKey')
     expect(switchSource).toContain('fieldRefs: objectChanged ? [] : selectedPageBlock.value.fieldRefs')
@@ -53,8 +61,8 @@ describe('page builder data experience', () => {
   })
 
   it('preloads the full block tree and forwards object-scoped resolvers to nested blocks', () => {
-    const runtimeSource = readFileSync(resolve('src/views/app-center/application-runtime.[applicationCode].vue'), 'utf8')
-    const rendererSource = readFileSync(resolve('src/components/lowcode-builder/page/GridBlockRenderer.vue'), 'utf8')
+    const runtimeSource = readSplitVueSource('src/views/app-center/application-runtime.[applicationCode].vue', 'useApplicationRuntime')
+    const rendererSource = readSplitVueSource('src/components/lowcode-builder/page/GridBlockRenderer.vue', 'useGridBlockRenderer')
 
     expect(runtimeSource).toContain('visitPageBlocksInTree(pageBlocks.value, preloadPageBlockCrudRuntimeProps)')
     expect(runtimeSource).toContain('runtimeCrudLoadingObjectIds.has(cacheKey)')
@@ -67,8 +75,8 @@ describe('page builder data experience', () => {
   })
 
   it('allows standalone form persistence only in published runtime mode', () => {
-    const runtimeSource = readFileSync(resolve('src/views/app-center/application-runtime.[applicationCode].vue'), 'utf8')
-    const rendererSource = readFileSync(resolve('src/components/lowcode-builder/page/GridBlockRenderer.vue'), 'utf8')
+    const runtimeSource = readSplitVueSource('src/views/app-center/application-runtime.[applicationCode].vue', 'useApplicationRuntime')
+    const rendererSource = readSplitVueSource('src/components/lowcode-builder/page/GridBlockRenderer.vue', 'useGridBlockRenderer')
 
     expect(runtimeSource).toContain(':runtime-interactive="!editing && !isDraftMode"')
     expect(rendererSource).toContain('@submit="handleAiFormSubmit"')

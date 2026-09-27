@@ -121,6 +121,10 @@ public class BusinessApplicationPublishRunService
         return requireRun(applicationId, runId);
     }
 
+    /**
+     * 步骤进入 RUNNING 只改内存态，不写库。
+     * 发布链路高频步进时避免把整包 step/snapshot 进度反复刷盘；真正落库留给 markStepSuccess / updateSnapshot。
+     */
     public AiBusinessApplicationPublishRun markStepRunning(AiBusinessApplicationPublishRun run, String stepCode) {
         List<BusinessApplicationPublishStepVO> steps = readSteps(run.getStepResultsJson());
         BusinessApplicationPublishStepVO step = findStep(steps, stepCode);
@@ -128,23 +132,47 @@ public class BusinessApplicationPublishRunService
         step.setMessage(null);
         step.setStartedTime(LocalDateTime.now());
         step.setFinishedTime(null);
-        return update(run, BusinessApplicationPublishStatus.RUNNING.getCode(), stepCode, steps,
-                null, null, null, null, null, null);
+        run.setRunStatus(BusinessApplicationPublishStatus.RUNNING.getCode());
+        run.setCurrentStep(stepCode);
+        run.setStepResultsJson(writeJson(steps));
+        return run;
     }
 
     public AiBusinessApplicationPublishRun markStepSuccess(AiBusinessApplicationPublishRun run,
                                                            String stepCode, String message) {
+        return markStepSuccess(run, stepCode, message, null);
+    }
+
+    /**
+     * 步骤成功与快照落库合并为一次 UPDATE，避免先写超大 snapshot 再写 step_results。
+     */
+    public AiBusinessApplicationPublishRun markStepSuccess(AiBusinessApplicationPublishRun run,
+                                                           String stepCode, String message,
+                                                           BusinessApplicationSnapshotService.SnapshotBundle snapshot) {
         List<BusinessApplicationPublishStepVO> steps = readSteps(run.getStepResultsJson());
         BusinessApplicationPublishStepVO step = findStep(steps, stepCode);
+        if (step.getStartedTime() == null) {
+            step.setStartedTime(LocalDateTime.now());
+        }
         step.setStatus("SUCCESS");
         step.setMessage(StringUtils.abbreviate(message, 500));
         step.setFinishedTime(LocalDateTime.now());
+        String snapshotJson = null;
+        String snapshotHash = null;
+        if (snapshot != null && !StringUtils.equals(run.getSnapshotHash(), snapshot.hash())) {
+            snapshotJson = snapshot.json();
+            snapshotHash = snapshot.hash();
+        }
         return update(run, BusinessApplicationPublishStatus.RUNNING.getCode(), stepCode, steps,
-                null, null, null, null, null, null);
+                snapshotJson, snapshotHash, run.getResultVersionId(),
+                run.getErrorCode(), run.getErrorSummary(), run.getFinishedTime());
     }
 
     public AiBusinessApplicationPublishRun updateSnapshot(AiBusinessApplicationPublishRun run,
                                                           BusinessApplicationSnapshotService.SnapshotBundle snapshot) {
+        if (snapshot == null || StringUtils.equals(run.getSnapshotHash(), snapshot.hash())) {
+            return run;
+        }
         List<BusinessApplicationPublishStepVO> steps = readSteps(run.getStepResultsJson());
         return update(run, run.getRunStatus(), run.getCurrentStep(), steps,
                 snapshot.json(), snapshot.hash(), run.getResultVersionId(),
@@ -187,9 +215,10 @@ public class BusinessApplicationPublishRunService
         commit.setStatus("SUCCESS");
         commit.setMessage("不可变应用版本已提交");
         commit.setFinishedTime(LocalDateTime.now());
+        // error 字段用空串清空：updateProgress 对 null 走 COALESCE 保留旧值。
         return update(run, BusinessApplicationPublishStatus.SUCCESS.getCode(), BusinessApplicationPublishStep.COMMIT, steps,
                 finalSnapshot.json(), finalSnapshot.hash(), resultVersionId,
-                null, null, LocalDateTime.now());
+                "", "", LocalDateTime.now());
     }
 
     public BusinessApplicationAssetSelectionVO readSelection(AiBusinessApplicationPublishRun run) {
@@ -246,10 +275,18 @@ public class BusinessApplicationPublishRunService
         if (snapshotHash != null) {
             run.setSnapshotHash(snapshotHash);
         }
-        run.setResultVersionId(resultVersionId);
-        run.setErrorCode(errorCode);
-        run.setErrorSummary(errorSummary);
-        run.setFinishedTime(finishedTime);
+        if (resultVersionId != null) {
+            run.setResultVersionId(resultVersionId);
+        }
+        if (errorCode != null) {
+            run.setErrorCode(StringUtils.trimToNull(errorCode));
+        }
+        if (errorSummary != null) {
+            run.setErrorSummary(StringUtils.trimToNull(errorSummary));
+        }
+        if (finishedTime != null) {
+            run.setFinishedTime(finishedTime);
+        }
         return run;
     }
 

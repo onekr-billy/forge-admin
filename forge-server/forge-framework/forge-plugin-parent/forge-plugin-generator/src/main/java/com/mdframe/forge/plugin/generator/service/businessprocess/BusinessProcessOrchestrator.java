@@ -96,6 +96,18 @@ public class BusinessProcessOrchestrator {
     }
 
     public BusinessProcessRunVO start(String applicationCode, String processCode, BusinessProcessManualStartDTO dto) {
+        return start(applicationCode, processCode, dto, null);
+    }
+
+    /** Governed callers must not silently execute a newly published version or retry failed effects. */
+    public BusinessProcessRunVO startPublished(String applicationCode, String processCode,
+            BusinessProcessManualStartDTO dto, Long expectedVersionId) {
+        if (expectedVersionId == null || expectedVersionId <= 0) throw new BusinessException("缺少固定业务流程版本");
+        return start(applicationCode, processCode, dto, expectedVersionId);
+    }
+
+    private BusinessProcessRunVO start(String applicationCode, String processCode,
+            BusinessProcessManualStartDTO dto, Long expectedVersionId) {
         if (dto == null || StringUtils.isBlank(dto.getRecordId())) {
             throw new BusinessException("业务记录ID不能为空");
         }
@@ -117,6 +129,9 @@ public class BusinessProcessOrchestrator {
                 tenantId, process.getId(), process.getPublishedVersion());
         if (version == null) {
             throw new BusinessException("业务流程发布版本不存在");
+        }
+        if (expectedVersionId != null && !expectedVersionId.equals(version.getId())) {
+            throw new BusinessException(409, "APPLICATION_PROCESS_SOURCE_CHANGED");
         }
         BusinessProcessSchema schema = normalizeSchema(version.getSchemaJson());
         BusinessProcessNode startNode = requireManualStart(schema);
@@ -144,6 +159,7 @@ public class BusinessProcessOrchestrator {
                 return completedStart(existing, process.getProcessName());
             }
             if (BusinessProcessRunStatus.FAILED.matches(existing.getStatus())) {
+                if (expectedVersionId != null) return completedStart(existing, process.getProcessName());
                 return retry(existing.getId());
             }
             return completedStart(existing, process.getProcessName());

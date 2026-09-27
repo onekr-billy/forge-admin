@@ -9,6 +9,7 @@ import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageZone;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeRelationSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeRuntimeConfig;
+import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeTreeConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -220,6 +221,149 @@ class LowcodeRuntimeConfigBuilderTest {
     }
 
     @Test
+    @DisplayName("publishes treeSelect search fields from searchFieldRefs and ignores mistaken number settings")
+    void publishesTreeSelectSearchFieldsFromSearchFieldRefs() throws Exception {
+        LowcodeFieldSchema parentId = new LowcodeFieldSchema();
+        parentId.setField("parentId");
+        parentId.setColumnName("parent_id");
+        parentId.setLabel("上级");
+        parentId.setDataType("bigint");
+        parentId.setComponentType("treeSelect");
+        parentId.setSearchable(false);
+        parentId.setListVisible(true);
+        parentId.setFormVisible(true);
+        parentId.setQueryType("eq");
+
+        LowcodeFieldSchema name = new LowcodeFieldSchema();
+        name.setField("name");
+        name.setColumnName("name");
+        name.setLabel("名称");
+        name.setDataType("varchar");
+        name.setComponentType("input");
+        name.setSearchable(true);
+        name.setListVisible(true);
+        name.setFormVisible(true);
+
+        LowcodeModelSchema modelSchema = new LowcodeModelSchema();
+        modelSchema.setAppType("SINGLE");
+        modelSchema.setTableMode("EXISTING");
+        modelSchema.setTableName("biz_category");
+        modelSchema.setBusinessName("分类");
+        modelSchema.setFields(List.of(parentId, name));
+
+        LowcodePageSchema pageSchema = new LowcodePageSchema();
+        pageSchema.setLayoutType("simple-crud");
+        pageSchema.setListGridLayout(Map.of(
+                "items", List.of(Map.of(
+                        "blockType", "AiCrudPage",
+                        "fieldRefs", List.of("name", "parentId"),
+                        "props", Map.of(
+                                "searchFieldRefs", List.of("parentId", "name"),
+                                "searchFieldSettings", Map.of(
+                                        "parentId", Map.of("componentType", "number", "queryType", "eq")
+                                ),
+                                "fieldSettings", Map.of(
+                                        "parentId", Map.of("title", "上级", "width", 120)
+                                )
+                        )
+                ))
+        ));
+        pageSchema.setZones(new ArrayList<>());
+
+        LowcodeRuntimeConfig runtimeConfig = builder.buildRuntimeConfig("biz_category", modelSchema, pageSchema);
+        List<Map<String, Object>> searchSchema = objectMapper.readValue(runtimeConfig.getSearchSchema(), new TypeReference<>() {
+        });
+
+        assertEquals(2, searchSchema.size());
+        Map<String, Object> treeSearch = searchSchema.get(0);
+        assertEquals("parentId", treeSearch.get("field"));
+        assertEquals("treeSelect", treeSearch.get("type"));
+        assertEquals("eq", treeSearch.get("queryType"));
+        assertEquals(Boolean.TRUE, treeSearch.get("includeChildren"));
+    }
+
+    @Test
+    @DisplayName("compiles tree-crud search schema when hidden filter field is treeSelect")
+    void compilesTreeCrudSearchSchemaWhenHiddenFilterFieldIsTreeSelect() throws Exception {
+        LowcodeFieldSchema parentId = new LowcodeFieldSchema();
+        parentId.setField("parentId");
+        parentId.setColumnName("parent_id");
+        parentId.setLabel("上级");
+        parentId.setDataType("bigint");
+        parentId.setComponentType("treeSelect");
+        parentId.setSearchable(false);
+        parentId.setListVisible(true);
+        parentId.setFormVisible(true);
+        parentId.setQueryType("eq");
+
+        LowcodeFieldSchema name = new LowcodeFieldSchema();
+        name.setField("name");
+        name.setColumnName("name");
+        name.setLabel("名称");
+        name.setDataType("varchar");
+        name.setComponentType("input");
+        name.setSearchable(true);
+        name.setListVisible(true);
+        name.setFormVisible(true);
+
+        LowcodeTreeConfig treeConfig = new LowcodeTreeConfig();
+        treeConfig.setEnabled(true);
+        treeConfig.setKeyField("id");
+        treeConfig.setParentField("parentId");
+        treeConfig.setLabelField("name");
+        treeConfig.setFilterField("parentId");
+        treeConfig.setSourceConfigKey("biz_category");
+
+        LowcodeModelSchema modelSchema = new LowcodeModelSchema();
+        modelSchema.setAppType("TREE");
+        modelSchema.setTableMode("EXISTING");
+        modelSchema.setTableName("biz_category");
+        modelSchema.setBusinessName("分类");
+        modelSchema.setTreeConfig(treeConfig);
+        modelSchema.setFields(List.of(parentId, name));
+
+        LowcodePageSchema pageSchema = new LowcodePageSchema();
+        pageSchema.setLayoutType("tree-crud");
+        pageSchema.setListGridLayout(Map.of(
+                "items", List.of(
+                        Map.of(
+                                "blockType", "tree-panel",
+                                "props", Map.of(
+                                        "sourceConfigKey", "biz_category",
+                                        "keyField", "id",
+                                        "parentField", "parentId",
+                                        "labelField", "name",
+                                        "filterField", "parentId"
+                                )
+                        ),
+                        Map.of(
+                                "blockType", "AiCrudPage",
+                                "fieldRefs", List.of("name", "parentId"),
+                                "props", Map.of(
+                                        "searchFieldRefs", List.of("name"),
+                                        "fieldSettings", Map.of(
+                                                "parentId", Map.of("title", "上级", "width", 120)
+                                        )
+                                )
+                        )
+                )
+        ));
+        pageSchema.setZones(new ArrayList<>());
+
+        LowcodeRuntimeConfig runtimeConfig = assertDoesNotThrow(
+                () -> builder.buildRuntimeConfig("biz_category", modelSchema, pageSchema));
+        List<Map<String, Object>> searchSchema = objectMapper.readValue(runtimeConfig.getSearchSchema(), new TypeReference<>() {
+        });
+        assertTrue(searchSchema.stream().anyMatch(item -> "name".equals(item.get("field"))));
+        Map<String, Object> hiddenFilter = searchSchema.stream()
+                .filter(item -> "parentId".equals(item.get("field")))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(Boolean.TRUE, hiddenFilter.get("hidden"));
+        assertEquals(Boolean.TRUE, hiddenFilter.get("includeChildren"));
+    }
+
+    @Test
     @DisplayName("keeps hidden runtime-rule fields and barcode scanner metadata in edit schema")
     void keepsHiddenRuntimeRuleFieldsAndBarcodeScannerMetadata() throws Exception {
         LowcodeFieldSchema barcode = new LowcodeFieldSchema();
@@ -419,6 +563,58 @@ class LowcodeRuntimeConfigBuilderTest {
 
         assertEquals(
                 List.of("projectName", "pw_purchase_order_item__materialName", "actions"),
+                columns.stream().map(column -> String.valueOf(column.get("key"))).toList()
+        );
+    }
+
+    @Test
+    @DisplayName("appends managed flowStatus even when list grid snapshot omitted it")
+    void appendsManagedFlowStatusWhenListGridOmitsIt() throws Exception {
+        LowcodeModelSchema modelSchema = new LowcodeModelSchema();
+        modelSchema.setAppType("SINGLE");
+        modelSchema.setTableMode("EXISTING");
+        modelSchema.setTableName("demo_order");
+        modelSchema.setBusinessName("演示单据");
+        LowcodeFieldSchema name = new LowcodeFieldSchema();
+        name.setField("projectName");
+        name.setColumnName("project_name");
+        name.setLabel("项目");
+        name.setDataType("varchar");
+        name.setListVisible(true);
+        name.setComponentType("input");
+        LowcodeFieldSchema flowStatus = new LowcodeFieldSchema();
+        flowStatus.setField("flowStatus");
+        flowStatus.setColumnName("flow_status");
+        flowStatus.setLabel("流程状态");
+        flowStatus.setDataType("varchar");
+        flowStatus.setListVisible(true);
+        flowStatus.setComponentType("select");
+        flowStatus.setDictType("business_flow_status");
+        flowStatus.setAdvancedProps(Map.of("managedBy", "BUSINESS_FLOW"));
+        flowStatus.setFieldStatus("ENABLED");
+        modelSchema.setFields(new ArrayList<>(List.of(name, flowStatus)));
+
+        LowcodePageSchema pageSchema = new LowcodePageSchema();
+        pageSchema.setLayoutType("simple-crud");
+        LowcodePageZone table = new LowcodePageZone();
+        table.setZoneKey("table");
+        table.setEnabled(true);
+        table.setFieldRefs(new ArrayList<>(List.of("projectName")));
+        pageSchema.setZones(new ArrayList<>(List.of(table)));
+        pageSchema.setListGridLayout(Map.of(
+                "items", List.of(Map.of(
+                        "blockType", "AiCrudPage",
+                        "fieldRefs", List.of("projectName"),
+                        "props", Map.of("fieldSettings", Map.of())
+                ))
+        ));
+
+        LowcodeRuntimeConfig runtimeConfig = builder.buildRuntimeConfig("demo_order", modelSchema, pageSchema);
+        List<Map<String, Object>> columns = objectMapper.readValue(
+                runtimeConfig.getColumnsSchema(), new TypeReference<>() { });
+
+        assertEquals(
+                List.of("projectName", "flowStatus", "actions"),
                 columns.stream().map(column -> String.valueOf(column.get("key"))).toList()
         );
     }

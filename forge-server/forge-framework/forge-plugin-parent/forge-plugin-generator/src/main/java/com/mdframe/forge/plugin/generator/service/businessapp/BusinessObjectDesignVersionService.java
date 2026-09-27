@@ -43,7 +43,7 @@ public class BusinessObjectDesignVersionService
         if (objectIds == null || objectIds.isEmpty()) {
             return Map.of();
         }
-        return baseMapper.selectLatestPublishedVersions(resolveTenantId(), objectIds).stream()
+        return baseMapper.selectLatestPublishedVersionIds(resolveTenantId(), objectIds).stream()
                 .collect(Collectors.toMap(AiBusinessObjectDesignVersion::getObjectId,
                         AiBusinessObjectDesignVersion::getId, (left, right) -> left));
     }

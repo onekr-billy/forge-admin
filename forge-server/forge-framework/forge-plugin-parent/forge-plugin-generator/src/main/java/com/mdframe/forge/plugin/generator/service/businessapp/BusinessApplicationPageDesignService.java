@@ -17,6 +17,9 @@ import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessObjectDesigner
 import com.mdframe.forge.plugin.generator.dto.businessapp.FormDesignerSchemaDTO;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeFieldSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeModelSchema;
+import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageSchema;
+import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageZone;
+import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeTreeConfig;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudRepository;
 import com.mdframe.forge.plugin.generator.service.IGenDatasourceService;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeDdlService;
@@ -59,7 +62,7 @@ public class BusinessApplicationPageDesignService {
     private static final String LOWCODE_RUNTIME = "LOWCODE_RUNTIME";
     private static final String CREATE_MODE_BLANK = "BLANK";
     private static final String CREATE_MODE_DB_IMPORT = "DB_IMPORT";
-    private static final Set<String> PAGE_TYPES = Set.of("form", "list", "list-form", "custom");
+    private static final Set<String> PAGE_TYPES = Set.of("form", "list", "list-form", "tree-list", "tree-table", "custom");
     private static final Set<String> EMBEDDED_RELATION_TYPES = Set.of("CHILD_LIST", "DETAIL");
 
     private final ObjectMapper objectMapper;
@@ -88,12 +91,9 @@ public class BusinessApplicationPageDesignService {
                 tableMappingService.syncManagedDatabase(
                         saved.objectId(), applicationId, normalized.formAssetId());
             } catch (RuntimeException error) {
-                // DDL 同步失败不阻断保存：元数据已在事务中提交成功，
-                // 用户可稍后在高级数据设置中手动同步数据库结构。
-                log.warn("[页面设计保存] DDL 同步失败，已降级为警告: objectId={}, formAssetId={}, error={}",
+                // DDL 硬失败不阻断保存：元数据已提交；安全变更由 syncManagedDatabase 静默处理，不向用户弹提示。
+                log.warn("[页面设计保存] DDL 同步失败已忽略提示: objectId={}, formAssetId={}, error={}",
                         saved.objectId(), normalized.formAssetId(), error.getMessage());
-                String detail = StringUtils.defaultIfBlank(error.getMessage(), "目标数据存储暂时不可用");
-                saved.result().setDdlWarning("数据表结构同步失败：" + detail + "。页面设计已保存，可在高级数据设置中确认数据库调整。");
             }
             syncChildManagedTables(saved.objectId());
         }
@@ -169,11 +169,16 @@ public class BusinessApplicationPageDesignService {
         BusinessDataSnapshot businessData = inspectBusinessData(currentModel);
         java.util.function.Function<String, Boolean> columnDataChecker =
                 createColumnDataChecker(currentModel, businessData);
+        // 换子表等操作常漏传画布外字段；已有列数据的字段必须保留，避免误判为删除。
+        List<BusinessFieldDTO> effectiveFields = retainExistingFieldsWithData(
+                currentModel == null ? List.of() : currentModel.getFields(),
+                request.fields(),
+                columnDataChecker);
         BusinessApplicationPageFieldGuard.assertCompatible(
                 businessData.count(),
                 businessData.tableName(),
                 currentModel == null ? List.of() : currentModel.getFields(),
-                request.fields(),
+                effectiveFields,
                 columnDataChecker);
 
         FormDesignerSchemaDTO formSchema = request.formDesignerSchema();
@@ -181,6 +186,10 @@ public class BusinessApplicationPageDesignService {
             Object persistedFormSchema = current.getObject() == null
                     ? null
                     : readOptions(current.getObject().getDesignerOptions()).get("formDesignerSchema");
+            Set<String> retainedFieldCodes = effectiveFields.stream()
+                    .map(BusinessFieldDTO::getFieldCode)
+                    .filter(StringUtils::isNotBlank)
+                    .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
             BusinessApplicationPageFieldGuard.assertLockedFormComponentsUnchanged(
                     persistedFormSchema,
                     objectMapper.convertValue(formSchema, new TypeReference<Map<String, Object>>() {
@@ -188,15 +197,17 @@ public class BusinessApplicationPageDesignService {
                     currentModel == null ? List.of() : currentModel.getFields(),
                     businessData.count(),
                     businessData.tableName(),
-                    columnDataChecker);
+                    columnDataChecker,
+                    retainedFieldCodes);
             lockPersistedFieldBindings(formSchema);
         }
         BusinessObjectDesignerDTO designer = new BusinessObjectDesignerDTO();
         designer.setObjectId(object.getId());
         designer.setObjectName(request.objectName());
-        designer.setDisplayField(resolveDisplayField(request.fields()));
-        designer.setFields(request.fields());
+        designer.setDisplayField(resolveDisplayField(effectiveFields));
+        designer.setFields(effectiveFields);
         designer.setFormDesignerSchema(formSchema);
+        applyTreeShapePresets(designer, current, request);
         designerService.saveDesigner(object.getId(), designer);
 
         AiBusinessObject savedObject = objectService.requireEntity(object.getId());
@@ -204,6 +215,7 @@ public class BusinessApplicationPageDesignService {
         Map<String, Object> builder = cloneBuilder(request.builder());
         synchronizeBuilderFormAsset(builder, request.formAssetId(), formSchema);
         patchBuilderObjectReference(builder, request, savedObject, businessData.hasData());
+        patchBuilderTreeShape(builder, request);
         if (businessData.hasData()) {
             lockBuilderFormFields(builder, request.formAssetId());
         }
@@ -405,6 +417,63 @@ public class BusinessApplicationPageDesignService {
         };
     }
 
+    /**
+     * 请求字段列表漏传时，把“列上已有数据”的存量字段补回，避免换子表等保存被误判成删字段。
+     * 列上无数据的字段仍可不传，以便真正清理空字段。
+     */
+    private List<BusinessFieldDTO> retainExistingFieldsWithData(
+            List<LowcodeFieldSchema> existingFields,
+            List<BusinessFieldDTO> requestedFields,
+            java.util.function.Function<String, Boolean> columnDataChecker) {
+        List<BusinessFieldDTO> requested = requestedFields == null
+                ? new ArrayList<>()
+                : new ArrayList<>(requestedFields);
+        Set<String> requestedCodes = requested.stream()
+                .map(BusinessFieldDTO::getFieldCode)
+                .filter(StringUtils::isNotBlank)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        for (LowcodeFieldSchema existing : existingFields == null ? List.<LowcodeFieldSchema>of() : existingFields) {
+            if (existing == null || Boolean.TRUE.equals(existing.getSystemField())
+                    || StringUtils.isBlank(existing.getField())
+                    || requestedCodes.contains(existing.getField())) {
+                continue;
+            }
+            String columnName = StringUtils.defaultString(existing.getColumnName());
+            boolean hasData = columnDataChecker == null || Boolean.TRUE.equals(columnDataChecker.apply(columnName));
+            if (!hasData) {
+                continue;
+            }
+            requested.add(toRetainedBusinessField(existing));
+            requestedCodes.add(existing.getField());
+            log.info("[页面设计保存] 补回已有数据字段，避免误删: field={}, label={}, column={}",
+                    existing.getField(), existing.getLabel(), columnName);
+        }
+        return requested;
+    }
+
+    private BusinessFieldDTO toRetainedBusinessField(LowcodeFieldSchema existing) {
+        BusinessFieldDTO field = new BusinessFieldDTO();
+        field.setFieldCode(existing.getField());
+        field.setFieldName(StringUtils.defaultIfBlank(existing.getLabel(), existing.getField()));
+        field.setColumnName(existing.getColumnName());
+        field.setFieldType(existing.getBusinessFieldType());
+        field.setDataType(existing.getDataType());
+        field.setLength(existing.getLength());
+        field.setPrecision(existing.getPrecision());
+        field.setRequired(Boolean.TRUE.equals(existing.getRequired()));
+        field.setDefaultValue(existing.getDefaultValue() == null ? null : String.valueOf(existing.getDefaultValue()));
+        field.setListVisible(existing.getListVisible() == null || Boolean.TRUE.equals(existing.getListVisible()));
+        field.setFormVisible(existing.getFormVisible() == null || Boolean.TRUE.equals(existing.getFormVisible()));
+        field.setComponentType(existing.getComponentType());
+        field.setQueryType(existing.getQueryType());
+        field.setDictType(existing.getDictType());
+        field.setSystemField(false);
+        field.setReadonly(Boolean.TRUE.equals(existing.getReadonly()));
+        field.setFieldStatus(StringUtils.defaultIfBlank(existing.getFieldStatus(), "ENABLED"));
+        field.setSortOrder(existing.getSortOrder());
+        return field;
+    }
+
     private boolean hasBusinessFields(LowcodeModelSchema modelSchema) {
         if (modelSchema.getFields() == null || modelSchema.getFields().isEmpty()) {
             return false;
@@ -483,6 +552,8 @@ public class BusinessApplicationPageDesignService {
                 Map<String, Object> node = mutableMap(value);
                 if (node != null && request.pageId().equals(String.valueOf(node.get("id")))) {
                     node.put("pageType", "object");
+                    node.put("pageTemplate", request.pageType());
+                    node.put("pageShape", request.pageType());
                     node.put("objectRef", new LinkedHashMap<>(objectRef));
                 }
             }
@@ -502,6 +573,58 @@ public class BusinessApplicationPageDesignService {
             map.values().forEach(child -> patchObjectRefs(child, formAssetId, objectRef));
         } else if (value instanceof List<?> list) {
             list.forEach(child -> patchObjectRefs(child, formAssetId, objectRef));
+        }
+    }
+
+    /** 把树形快捷页的 treeConfig.enabled / enableTreeAddChild 同步回应用草稿区块。 */
+    private void patchBuilderTreeShape(Map<String, Object> builder, PageDesignRequest request) {
+        if (!"tree-list".equals(request.pageType()) && !"tree-table".equals(request.pageType())) {
+            return;
+        }
+        boolean treeTable = "tree-table".equals(request.pageType());
+        Map<String, Object> pages = mutableMap(builder.get("pages"));
+        Map<String, Object> page = pages == null ? null : mutableMap(pages.get(request.pageId()));
+        Map<String, Object> layout = page == null ? null : mutableMap(page.get("layout"));
+        Map<String, Object> grid = layout == null ? null : mutableMap(layout.get("gridLayout"));
+        Object itemsValue = grid == null ? null : grid.get("items");
+        if (!(itemsValue instanceof List<?> items)) {
+            return;
+        }
+        for (Object item : items) {
+            Map<String, Object> block = mutableMap(item);
+            if (block == null || !"AiCrudPage".equals(String.valueOf(block.get("blockType")))) {
+                continue;
+            }
+            Map<String, Object> props = mutableMap(block.get("props"));
+            if (props == null) {
+                props = new LinkedHashMap<>();
+                block.put("props", props);
+            }
+            Map<String, Object> treeConfig = mutableMap(props.get("treeConfig"));
+            if (treeConfig == null) {
+                treeConfig = new LinkedHashMap<>();
+            }
+            treeConfig.put("enabled", Boolean.TRUE);
+            treeConfig.putIfAbsent("keyField", "id");
+            treeConfig.putIfAbsent("parentField", "parentId");
+            treeConfig.putIfAbsent("labelField", "name");
+            treeConfig.putIfAbsent("filterField", "parentId");
+            treeConfig.putIfAbsent("targetField", "id");
+            treeConfig.putIfAbsent("childrenField", "children");
+            treeConfig.putIfAbsent("loadMode", "full");
+            props.put("treeConfig", treeConfig);
+            props.put("enableTreeAddChild", !treeTable);
+            Map<String, Object> options = mutableMap(props.get("options"));
+            if (options == null) {
+                options = new LinkedHashMap<>();
+            }
+            options.put("treeConfig", new LinkedHashMap<>(treeConfig));
+            options.put("enableTreeAddChild", !treeTable);
+            if (treeTable) {
+                options.put("layoutType", "tree-crud");
+                props.put("layoutType", "tree-crud");
+            }
+            props.put("options", options);
         }
     }
 
@@ -734,8 +857,174 @@ public class BusinessApplicationPageDesignService {
         return switch (pageType) {
             case "form" -> "form";
             case "list" -> "list";
+            case "tree-table" -> "tree-table";
+            case "tree-list" -> "tree-list";
             default -> "crud";
         };
+    }
+
+    /**
+     * 树形列表 / 左树右表快捷创建：落库时打开模型树形开关，否则列表设计里「启用树形列表」默认关闭，
+     * 运行配置也不会编译出 treeConfig.enabled。
+     */
+    private void applyTreeShapePresets(
+            BusinessObjectDesignerDTO designer,
+            BusinessObjectDesignerService.DesignerContext current,
+            PageDesignRequest request) {
+        if (!"tree-list".equals(request.pageType()) && !"tree-table".equals(request.pageType())) {
+            return;
+        }
+        boolean treeTable = "tree-table".equals(request.pageType());
+        LowcodeModelSchema model = current.getModelSchema() == null
+                ? new LowcodeModelSchema()
+                : current.getModelSchema();
+        LowcodeTreeConfig treeConfig = model.getTreeConfig() == null
+                ? new LowcodeTreeConfig()
+                : model.getTreeConfig();
+        Map<String, Object> fromBuilder = extractBuilderTreeConfig(request.builder(), request.pageId());
+        mergeTreeConfigDefaults(treeConfig, fromBuilder, request.objectName());
+        treeConfig.setEnabled(true);
+        model.setAppType("TREE");
+        model.setTreeConfig(treeConfig);
+        designer.setModelSchema(model);
+
+        LowcodePageSchema pageSchema = current.getPageSchema() == null
+                ? new LowcodePageSchema()
+                : current.getPageSchema();
+        if (treeTable) {
+            pageSchema.setLayoutType("tree-crud");
+        } else if (StringUtils.isBlank(pageSchema.getLayoutType())
+                || "simple-crud".equals(pageSchema.getLayoutType())) {
+            pageSchema.setLayoutType("list-form");
+        }
+        LowcodePageZone tableZone = ensureTableZone(pageSchema);
+        Map<String, Object> props = tableZone.getProps() == null
+                ? new LinkedHashMap<>()
+                : new LinkedHashMap<>(tableZone.getProps());
+        props.put("treeConfig", treeConfig);
+        props.put("enableTreeAddChild", !treeTable);
+        if (treeTable) {
+            props.put("layoutType", "tree-crud");
+        }
+        tableZone.setProps(props);
+        designer.setPageSchema(pageSchema);
+    }
+
+    private void mergeTreeConfigDefaults(
+            LowcodeTreeConfig treeConfig, Map<String, Object> fromBuilder, String objectName) {
+        if (fromBuilder != null) {
+            if (StringUtils.isBlank(treeConfig.getKeyField())) {
+                treeConfig.setKeyField(firstText(fromBuilder, "keyField", "id"));
+            }
+            if (StringUtils.isBlank(treeConfig.getParentField())) {
+                treeConfig.setParentField(firstText(fromBuilder, "parentField", "parentId"));
+            }
+            if (StringUtils.isBlank(treeConfig.getLabelField())) {
+                treeConfig.setLabelField(firstText(fromBuilder, "labelField", "name"));
+            }
+            if (StringUtils.isBlank(treeConfig.getFilterField())) {
+                treeConfig.setFilterField(firstText(fromBuilder, "filterField",
+                        StringUtils.defaultIfBlank(treeConfig.getParentField(), "parentId")));
+            }
+            if (StringUtils.isBlank(treeConfig.getTargetField())) {
+                treeConfig.setTargetField(firstText(fromBuilder, "targetField",
+                        StringUtils.defaultIfBlank(treeConfig.getKeyField(), "id")));
+            }
+            if (StringUtils.isBlank(treeConfig.getChildrenField())) {
+                treeConfig.setChildrenField(firstText(fromBuilder, "childrenField", "children"));
+            }
+            if (StringUtils.isBlank(treeConfig.getTreeTitle())) {
+                treeConfig.setTreeTitle(firstText(fromBuilder, "treeTitle", ""));
+            }
+            if (StringUtils.isBlank(treeConfig.getLoadMode())) {
+                treeConfig.setLoadMode(firstText(fromBuilder, "loadMode", "full"));
+            }
+        }
+        if (StringUtils.isBlank(treeConfig.getKeyField())) {
+            treeConfig.setKeyField("id");
+        }
+        if (StringUtils.isBlank(treeConfig.getParentField())) {
+            treeConfig.setParentField("parentId");
+        }
+        if (StringUtils.isBlank(treeConfig.getLabelField())) {
+            treeConfig.setLabelField("name");
+        }
+        if (StringUtils.isBlank(treeConfig.getFilterField())) {
+            treeConfig.setFilterField(treeConfig.getParentField());
+        }
+        if (StringUtils.isBlank(treeConfig.getTargetField())) {
+            treeConfig.setTargetField(treeConfig.getKeyField());
+        }
+        if (StringUtils.isBlank(treeConfig.getChildrenField())) {
+            treeConfig.setChildrenField("children");
+        }
+        if (StringUtils.isBlank(treeConfig.getLoadMode())) {
+            treeConfig.setLoadMode("full");
+        }
+        if (StringUtils.isBlank(treeConfig.getTreeTitle())) {
+            String title = StringUtils.trimToEmpty(objectName);
+            treeConfig.setTreeTitle(title.isEmpty() ? "分类树" : title + "树");
+        }
+    }
+
+    private LowcodePageZone ensureTableZone(LowcodePageSchema pageSchema) {
+        if (pageSchema.getZones() == null) {
+            pageSchema.setZones(new ArrayList<>());
+        }
+        for (LowcodePageZone zone : pageSchema.getZones()) {
+            if (zone != null && "table".equals(zone.getZoneKey())) {
+                return zone;
+            }
+        }
+        LowcodePageZone created = new LowcodePageZone();
+        created.setZoneKey("table");
+        created.setEnabled(true);
+        created.setProps(new LinkedHashMap<>());
+        pageSchema.getZones().add(created);
+        return created;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> extractBuilderTreeConfig(Map<String, Object> builder, String pageId) {
+        if (builder == null || StringUtils.isBlank(pageId)) {
+            return null;
+        }
+        Map<String, Object> pages = mutableMap(builder.get("pages"));
+        Map<String, Object> page = pages == null ? null : mutableMap(pages.get(pageId));
+        Map<String, Object> layout = page == null ? null : mutableMap(page.get("layout"));
+        Map<String, Object> grid = layout == null ? null : mutableMap(layout.get("gridLayout"));
+        Object itemsValue = grid == null ? null : grid.get("items");
+        if (!(itemsValue instanceof List<?> items)) {
+            return null;
+        }
+        for (Object item : items) {
+            Map<String, Object> block = mutableMap(item);
+            if (block == null || !"AiCrudPage".equals(String.valueOf(block.get("blockType")))) {
+                continue;
+            }
+            Map<String, Object> props = mutableMap(block.get("props"));
+            if (props == null) {
+                return null;
+            }
+            Map<String, Object> treeConfig = mutableMap(props.get("treeConfig"));
+            if (treeConfig == null) {
+                Map<String, Object> options = mutableMap(props.get("options"));
+                treeConfig = options == null ? null : mutableMap(options.get("treeConfig"));
+            }
+            return treeConfig;
+        }
+        return null;
+    }
+
+    private String firstText(Map<String, Object> source, String key, String fallback) {
+        if (source == null) {
+            return fallback;
+        }
+        String value = StringUtils.trimToNull(String.valueOf(source.getOrDefault(key, "")));
+        if (value == null || "null".equals(value)) {
+            return fallback;
+        }
+        return value;
     }
 
     private String requiredText(String value, String message, int maxLength) {

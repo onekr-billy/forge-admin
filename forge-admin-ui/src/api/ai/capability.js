@@ -34,8 +34,8 @@ export function getFlowActionRegistrationSource(params) {
   return request.get('/ai/capability/flow-action/registration-source', { params })
 }
 
-export function getSystemServiceRegistrationSources() {
-  return request.get('/ai/capability/system-service/registration-source')
+export function getSystemServiceRegistrationSources(params) {
+  return request.get('/ai/capability/system-service/registration-source', { params })
 }
 
 export function publishSystemServiceCapability(data) {

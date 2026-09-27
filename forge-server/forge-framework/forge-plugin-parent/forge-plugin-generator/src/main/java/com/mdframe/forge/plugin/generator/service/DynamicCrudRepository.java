@@ -1,7 +1,8 @@
 package com.mdframe.forge.plugin.generator.service;
 
-import cn.dev33.satoken.exception.SaTokenContextException;
+import cn.dev33.satoken.exception.SaTokenException;
 import com.mdframe.forge.plugin.generator.enums.DataAuditSourceType;
+import com.mdframe.forge.plugin.generator.service.audit.DataAuditRecordIds;
 import com.mdframe.forge.plugin.generator.service.audit.DataAuditTenantSupport;
 import com.mdframe.forge.plugin.generator.service.audit.DataAuditTransactionHolder;
 import com.mdframe.forge.plugin.generator.util.DynamicQueryGenerator;
@@ -617,7 +618,8 @@ public class DynamicCrudRepository {
             }
 
             appendWhereJoiner(whereClause);
-            addSearchCondition(whereClause, params, columnName, resolveSearchType(fieldName, searchTypeMap), value);
+            addSearchCondition(whereClause, params, columnName,
+                    resolveSearchType(fieldName, searchTypeMap, value), value);
         }
     }
 
@@ -838,7 +840,32 @@ public class DynamicCrudRepository {
     }
 
     private String resolveSearchType(String fieldName, Map<String, String> searchTypeMap) {
-        return searchTypeMap.getOrDefault(fieldName, "eq");
+        return resolveSearchType(fieldName, searchTypeMap, null);
+    }
+
+    private String resolveSearchType(String fieldName, Map<String, String> searchTypeMap, Object value) {
+        String searchType = searchTypeMap == null
+                ? "eq"
+                : searchTypeMap.getOrDefault(fieldName, "eq");
+        // 已展开的本级+子集（1,5 / List）即使前端仍传 eq，也必须按 IN 查
+        if (isMultiSearchValue(value) && ("eq".equalsIgnoreCase(searchType) || StringUtils.isBlank(searchType))) {
+            return "in";
+        }
+        return searchType;
+    }
+
+    private boolean isMultiSearchValue(Object value) {
+        if (value instanceof Collection<?> collection) {
+            return collection.size() > 1
+                    || (collection.size() == 1 && String.valueOf(collection.iterator().next()).contains(","));
+        }
+        if (value instanceof Object[] array) {
+            return array.length > 1;
+        }
+        if (value instanceof String text) {
+            return text.contains(",");
+        }
+        return false;
     }
 
     private StringBuilder buildBaseWhereClause(String tableName) {
@@ -1372,6 +1399,18 @@ public class DynamicCrudRepository {
                            List<?> ids,
                            boolean logicDelete,
                            SqlCondition dataScopeCondition) {
+        return deleteByIds(tableName, primaryKeyColumn, ids, logicDelete, dataScopeCondition, null);
+    }
+
+    /**
+     * @param beforeById 可选：已查询的删除前快照（key 为规范化 recordId），有则跳过逐条 FOR UPDATE 再读
+     */
+    public int deleteByIds(String tableName,
+                           String primaryKeyColumn,
+                           List<?> ids,
+                           boolean logicDelete,
+                           SqlCondition dataScopeCondition,
+                           Map<String, Map<String, Object>> beforeById) {
         validateTableName(tableName);
         validateIdentifier(primaryKeyColumn);
         if (ids == null || ids.isEmpty()) {
@@ -1384,7 +1423,15 @@ public class DynamicCrudRepository {
             params.addValue("deletedValue", logicDeletedValue());
         }
         for (Object id : ids) {
-            DataAuditTransactionHolder.prepareWrite(tableName, primaryKeyColumn, id, DataAuditTransactionHolder.WriteKind.DELETE);
+            Map<String, Object> snapshot = null;
+            if (beforeById != null) {
+                String key = DataAuditRecordIds.normalize(id);
+                if (key != null) {
+                    snapshot = beforeById.get(key);
+                }
+            }
+            DataAuditTransactionHolder.prepareWrite(
+                    tableName, primaryKeyColumn, id, DataAuditTransactionHolder.WriteKind.DELETE, snapshot);
         }
         String sql = appendTenantCondition(buildBatchDeleteSql(tableName, logicDelete, primaryKeyColumn), params, tableName);
         sql = appendSqlCondition(sql, params, dataScopeCondition);
@@ -2086,10 +2133,10 @@ public class DynamicCrudRepository {
         try {
             // SessionHelper 优先读取显式执行身份，其次才是 Web 登录会话。
             return supplier.get();
-        } catch (SaTokenContextException exception) {
-            // 流程消息/定时任务没有 Web 会话，不伪造操作者；系统审计单独记录来源。
-            // 只处理缺少请求上下文，其他异常仍向上传播；不影响租户或数据权限条件。
-            log.debug("[DynamicCrudRepository] 后台写入无 Web 审计会话");
+        } catch (SaTokenException exception) {
+            // 流程 Redis 回调等非 Web 线程会抛 NotWebContextException（文案含 HttpServletRequest），
+            // 与 SaTokenContextException 同属 SaTokenException；只吞上下文缺失，不伪造操作者。
+            log.debug("[DynamicCrudRepository] 后台写入无 Web 审计会话: {}", exception.getMessage());
             return null;
         }
     }

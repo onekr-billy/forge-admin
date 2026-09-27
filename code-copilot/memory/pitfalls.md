@@ -36,12 +36,17 @@
 
 ## 分类目录
 
-### [前端 / 构建 / 路由](pitfalls/frontend.md)（40）
+### [前端 / 构建 / 路由](pitfalls/frontend.md)（47）
 
 - uni-app 微信小程序不能直接复用 H5 Teleport 和动态 component 递归
+- 门户富列表禁止嵌套 ListPageGridDesigner
 - Vitest 结构测试读取源码时 new URL 不能内联字面量路径
 - pnpm 在 forge-admin-ui 执行脚本必须加 --ignore-workspace
 - SPA fallback 不能吞掉缺失的哈希静态资源
+- Naive UI `n-tabs` 只识别直接子级 `n-tab-pane`
+- part1 return 引用 part2 函数必须先挂 `__impl` 转发
+- 多 part composable 的 return 必须用 `...deps` 转发
+- Options API + composable 拆分后，模板用到的 import 必须 return
 - naive-ui FormItem 挂载测量会清空字段级固定 labelWidth
 - window.$message 是 class 实例，方法不能分离调用
 - computed 每次返回新对象时 watch 引用比较恒不等
@@ -80,9 +85,17 @@
 - 有编辑权限时页面管理左侧菜单要读草稿不能只读发布快照
 - 打印模板必须跟页面走，设计器不能回到 /print
 
-### [低代码 / 设计器 / 业务对象](pitfalls/lowcode.md)（95）
+### [低代码 / 设计器 / 业务对象](pitfalls/lowcode.md)（103）
 
-- GET render 设计预览写关系表导致 Lock wait timeout
+- 应用协调发布应优先做状态推进，不要每次重跑对象发布
+- 应用发布门禁不能跑对象级 publishCheck 和套件级公式上下文
+- 应用发布不能因打印模板字段目录阻断
+- 引用业务对象下拉的字段映射和字段自动查询不要叠同一批目标字段
+- 字段自动查询规则不能因一条脏映射整条静默丢弃
+- 设计器「只读」必须叠到运行 editSchema，且不能经 controlProps 渗入 Naive 组件
+- 流程打印绑定不能再按未接入场景阻断应用发布
+- 字段自动查询的业务对象主键不能当系统字段藏起来
+- GET render / designPreview 不能在长事务里写关系表
 - 导入已有表新增不自动填充审计字段
 - 审计提交回调不能依赖已退出的业务数据源上下文
 - 表单页面形态必须传到实际 CRUD 组件
@@ -179,9 +192,12 @@
 - 177. 业务对象发布不能重置应用入口配置
 - 180. 运行字段基线会掩盖表单组件的结构变更
 
-### [流程 / Flowable / BPMN](pitfalls/flow.md)（52）
+### [流程 / Flowable / BPMN](pitfalls/flow.md)（55）
 
+- 审批子表列控件类型不能只依赖发布态 masterDetailConfig
 - 新版应用撤回不可依赖单据配置和 Web Session
+- 流程 Redis 回调非 Web 异常是 NotWebContextException
+- 列表流程状态列偶发消失是旧 fieldRefs 快照滤掉了托管字段
 - 嵌入式流程设计器不能由父子组件同时持有
 - 门户外层 deep 样式不能覆盖嵌套加载容器
 - 动态 CRUD 事件不能把运行配置对象码当作流程标准对象码
@@ -235,8 +251,9 @@
 - 167. DAG 分支路由必须同时处理跨层穿卡和三种顺序一致性
 - 183. 捕获参与当前事务的下游异常不能清除 rollback-only
 
-### [后端框架 / Spring / Maven](pitfalls/backend.md)（36）
+### [后端框架 / Spring / Maven](pitfalls/backend.md)（37）
 
+- 打印关系外键 businessObject0eq3Id 对不上是设计器列名+model_schema 漏字段
 - 冷缓存 Maven 并行构建出现依赖锁获取失败
 
 - 插件模块改动后从 admin-server 直接 spring-boot:run 会跑旧代码
@@ -313,8 +330,13 @@
 - 企业协同连接根的 client_id/client_secret 不能继续 NOT NULL
 - 共享库已执行的高版本 Flyway 脚本必须原样出现在当前分支
 
-### [能力开放 / MCP / 动作发布](pitfalls/capability.md)（21）
+### [能力开放 / MCP / 动作发布](pitfalls/capability.md)（26）
 
+- Jackson JSON null 不能按 Java null 校验系统服务空授权策略
+- 能力目录和应用能力页必须共享来源归属并在服务端阻止重复注册
+- 系统服务注册来源的风险等级必须与目录发布和授权契约一致
+- 应用业务流程开放不能查询旧对象主流程绑定
+- 应用能力归属校验不能假定历史快照包含套件编码
 - 低代码增强被选中不代表运行时拿到了启用版本正文
 - Capability 短期 Token 不能交给 Sa-Token 解析
 - 6. 关联功能使用不同条件注解会产生“Bean 存在但路由 404”
@@ -337,4 +359,4 @@
 - 157. 桌面常驻属性面板不能用移动端抽屉显隐状态判断是否保存
 - 158. 低代码业务字段编码不能被当作同名物理列
 
-合计 271 条。
+合计 275 条。

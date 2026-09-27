@@ -330,6 +330,39 @@ class BusinessApplicationPageDesignServiceTest {
         verify(objectCreateService, never()).create(any());
     }
 
+    @Test
+    @DisplayName("tree-list page save enables model treeConfig and list-form layout")
+    void treeListPageSaveEnablesEmbeddedTree() {
+        BusinessApplicationPageDesignDTO request = designRequest();
+        request.setPageType("tree-list");
+        request.setObjectId(OBJECT_ID);
+        BusinessApplicationObjectVO association = new BusinessApplicationObjectVO();
+        association.setObjectId(OBJECT_ID);
+        association.setObjectRole("PRIMARY");
+        association.setSortOrder(0);
+        association.setOptions("{\"managedBy\":\"PAGE_FORM\",\"sourceApplicationId\":\"11\","
+                + "\"sourcePageId\":\"page-1\",\"sourceFormAssetId\":\"form-1\"}");
+
+        when(applicationService.requireEntity(APPLICATION_ID)).thenReturn(application());
+        when(applicationObjectService.list(APPLICATION_ID)).thenReturn(List.of(association));
+        when(objectService.requireEntity(OBJECT_ID)).thenReturn(savedObject());
+        when(designerService.loadContext(OBJECT_ID)).thenReturn(designerContext(new LowcodeModelSchema()));
+
+        service.save(APPLICATION_ID, request);
+
+        ArgumentCaptor<BusinessObjectDesignerDTO> designer = ArgumentCaptor.forClass(BusinessObjectDesignerDTO.class);
+        verify(designerService).saveDesigner(eq(OBJECT_ID), designer.capture());
+        assertEquals("TREE", designer.getValue().getModelSchema().getAppType());
+        assertEquals(Boolean.TRUE, designer.getValue().getModelSchema().getTreeConfig().getEnabled());
+        assertEquals("parentId", designer.getValue().getModelSchema().getTreeConfig().getParentField());
+        assertEquals("list-form", designer.getValue().getPageSchema().getLayoutType());
+        assertEquals(Boolean.TRUE, designer.getValue().getPageSchema().getZones().stream()
+                .filter(zone -> "table".equals(zone.getZoneKey()))
+                .findFirst()
+                .map(zone -> zone.getProps().get("enableTreeAddChild"))
+                .orElse(null));
+    }
+
     private BusinessApplicationPageDesignDTO designRequest() {
         BusinessApplicationPageDesignDTO request = new BusinessApplicationPageDesignDTO();
         request.setPageId("page-1");

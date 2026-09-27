@@ -1,11 +1,16 @@
 <template>
   <div class="business-permission-flow-panel">
     <div class="permission-flow-head">
-      <div>
-        <h3>树形模型</h3>
-        <p>配置对象的父子层级、显示字段和加载方式。</p>
+      <div class="permission-flow-head-main">
+        <span class="permission-flow-badge" aria-hidden="true">
+          <i class="i-lucide:git-fork" />
+        </span>
+        <div>
+          <h3>树形模型</h3>
+          <p>配置对象的父子层级、显示字段和加载方式。</p>
+        </div>
       </div>
-      <n-tag :type="treeConfig.enabled ? 'success' : 'default'" :bordered="false">
+      <n-tag size="medium" :type="treeConfig.enabled ? 'success' : 'default'" :bordered="false">
         {{ treeConfig.enabled ? '已启用' : '未启用' }}
       </n-tag>
     </div>
@@ -87,22 +92,30 @@
             </div>
             <div>
               <span>主键字段</span>
-              <strong>{{ treeConfig.keyField || 'id' }}</strong>
+              <strong>{{ resolveFieldLabel(treeConfig.keyField || 'id') }}</strong>
             </div>
             <div>
               <span>父级字段</span>
-              <strong>{{ treeConfig.parentField || 'parentId' }}</strong>
+              <strong>{{ resolveFieldLabel(treeConfig.parentField || 'parentId') }}</strong>
             </div>
             <div>
               <span>显示字段</span>
-              <strong>{{ treeConfig.labelField || '-' }}</strong>
+              <strong>{{ resolveFieldLabel(treeConfig.labelField) || '-' }}</strong>
+            </div>
+            <div>
+              <span>加载方式</span>
+              <strong>{{ treeConfig.loadMode === 'lazy' ? '懒加载' : '一次性加载' }}</strong>
+            </div>
+            <div>
+              <span>子级字段名</span>
+              <strong>{{ treeConfig.childrenField || 'children' }}</strong>
             </div>
           </div>
         </section>
         <section>
           <h4>配置说明</h4>
           <p>启用树形模型会把对象列表切换为树形运行态；关闭时会移除列表中的树形运行配置。</p>
-          <p>对象访问控制和角色授权请在应用工作台「权限」分区统一维护。</p>
+          <p>父级字段用于「添加下级」和层级拼树；未在表单画布放置时，运行态仍会写入该字段。</p>
         </section>
       </aside>
     </div>
@@ -156,6 +169,13 @@ const fieldOptions = computed(() => {
       value: field.field,
     }))
 })
+
+function resolveFieldLabel(fieldCode) {
+  const code = String(fieldCode || '').trim()
+  if (!code)
+    return ''
+  return fieldOptions.value.find(item => item.value === code)?.label || code
+}
 
 watch(
   () => props.modelSchema,
@@ -326,6 +346,7 @@ defineExpose({
     emit('update:modelSchema', cloneSchema(localModel.value))
     emit('dirtyChange', true)
   },
+  setTreeEnabled: updateTreeEnabled,
 })
 </script>
 
@@ -342,7 +363,28 @@ defineExpose({
   justify-content: space-between;
   gap: 12px;
   border-bottom: 1px solid #e5e7eb;
-  padding: 14px 16px;
+  background: linear-gradient(180deg, #f8fbff 0%, #fff 100%);
+  padding: 16px 18px;
+}
+
+.permission-flow-head-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.permission-flow-badge {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  color: #2563eb;
+  background: #eff6ff;
+  border: 1px solid #dbeafe;
+  border-radius: 4px;
+  font-size: 18px;
 }
 
 .permission-flow-head h3,
@@ -350,7 +392,8 @@ defineExpose({
 .permission-flow-tips h4 {
   margin: 0;
   color: #111827;
-  font-size: 15px;
+  font-size: 16px;
+  font-weight: 600;
 }
 
 .permission-flow-head p,

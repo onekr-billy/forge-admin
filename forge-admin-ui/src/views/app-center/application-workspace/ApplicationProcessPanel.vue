@@ -1,6 +1,6 @@
 <script setup>
 import { storeToRefs } from 'pinia'
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   businessProcessPage,
@@ -19,7 +19,13 @@ import SystemTableCell from '@/components/common/SystemTableCell.vue'
 import DictTag from '@/components/DictTag.vue'
 import { useDict } from '@/composables/useDict'
 import { useProcessListStore } from '@/stores/business-process/processListStore'
-import ApplicationProcessRunsPanel from './ApplicationProcessRunsPanel.vue'
+import DesignerAsyncLoader from '@/views/app-center/components/designer/DesignerAsyncLoader.vue'
+
+const ApplicationProcessRunsPanel = defineAsyncComponent({
+  delay: 120,
+  loadingComponent: DesignerAsyncLoader,
+  loader: () => import('./ApplicationProcessRunsPanel.vue'),
+})
 
 const props = defineProps({
   application: {

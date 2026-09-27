@@ -91,19 +91,53 @@ alwaysApply: true
 > 与 AGENTS.md 5.14 同源，此为编码层落地细则，适用于所有 AI 生成/修改的前端代码。
 
 - **能用 Pinia 的场景必须用 Pinia**：跨组件、跨面板、跨层级的共享状态与通信（设计器 schema、选中 ID、面板 UI 状态、多组件联动状态等）必须沉淀到 Pinia store；项目已引入 Pinia 3，禁止因为"嫌麻烦"继续用 props/emit 层层透传。
-- **透传超过 2 层即违规**：同一个状态经 props + emit 转手超过 2 层必须改 store，子组件直接读写 store，父组件不再充当数据中转站。
+- **透传超过 2 层即违规**：同一个状态经 props + emit 转手超过 2 层必须改 store，子组件直接读写 store，父组件不再充当数据中转站；避免「深度组件持续传参」。
+- 仅单层父子、一次性展示 props 可保留 props/emit；工具栏 + 画布 + 属性栏等多面板联动一律走 store。
 - **存量巨型组件渐进式改造模式**：入口组件接收 props 后 `syncFromProps` 同步进 store，同时 watch store 变化对外 emit 兼容存量父组件；拆出的内部面板子组件全部读写 store，不再接收中间 props。
 - **store 文件组织**：`src/stores/<domain>/xxxStore.js`，导出 `useXxxStore`；一个 store 聚焦一个领域（如 `stores/designer/formDesignerStore.js`），禁止大杂烩全量 store。
 - store 内用组合式 API（`defineStore('xxx', () => { ... })`）写法，与项目 `<script setup>` 风格一致。
 
 ### 7.5 组件拆分与单文件规模（强制）
 
-- **Vue SFC 超过 800 行（模板+script+style 合计）必须拆分；超过 2000 行禁止提交**，必须先重构再提交。
-- 拆分优先级：属性面板按分区拆（一个 collapse-item / tab-pane 一个子组件文件）→ 可复用逻辑抽 composable（`useXxx.js`）→ 纯函数下沉模块级 `utils.js`。
-- 拆出的子组件与父组件同域放置：如 `forge-form-designer/panels/FooPanel.vue`，禁止散落在无关目录。
-- 新增功能禁止继续往巨型 SFC 里追加模板/逻辑；发现所在文件已超限时，先拆分再实现。
+> 与 AGENTS.md 5.14「单文件行数上限」一致。
 
-### 7.6 Naive UI 与 Vue 响应式陷阱（强制）
+| 档位 | 行数（template + script + style） | 要求 |
+|------|-----------------------------------|------|
+| 常规 | **不超过 1000** | 新建与日常改动的目标上限；接近时先拆再加功能 |
+| 特例 | **大于 1000 且不超过 2000** | 须有充分理由，并在 Spec/PR 写明原因与后续拆分计划 |
+| 禁止 | **超过 2000** | **禁止提交**，必须先重构 |
+
+- **组件必须拆分**：按 UI 区块拆子组件（工具栏 / 筛选 / 表格 / 抽屉弹窗 / 属性面板每个 collapse 或 tab-pane 一个文件）。
+- **同类方法必须拆分**：按业务域抽 composable（`useXxxList.js`、`useXxxForm.js`、`useXxxPreview.js` 等），禁止一个 setup 堆互不相关的大段方法；纯函数下沉 `utils.js` / `xxxUtils.js`。
+- 拆分优先级：属性面板按分区拆 → 可复用逻辑抽 composable → 纯函数下沉模块级工具。
+- 拆出的子组件与父组件同域放置：如 `forge-form-designer/panels/FooPanel.vue`，禁止散落在无关目录。
+- 新增功能禁止继续往巨型 SFC 里追加；发现所在文件已超限时，先拆分再实现。
+- 编排入口可做薄壳，逻辑进 composable / 子组件 / store，壳文件本身仍应尽量不超过 1000。
+
+### 7.6 注释与 template 布局（强制）
+
+- **关键逻辑注释写清「为什么」**：业务规则、状态机、兼容历史、与后端协议、易踩坑分支必须有简短中文注释；禁止无意义废话注释，也禁止关键处零注释。
+- **template 顶层按布局分区注释**，例如：
+
+```vue
+<template>
+  <div class="xxx-page">
+    <!-- 工具栏 -->
+    ...
+    <!-- 筛选区 -->
+    ...
+    <!-- 表格 / 列表 -->
+    ...
+    <!-- 抽屉 / 弹窗 -->
+    ...
+  </div>
+</template>
+```
+
+- 复杂 `v-if` / 权限 / 模式切换旁补一行注释说明触发条件。
+- script 内大段逻辑按域分节（如 `// —— 列表查询 ——`），与 composable 拆分一致。
+
+### 7.7 Naive UI 与 Vue 响应式陷阱（强制）
 
 > 根因分析见 `code-copilot/memory/pitfalls/frontend.md` 对应条目，此为编码层规避规则。
 

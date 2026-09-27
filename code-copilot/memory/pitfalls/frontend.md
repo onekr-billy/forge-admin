@@ -1,6 +1,6 @@
 # 踩坑：前端 / 构建 / 路由
 
-> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 40 条。
+> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 47 条。
 
 ## uni-app 微信小程序不能直接复用 H5 Teleport 和动态 component 递归
 
@@ -86,6 +86,8 @@ watch(() => props.show, (val) => {
 - 使用 `defineAsyncComponent` 懒加载的弹窗
 - 父组件用 `v-if + v-model:show` 控制挂载和显示的弹窗
 - 首次打开时需要立即加载数据的弹窗，例如字段配置、代码预览、导入表、AI 建表
+
+**2026-09-22 调用与测试补充**：应用内 `v-if` 首次传入 show=true 的调用指南也命中了该问题。除立即监听外，还需分别给接入系统列表和调用指南请求加 generation；清空选择、关闭、换能力都要使旧请求失效。在线测试的令牌交换和后续业务调用必须绑定同一运行上下文，否则旧令牌迟到可能调用到新选择的系统/能力。组件关闭清理输入不等于撤销已发出的业务写操作，界面必须明确该边界。
 
 ---
 
@@ -607,6 +609,16 @@ Naive UI 的 `--n-height` 可保证同尺寸输入和按钮对齐，但 Teleport
 **解决方案**:
 `/app/`（不含 `/app-center`）不要阻塞等后台菜单；`app-portal` 跳过全局进度条和全屏 overlay；layout 同步加载；门户和 CRUD 用同一套骨架，不要连续两个 `n-spin`。
 
+## 应用运行页首屏白屏再出骨架：缺 Suspense + empty layout 异步
+
+**发现日期**: 2026-09-24
+
+**问题描述**:
+打开 `/app-center/application/:code/runtime` 先白屏约数秒，再出现运行页骨架，再拉业务数据。`application-runtime` 是 7000+ 行懒加载路由，开发态 Vite 首次编译很慢；`layout: empty` 也曾异步加载，且 App.vue 只给 `app-portal` 包了 Suspense fallback；组件内 `loading` 初始还是 `false`，chunk 到了也要等 `load()` 才画骨架。
+
+**解决方案**:
+运行页用 `Suspense` + `ApplicationRuntimeSkeleton`；`empty` layout 同步引入；`loading` 默认 `true`；跳过该路由的全局 loadingBar/蒙层；应用中心空闲预拉 runtime chunk；`load()` 期间并行预拉 `GridBlockRenderer`。
+
 ## 有编辑权限时页面管理左侧菜单要读草稿不能只读发布快照
 
 **发现日期**: 2026-09-22
@@ -617,6 +629,12 @@ Naive UI 的 `--n-height` 可保证同尺寸输入和按钮对齐，但 Teleport
 **解决方案**:
 `shouldUseApplicationWorkspaceLoad` 在 `edit=1` / `draft=1` 之外，对有应用编辑权限的用户也返回 true，页面管理读 workspace 草稿。正式运行用户仍只读发布快照。页面管理对可编辑用户还需 `design-preview`（或 PortalPageRenderer 在 `configurable` 时优先读草稿），否则刚保存的字段默认值仍来自已发布 CRUD 快照，表现为必须发布应用才生效。
 
+**后续坑（2026-09-23）**：`resolveApplicationRuntimeLoadKey` 曾把 `edit`/`draft` 单独塞进 key。有编辑权限时 workspace 已是 true，进出表单设计（切 `edit=1`）仍会整页 `load()` + 骨架屏。key 只保留 `applicationCode + workspace`。表单保存后还要递增 `portalCrudConfigRevision` 传给 `PortalPageRenderer`，否则本地 `runtimeCrudPropsByKey` / 同 URL render 结果会让「新增」仍用旧表单。
+
+再补：去掉整页 reload 后，`refreshWorkspaceMetadata` 必须在 `!dirty` 时用 workspace 的 `application.options` 重新 `normalizeInAppBuilder` 写回 `builder`。以前靠切 edit 触发的 `load()` 顺带纠正布局；不同步时页面管理会继续渲染内存里未规范化的块（默认「提示信息」面板文案）。
+
+首页/首个对象页若残留介绍页模板的默认 `info-panel`（标题「提示信息」），会盖住或挤掉 CRUD。门户 `resolvePortalPageBlocks` 对 `pageType=object` 过滤未改过的占位提示，并在无数据块时补 `AiCrudPage`；CRUD 预加载只处理数据块，避免装饰块把对象标成 unavailable。
+
 ## 打印模板必须跟页面走，设计器不能回到 /print
 
 **发现日期**: 2026-09-21
@@ -626,3 +644,106 @@ Naive UI 的 `--n-height` 可保证同尺寸输入和按钮对齐，但 Teleport
 
 **解决方案**:
 模板列表和绑定按 `pageId` 过滤，配置入口只放在当前页面的「页面设置 → 打印模板」。设计器返回优先用来源页 `from`（必须是该页面的 `edit=1` 运行地址），否则回到该页打印设置；不要 `router.back()` 到 `/print`。详情弹窗、抽屉、平铺都要露出打印动作，平铺放在顶部操作区。
+
+## 巨型 SFC 拆到 composables/ 时相对路径必须按新目录深度改写
+
+**发现日期**: 2026-09-26
+
+**问题描述**:
+`admin-ui-giant-sfc-split` 把脚本挪到 `composables/` 或 `runtime-modules/` 后，`pnpm build` 报 `UNRESOLVED_IMPORT`：动态 `import('./xxx.vue')`、以及原本写的 `../form-first/...` 仍按旧 SFC 所在目录解析。机械改写若只把 `./` 变成 `../`，对本来就是 `../` 的依赖（如 `designer/form-first`）会少升一层。
+
+**解决方案**:
+1. 拆分后对所有相对 `import`/`import()` 做存在性扫描（相对新文件目录 resolve）。
+2. 同级依赖用 `../`；原 SFC 的上级依赖用 `../../`；`@/` 别名可不动。
+3. 面板子 SFC 拆出时检查是否残留多余 `</template>`（会导致 Vue 编译 Invalid end tag）。
+
+## `__impl` 懒包装不能用于 part1 里 eager 初始化的函数
+
+**发现日期**: 2026-09-26
+
+**问题描述**:
+`application-runtime` 拆 part 后，`const runtimeViewMode = ref(resolveRuntimeView(route.query.view))` 在 part1 执行时立即调用；`resolveRuntimeView` 却经 `__impl` 懒包装、真实实现在 part4。此时 `__impl.resolveRuntimeView` 尚未赋值，运行时报 `TypeError: __impl.resolveRuntimeView is not a function`。
+
+后续同类故障：`watch(computed, …)` 在 part2 中途求值 part1 computed（`resolvePageBlockObjectRef`），而 `__impl` 批量赋值在 part 末尾；以及 part1 `watch(..., { immediate: true })` 启动 `load()`，await 返回后的 finally 调用尚在 part4 的 `resolveEntryDesignTab`。
+
+**解决方案**:
+1. 凡在 part1 顶层 `ref()`/`reactive()`/`const x = fn()` 中同步调用的函数，必须是 part1 内真实 `function`（或模块级纯函数），不能走 `__impl`。
+2. 每个 part 在 `function foo` 定义结束后立刻 `__impl.foo = foo`，不要攒到文件末尾；同 part 内 `watch` 求值依赖的 computed 才安全。
+3. 会触发跨 part 依赖的 `watch(..., { immediate: true })`（尤其是启动 `load()`）必须放到最后一个 part，等全部 `__impl` 注册完再跑。
+4. `computed`/`watch` 非 immediate 回调一般在全 part 装配后才跑，相对安全。
+
+**后续（ForgePropertyPanel）**：`useForgePropertyPanel` 机械拆成 part1/2/3 时完全没加 `__impl`，且 part2/part3 缺 import。part1 的 `watch(selectedDictType, …, { immediate: true })` 直接调用尚在 part3 的 `loadDefaultValueDictOptions`，运行时报 `ReferenceError: loadDefaultValueDictOptions is not defined`。修复：补 `__impl` 懒包装 + 各 part 定义后立刻 `__impl.fn = fn`；该 immediate watch 挪到 part3（赋值之后）；并为 part2/part3 补齐 vue/API/schema 等 import。
+
+## 多 part composable 的 return 必须用 `...deps` 转发
+
+**发现日期**: 2026-09-26
+
+**问题描述**:
+运行态打开应用设计器属性面板时报 `ReferenceError: designerStore is not defined`（`useForgePropertyPanel.part2.js` return 处）。测试文件并未改业务逻辑；根因是巨型 SFC 拆成 `part1 → part2 → part3` 后，后续 part 的 return 手写枚举了上游全部 key，但只解构了 deps 的一部分。return 对象字面量求值时，第一个未在当前作用域声明的标识符就会抛 `ReferenceError`，组件 setup 失败。同类问题也曾出现在 `useListPageGridDesigner.part2–5`。
+
+**解决方案**:
+1. part2+ 的 return **一律**写成 `return { ...deps, /* 本 part 新定义或覆盖的 key */ }`，不要再手抄上游整表。
+2. 只解构本 part 真正用到的 deps 字段；转发交给 `...deps`。
+3. 门禁：对 `*.part[2-9].js` 扫描 return 里的 shorthand 标识符是否都在本文件 import / 解构 / 局部声明中；缺一即失败。`split_sfc.py` 已按此模式生成，手工改 return 时不要删掉 `...deps`。
+
+## Options API + composable 拆分后，模板用到的 import 必须 return
+
+**发现日期**: 2026-09-26
+
+**问题描述**:
+`application-runtime` 拆成 Options `setup(){ return useApplicationRuntime() }` 后，模板访问 `defaultLogo` / `WORKBENCH_PAGE_ID` / `isNavigationVisible` / `DEFAULT_PAGE_PADDING` 报 `Property "…" was accessed during render but is not defined`，最终 `isNavigationVisible is not a function`。原先 `<script setup>` 下 import 自动暴露给模板；拆分后只有 composable return 的字段进实例。
+
+**解决方案**:
+1. 凡模板绑定到的模块级 import / 常量 / 纯函数，必须加入 part1（或最终）return。
+2. 拆分验收时用模板 AST/正则提取标识符，与 publicApi 做差集；`Permissions policy: unload`、`registerComponent already registered`、Suspense experimental 等可忽略。
+3. 模板里的 `props.xxx` 是 `<script setup>` 写法；改成 Options `setup(props)` 后应写成 prop 名本身（如 `columns`），或在 setup return 里显式带上 `props`。禁止留下 `props.` 前缀——setup 返回值不会自动叫 `props`。
+4. 从父 SFC 拆出的子面板若 `return useXxxApi()`（Proxy 读父 `setupState`），还必须把父组件声明的 props 纳入代理（或显式 return `schema` 等别名）。只代理 `setupState` 时，子模板里的 `schema.layout` 会变成 undefined。
+5. 该 Proxy **必须**实现 `set`，且 `getOwnPropertyDescriptor` 要用 accessor（或 `writable: true`）。否则子面板 `v-model` 赋值会报 `trap returned falsish`，属性 Tab 切不过去、折叠面板也写不进去。
+6. **组件注册例外**：Options SFC 模板里的 `<BusinessListDesigner />` 等走 `resolveComponent`，只认 `components: { ...LocalComponents }`，**不会**把 setup return 里的异步组件当注册表。拆分后必须把原 `<script setup>` 里的 `defineAsyncComponent` 面板写进 `*LocalComponents.js` 并 spread 进 `components`；仅 return 仍会报 `Failed to resolve component`。
+## Naive UI `n-tabs` 只识别直接子级 `n-tab-pane`
+
+**发现日期**: 2026-09-26
+
+**问题描述**:
+`ForgePropertyPanel` 把 `SelectedBasicTab` / `SelectedStyleTab` / `SelectedExtraTabs` 作为 `n-tabs` 子组件后，右侧属性 Tab 导航与 pane 全空（DOM 只有空的 `n-tabs-wrapper` / `n-tabs-pane-wrapper`）。Naive UI Tabs 对默认 slot 做 flatten 后只保留 `vnode.type.__TAB_PANE__` 的节点；组件边界内的 `n-tab-pane` 对父级 slot 不可见。
+
+**解决方案**:
+`n-tab-pane`（含 `#tab`）必须写在 `n-tabs` 所在 SFC 的直接子级；面板内容再拆成 `SelectedBasicTab` 等无 pane 壳的子组件。禁止「一个子组件里包一层 `n-tab-pane` 再塞进 `n-tabs`」。
+
+## part1 return 引用 part2 函数必须先挂 `__impl` 转发
+
+**发现日期**: 2026-09-26
+
+**问题描述**:
+`useObjectDesigner.part1` 的 `return { appendCodeAppAsset, … }` 在求值时抛 `ReferenceError: appendCodeAppAsset is not defined`，嵌入式列表/对象设计器整页白屏。根因是机械拆 part 后，实现落在 part2 并只写了 `__impl.fn = fn`，但 part1 return 仍直接引用未声明标识符；对象字面量从左到右求值，第一个缺失名即炸。另有一批 `defineDesignerAsyncComponent` / 各 `Business*Designer` 异步组件定义在拆分时丢失。
+
+**解决方案**:
+1. part1 对「仅 part2 实现、却要 return / 早前 computed 调用」的符号统一写 `function fn(...args) { return __impl.fn(...args) }`（函数声明可提升，避免 const TDZ）。
+2. part2 定义后立刻 `__impl.fn = fn`。
+3. 拆分时把原 SFC 顶部的 `defineAsyncComponent` 面板注册一并搬进 part1，禁止只 return 名字不落地定义。
+4. 门禁：扫描 part1 return shorthand，凡不在本文件顶层声明且仅在后续 part 出现的，必须有 `__impl` 转发。
+5. **初始化时序**：part1 里 `ref(resolveXxx())` / `watch(..., { immediate: true })` 若调用了 `__impl` 转发函数，会在 part2 赋值前执行并炸（如 `useBusinessListDesigner` 的 `resolveDesignModelSchema`）。做法：part1 只放占位 schema；去掉依赖 part2 的 immediate；在编排入口 `part2` 之后调用 `__impl.hydrateInitialState()` 再 return publicApi。
+
+## 门户富列表禁止嵌套 ListPageGridDesigner
+
+**发现日期**: 2026-09-26
+
+**问题描述**:
+`listGridLayout` 含 tabs/日历等伴生块时，门户曾用 `ListPageGridDesigner(readonly)` 渲染。设计态 canvas-zoom、绝对定位、`heightMode=full` 固定高度与静态预览 tip 一并泄漏，运行页样式乱、下方组件被裁切看不见。
+
+**解决方案**:
+运行态改走 `RuntimeListGridFlow`（纵向文档流）。块入库前 `normalizeFlowBlockItem`：`heightMode=auto`、`widthMode=full`、清掉设计态 px 宽高、CRUD 强制 `previewLiveData`。内层 GridBlock 传 `suppress-runtime-list-grid` + `runtime-interactive`。设计器仍用 `ListPageGridDesigner`，不要把画布壳直接当门户壳。
+
+## 列表预览：先保存再打开；伴生块分页；卡片中间滚动
+
+**发现日期**: 2026-09-27
+
+**问题描述**:
+1. 点预览未先落盘草稿，或 dirty 漏标导致 `openDraftPreview` 跳过保存。
+2. 加了标题/统计等伴生块后，本地预览仍用绝对画布 `ListPageGridDesigner(readonly)`，CRUD 高度链断裂，分页被 `overflow:hidden` 裁掉。
+3. 卡片模式依赖 `maxHeight` 才 `overflow:auto`；flex 布局下中间区域无滚动条、分页一起被裁。
+
+**解决方案**:
+1. `openLocalPreview` 先 `await saveLayout()`；应用壳 `openDraftPreview` 在 list/form 设计态始终 `saveCurrentDesignerSection`。
+2. 本地预览若 `isRichListGridLayout`，改渲 `RuntimeListGridFlow`；并补齐 `.is-crud` → `.ai-crud-preview` → `.ai-crud-page` 的 `height:100%` flex 链。
+3. `AiTable` 卡片：`.ai-card-scroll` 中间滚动，`.ai-card-pagination` 底部固定。

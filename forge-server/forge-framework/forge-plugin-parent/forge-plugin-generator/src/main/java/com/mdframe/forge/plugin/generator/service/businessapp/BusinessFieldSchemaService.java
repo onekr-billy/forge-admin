@@ -29,7 +29,7 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class BusinessFieldSchemaService {
 
-    private static final Set<String> DICT_FIELD_TYPES = Set.of("DICT", "SELECT", "RADIO", "CHECKBOX", "MULTI_SELECT");
+    private static final Set<String> DICT_FIELD_TYPES = Set.of("DICT", "RADIO", "CHECKBOX", "MULTI_SELECT");
     private static final Set<String> SYSTEM_FIELDS = Set.of(
             "id", "tenantId", "createBy", "createTime", "createDept", "updateBy", "updateTime", "delFlag"
     );
@@ -42,7 +42,8 @@ public class BusinessFieldSchemaService {
             Map.entry("DATE", new FieldDefaults("date", "date", null, null, "eq", 140)),
             Map.entry("DATETIME", new FieldDefaults("datetime", "datetime", null, null, "eq", 180)),
             Map.entry("DICT", new FieldDefaults("varchar", "select", 64, 2, "eq", 140)),
-            Map.entry("SELECT", new FieldDefaults("varchar", "select", 64, 2, "eq", 140)),
+            // SELECT：树形/外键选择等存目标表主键，默认 bigint（与 REFERENCE/DEPT 一致）；字典下拉用 DICT
+            Map.entry("SELECT", new FieldDefaults("bigint", "treeSelect", null, null, "eq", 140)),
             Map.entry("RADIO", new FieldDefaults("varchar", "radio", 64, 2, "eq", 140)),
             Map.entry("CHECKBOX", new FieldDefaults("varchar", "checkbox", 255, 2, "in", 180)),
             Map.entry("MULTI_SELECT", new FieldDefaults("varchar", "checkbox", 255, 2, "in", 180)),

@@ -310,6 +310,44 @@ class BusinessApplicationRuntimeServiceTest {
                 objectMapper);
     }
 
+    @Test
+    @DisplayName("runtimeById reuses short-lived cache for the same published version")
+    void runtimeByIdCachesPublishedSnapshot() throws Exception {
+        BusinessApplicationVO application = application(3);
+        Map<String, Object> builder = Map.of(
+                "homePageId", "page_home",
+                "nodes", List.of(node("page_home", null, null)),
+                "pages", Map.of("page_home", Map.of("title", "已发布首页")));
+        Map<String, Object> snapshot = Map.of(
+                "application", Map.of(
+                        "id", "10",
+                        "applicationCode", "crm_test",
+                        "applicationName", "发布时名称",
+                        "status", 1,
+                        "portalConfig", Map.of(),
+                        "options", Map.of("inAppBuilder", builder)),
+                "objects", List.of(),
+                "entries", List.of(),
+                "extensions", List.of());
+        AiBusinessApplicationVersion version = version(3, objectMapper.writeValueAsString(snapshot));
+        StubVersionService versions = new StubVersionService(version);
+        StubApplicationService apps = new StubApplicationService(application);
+        BusinessApplicationSnapshotService snapshotService = new BusinessApplicationSnapshotService(
+                objectMapper, null, null, null, null, null, null, null, null, null);
+        BusinessApplicationRuntimeService runtimeService = new BusinessApplicationRuntimeService(
+                apps, versions, snapshotService, objectMapper);
+
+        runtimeService.runtimeById(10L);
+        runtimeService.runtimeById(10L);
+        runtimeService.runtimeById(10L);
+
+        assertEquals(1, versions.requireVersionCalls());
+        assertEquals(1, apps.detailCalls());
+        assertEquals(3, runtimeService.runtimeById(10L).getVersionNo());
+        assertEquals(1, versions.requireVersionCalls());
+        assertEquals(1, apps.detailCalls());
+    }
+
     private BusinessApplicationVO application(Integer lastPublishVersion) {
         BusinessApplicationVO application = new BusinessApplicationVO();
         application.setId(10L);
@@ -373,14 +411,26 @@ class BusinessApplicationRuntimeServiceTest {
     private static class StubApplicationService extends BusinessApplicationService {
 
         private final BusinessApplicationVO application;
+        private int detailCalls;
 
         StubApplicationService(BusinessApplicationVO application) {
             super(null, null, null, null);
             this.application = application;
         }
 
+        int detailCalls() {
+            return detailCalls;
+        }
+
+        @Override
+        public BusinessApplicationVO detail(Long id) {
+            detailCalls++;
+            return application;
+        }
+
         @Override
         public BusinessApplicationVO detailByCode(String applicationCode) {
+            detailCalls++;
             return application;
         }
 
@@ -413,14 +463,20 @@ class BusinessApplicationRuntimeServiceTest {
     private static class StubVersionService extends BusinessApplicationVersionService {
 
         private final AiBusinessApplicationVersion version;
+        private int requireVersionCalls;
 
         StubVersionService(AiBusinessApplicationVersion version) {
             super(null, null, null, null);
             this.version = version;
         }
 
+        int requireVersionCalls() {
+            return requireVersionCalls;
+        }
+
         @Override
         public AiBusinessApplicationVersion requireVersion(Long applicationId, Integer versionNo) {
+            requireVersionCalls++;
             return version;
         }
     }

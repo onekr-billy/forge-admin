@@ -1,7 +1,3 @@
-<!--
-  AI 表单项组件 - 根据配置动态渲染不同类型的表单字段
--->
-
 <template>
   <!-- 表单分隔线 -->
   <AiFormSectionTitle
@@ -59,17 +55,9 @@
         @focusout="handleFieldFocusout"
         @keyup="handleFieldKeyup"
       >
-        <div
-          v-if="shouldRenderReadonlySelectionText(field)"
-          class="ai-form-readonly-text"
-          :title="resolveReadonlySelectionText(field)"
-        >
-          {{ resolveReadonlySelectionText(field) }}
-        </div>
-
         <!-- 低代码页面展示组件 -->
         <PageWidgetRenderer
-          v-else-if="isRuntimePageWidgetField"
+          v-if="isRuntimePageWidgetField"
           :component-key="runtimePageWidgetKey"
           :props-data="runtimePageWidgetProps"
           :data-context="formData || {}"
@@ -86,6 +74,24 @@
           :context="context"
           :disabled="disabledHandler(field)"
           @update:model-value="handleUpdate"
+        />
+
+        <!-- 数字/金额：必须先于 input，避免 type=input + componentKey=money 落到文本框后金额空白 -->
+        <n-input-number
+          v-else-if="isNumberLikeField(field)"
+          :value="numberFieldValue"
+          :placeholder="getPlaceholder(field)"
+          :disabled="disabledHandler(field)"
+          :min="field.min ?? field.props?.min"
+          :max="field.max ?? field.props?.max"
+          :step="field.step || field.props?.step || (resolveNumberFieldType(field) === 'money' ? 0.01 : 1)"
+          :precision="field.precision ?? field.props?.precision ?? (resolveNumberFieldType(field) === 'money' ? 2 : undefined)"
+          :show-button="field.showButton !== false && field.props?.showButton !== false && field.props?.controls !== false"
+          :clearable="field.clearable !== false"
+          style="width: 100%"
+          v-bind="controlProps"
+          @update:value="handleUpdate"
+          v-on="getComponentEvents(field)"
         />
 
         <!-- 输入框 -->
@@ -144,39 +150,21 @@
           v-on="getComponentEvents(field)"
         />
 
-        <!-- 数字输入框 -->
-        <n-input-number
-          v-else-if="isNumberFieldType(field.type)"
-          :value="value"
-          :placeholder="getPlaceholder(field)"
-          :disabled="disabledHandler(field)"
-          :min="field.min"
-          :max="field.max"
-          :step="field.step || 1"
-          :precision="field.precision"
-          :show-button="field.showButton !== false"
-          :clearable="field.clearable !== false"
-          style="width: 100%"
-          v-bind="controlProps"
-          @update:value="handleUpdate"
-          v-on="getComponentEvents(field)"
-        />
-
         <!-- 下拉选择 -->
         <n-select
           v-else-if="field.type === 'select'"
+          v-bind="controlProps"
           :value="resolveOptionValue(value)"
           :placeholder="getPlaceholder(field)"
           :options="currentOptions"
           :clearable="field.clearable !== false"
           :filterable="field.filterable !== false"
-          :loading="field.loading"
+          :loading="selectOptionLoading"
           :remote="field.remote"
           :on-search="field.onSearch"
-          v-bind="controlProps"
           :disabled="disabledHandler(field)"
           :multiple="fieldMultiple"
-          @update:value="handleUpdate"
+          @update:value="handleSelectUpdate"
           v-on="getComponentEvents(field)"
         />
 
@@ -290,10 +278,10 @@
           :formatted-value="normalizeFormattedPickerValue(value)"
           type="date"
           :placeholder="getPlaceholder(field)"
-          :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
           v-bind="controlProps"
+          :disabled="disabledHandler(field)"
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'yyyy-MM-dd'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM-dd'"
@@ -308,10 +296,10 @@
           :formatted-value="normalizeFormattedPickerValue(value)"
           type="datetime"
           :placeholder="getPlaceholder(field)"
-          :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
           v-bind="controlProps"
+          :disabled="disabledHandler(field)"
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'yyyy-MM-dd HH:mm:ss'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM-dd HH:mm:ss'"
@@ -328,10 +316,10 @@
           :placeholder="field.placeholder"
           :start-placeholder="field.startPlaceholder || '开始日期'"
           :end-placeholder="field.endPlaceholder || '结束日期'"
-          :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
           v-bind="controlProps"
+          :disabled="disabledHandler(field)"
           :default-value="resolvePickerDefaultValue(field, true)"
           :format="field.props?.format || field.format || 'yyyy-MM-dd'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM-dd'"
@@ -348,10 +336,10 @@
           :placeholder="field.placeholder"
           :start-placeholder="field.startPlaceholder || '开始时间'"
           :end-placeholder="field.endPlaceholder || '结束时间'"
-          :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
           v-bind="controlProps"
+          :disabled="disabledHandler(field)"
           :default-value="resolvePickerDefaultValue(field, true)"
           :format="field.props?.format || field.format || 'yyyy-MM-dd HH:mm:ss'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM-dd HH:mm:ss'"
@@ -366,10 +354,10 @@
           :formatted-value="normalizeFormattedPickerValue(value)"
           type="month"
           :placeholder="getPlaceholder(field)"
-          :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
           v-bind="controlProps"
+          :disabled="disabledHandler(field)"
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'yyyy-MM'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy-MM'"
@@ -384,10 +372,10 @@
           :formatted-value="normalizeFormattedPickerValue(value)"
           type="year"
           :placeholder="getPlaceholder(field)"
-          :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
           v-bind="controlProps"
+          :disabled="disabledHandler(field)"
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'yyyy'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'yyyy'"
@@ -401,10 +389,10 @@
           :value="normalizeTimestampPickerValue(value)"
           :formatted-value="normalizeFormattedPickerValue(value)"
           :placeholder="getPlaceholder(field)"
-          :disabled="disabledHandler(field)"
           :clearable="field.clearable !== false"
           style="width: 100%"
           v-bind="controlProps"
+          :disabled="disabledHandler(field)"
           :default-value="resolvePickerDefaultValue(field)"
           :format="field.props?.format || field.format || 'HH:mm:ss'"
           :value-format="field.props?.valueFormat || field.valueFormat || 'HH:mm:ss'"
@@ -417,10 +405,10 @@
           <n-time-picker
             :formatted-value="resolveFormattedRangeValue(value, 0)"
             :placeholder="field.startPlaceholder || '开始时间'"
-            :disabled="disabledHandler(field)"
             :clearable="field.clearable !== false"
             style="width: 100%"
             v-bind="controlProps"
+            :disabled="disabledHandler(field)"
             :default-value="resolvePickerDefaultValue(field)"
             :format="field.props?.format || field.format || 'HH:mm:ss'"
             :value-format="field.props?.valueFormat || field.valueFormat || 'HH:mm:ss'"
@@ -431,10 +419,10 @@
           <n-time-picker
             :formatted-value="resolveFormattedRangeValue(value, 1)"
             :placeholder="field.endPlaceholder || '结束时间'"
-            :disabled="disabledHandler(field)"
             :clearable="field.clearable !== false"
             style="width: 100%"
             v-bind="controlProps"
+            :disabled="disabledHandler(field)"
             :default-value="resolvePickerDefaultValue(field)"
             :format="field.props?.format || field.format || 'HH:mm:ss'"
             :value-format="field.props?.valueFormat || field.valueFormat || 'HH:mm:ss'"
@@ -550,6 +538,7 @@
         <!-- 级联选择 -->
         <n-cascader
           v-else-if="field.type === 'cascader'"
+          v-bind="controlProps"
           :value="resolveOptionValue(value)"
           :placeholder="getPlaceholder(field)"
           :options="currentOptions"
@@ -558,7 +547,6 @@
           :multiple="field.multiple"
           :cascade="field.cascade !== false"
           :show-path="field.showPath !== false"
-          v-bind="controlProps"
           :disabled="disabledHandler(field)"
           @update:value="handleUpdate"
           v-on="getComponentEvents(field)"
@@ -573,9 +561,9 @@
           :disabled="disabledHandler(field)"
           :options="currentOptions"
           :loading="remoteLoading"
-          :clearable="field.clearable !== false"
-          :filterable="field.filterable !== false"
-          :cascade="field.cascade !== false"
+          :clearable="isFieldClearable(field)"
+          :filterable="field.filterable !== false && field.props?.filterable !== false"
+          :cascade="resolveNaiveTreeCascade(field)"
           :multiple="fieldMultiple"
           @update:value="handleTreeSelectUpdate(field, $event)"
           v-on="getComponentEvents(field)"
@@ -589,8 +577,8 @@
           :label-value="resolveUserSelectLabel(field)"
           :placeholder="getPlaceholder(field)"
           :disabled="disabledHandler(field) || isCascadeDisabledByEmptyParent()"
-          :clearable="field.clearable !== false"
-          :size="field.size"
+          :clearable="isFieldClearable(field)"
+          :size="field.size || field.props?.size"
           :org-id="userSelectCascadeOrgId"
           :include-children="userSelectCascadeIncludeChildren"
           :multiple="fieldMultiple"
@@ -615,6 +603,7 @@
         <!-- 树形选择 -->
         <n-tree-select
           v-else-if="field.type === 'treeSelect'"
+          v-bind="controlProps"
           :value="resolveOptionValue(value)"
           :placeholder="getPlaceholder(field)"
           :options="currentOptions"
@@ -624,7 +613,7 @@
           :multiple="field.multiple"
           :cascade="field.cascade !== false"
           :show-path="field.showPath !== false"
-          v-bind="controlProps"
+          :on-load="treeSelectLazyLoadHandler"
           :disabled="disabledHandler(field)"
           @update:value="handleTreeSelectUpdate(field, $event)"
           v-on="getComponentEvents(field)"
@@ -667,6 +656,7 @@
         <!-- 关联选择（下拉模式）：对象引用/记录选择器统一渲染 -->
         <n-select
           v-else-if="isRelationSelectorField && relationSelectorMode === 'dropdown'"
+          v-bind="controlProps"
           :value="resolveOptionValue(value)"
           :placeholder="getPlaceholder(field)"
           :options="currentOptions"
@@ -674,7 +664,6 @@
           :clearable="field.clearable !== false"
           :filterable="field.filterable !== false"
           :remote="objectReferenceRemoteEnabled"
-          v-bind="controlProps"
           :disabled="disabledHandler(field)"
           :multiple="fieldMultiple"
           @search="handleObjectReferenceSearch"
@@ -826,39 +815,17 @@
   />
 </template>
 
-<script setup>
-import { CopyOutline } from '@vicons/ionicons5'
-import { useClipboard } from '@vueuse/core'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
-import { queryBusinessRecordSelector } from '@/api/business-app'
-import { executeLowcodeQuerySource } from '@/api/lowcode-query-source'
-import UserSelectPicker from '@/components/common/UserSelectPicker.vue'
-import DictSelect from '@/components/DictSelect.vue'
-import FileUpload from '@/components/file-upload/index.vue'
-import ImageUpload from '@/components/image-upload/index.vue'
-import FieldValueRenderer from '@/components/lowcode-builder/shared/FieldValueRenderer.vue'
-import { isPageWidgetComponentKey } from '@/components/lowcode-builder/shared/page-widget-schema'
-import PageWidgetRenderer from '@/components/lowcode-builder/shared/PageWidgetRenderer.vue'
-import { resolveRuntimeControl } from '@/components/lowcode-builder/shared/runtime-rules'
-import RegionTreeSelect from '@/components/RegionTreeSelect.vue'
-import { getDictData } from '@/composables/useDict'
-import { request } from '@/utils'
-import AiCustomSelect from './AiCustomSelect.vue'
-import AiFormArrayField from './AiFormArrayField.vue'
-import AiFormGroupTitle from './AiFormGroupTitle.vue'
-import AiFormSectionTitle from './AiFormSectionTitle.vue'
-import AiRecordSelectorModal from './AiRecordSelectorModal.vue'
-import { resolveControlProps } from './control-props'
-import { isInputLikeFieldType, isNumberFieldType } from './field-type-utils'
-import { resolveSwitchValuePair } from '@/views/app-center/components/designer/forge-form-designer/field-default-value'
-import { applyRecordFieldMappings, extractSelectorRawRecord, normalizeRecordSelectorConfig, resolveSelectorSearchParams } from './record-selector-utils'
-import { resolveSelectionLabelFields as buildSelectionLabelFields, ORG_SELECT_FIELD_TYPES, USER_SELECT_FIELD_TYPES } from './selection-label-fields'
-import { isFieldMultiple, parseSelectionValues, serializeSelectionLabels, serializeSelectionValues } from './selection-multi-value'
+<script>
+import { aiFormItemLocalComponents } from './aiFormItemLocalComponents'
+import { useAiFormItem } from './composables/useAiFormItem'
 
-defineOptions({ inheritAttrs: false })
-
-const props = defineProps({
+export default {
+  inheritAttrs: false,
+  name: 'AiFormItem',
+  components: {
+    ...aiFormItemLocalComponents,
+  },
+  props: {
   field: {
     type: Object,
     required: true,
@@ -875,1988 +842,12 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
-})
-
-const emit = defineEmits(['update:value'])
-
-function resolveSwitchCheckedValue(field = {}) {
-  return resolveSwitchValuePair(field).checkedValue
-}
-
-function resolveSwitchUncheckedValue(field = {}) {
-  return resolveSwitchValuePair(field).uncheckedValue
-}
-
-const route = useRoute()
-const { copy } = useClipboard()
-const remoteOptions = ref([])
-const remoteLoading = ref(false)
-const dictOptions = ref([])
-const sourceDictOptions = ref([])
-const recordSelectorVisible = ref(false)
-const scanLoading = ref(false)
-const scanFeedback = ref({ status: 'idle', message: '' })
-const pickerDefaultTimestamp = Date.now()
-let remoteRequestSeq = 0
-
-// 人员/组织选择器类型集合与选择器 label 适配共享（见 selection-label-fields.js，勿在此另建副本）
-const ORG_TREE_SELECT_TYPES = ORG_SELECT_FIELD_TYPES
-const USER_SELECT_TYPES = USER_SELECT_FIELD_TYPES
-
-const READONLY_SELECTION_TYPES = new Set([
-  'select',
-  'dictSelect',
-  'radio',
-  'radioButton',
-  'checkbox',
-  'cascader',
-  'treeSelect',
-  'orgTreeSelect',
-  'transfer',
-  'objectReference',
-])
-
-const controlProps = computed(() => resolveControlProps(props.field?.props))
-const switchControlProps = computed(() => {
-  const next = { ...controlProps.value }
-  delete next.checkedValue
-  delete next.uncheckedValue
-  delete next.checkedText
-  delete next.uncheckedText
-  delete next.defaultValue
-  return next
-})
-const fieldRuntimeControl = computed(() => resolveRuntimeControl(props.field || {}, {
-  ...(props.context || {}),
-  record: props.formData || {},
-  row: props.context?.currentRow || props.context?.row || props.formData || {},
-  formData: props.formData || {},
-  data: props.formData || {},
-  route: {
-    query: route.query || {},
-    params: route.params || {},
-    path: route.path,
-    fullPath: route.fullPath,
-    name: route.name,
+},
+  emits: ['update:value'],
+  setup(props, { emit }) {
+    return useAiFormItem(props, emit)
   },
-}))
-const fieldRuntimeVisible = computed(() => fieldRuntimeControl.value.visible !== false)
-
-const formItemRef = ref(null)
-const arrayFieldRef = ref(null)
-
-/**
- * 将字段级固定 labelWidth 显式写回 label 元素的 inline style。
- *
- * naive-ui FormItem 挂载时的 invalidateLabelWidth 为测量 label 自然宽度，会直接清空
- * label 元素的 inline width 且事后只恢复 whiteSpace；当字段配置了固定 labelWidth 且表单级
- * labelWidth 为 'auto' 时，mergedLabelWidth 恒为该固定值，Vue 后续 patch 因新旧值相同而
- * 跳过 width 写入，DOM 宽度就此丢失，label 塌缩为内容宽度导致整列不对齐。
- * 这里在挂载与 labelWidth 变化后写回，兜底该原生缺陷。
- */
-function restoreFixedLabelWidth() {
-  const labelWidth = props.field?.labelWidth
-  if (labelWidth === undefined || labelWidth === null || labelWidth === '' || labelWidth === 'auto')
-    return
-  const labelEl = formItemRef.value?.$el?.querySelector?.(':scope > .n-form-item-label')
-  if (labelEl)
-    labelEl.style.width = typeof labelWidth === 'number' ? `${labelWidth}px` : String(labelWidth)
-}
-
-onMounted(async () => {
-  await nextTick()
-  restoreFixedLabelWidth()
-  registerArrayValidator()
-})
-
-onBeforeUnmount(() => {
-  props.context?.unregisterFieldValidator?.(props.field?.field)
-})
-
-watch(() => props.field?.labelWidth, () => {
-  nextTick(restoreFixedLabelWidth)
-})
-
-watch(() => props.field?.type, () => nextTick(registerArrayValidator))
-
-function registerArrayValidator() {
-  const field = props.field?.field
-  if (!field)
-    return
-  if (props.field?.type !== 'array') {
-    props.context?.unregisterFieldValidator?.(field)
-    return
-  }
-  props.context?.registerFieldValidator?.(field, () => arrayFieldRef.value?.validate?.())
-}
-
-/**
- * 获取占位符文本
- */
-function getPlaceholder(field) {
-  if (field.placeholder) {
-    return field.placeholder
-  }
-
-  const prefix = isInputLikeFieldType(field.type) ? '请输入' : '请选择'
-  return `${prefix}${field.label}`
-}
-
-/**
- * 处理禁用状态
- */
-function disabledHandler(field) {
-  if (isCascadeDisabledByEmptyParent())
-    return true
-  if (fieldRuntimeControl.value.readonly || fieldRuntimeControl.value.disabled)
-    return true
-  if (typeof field.disabled === 'boolean') {
-    return field.disabled
-  }
-  if (typeof field.disabled === 'function') {
-    return field.disabled({
-      formData: props.formData,
-      field,
-      context: props.context,
-    })
-  }
-  return false
-}
-
-const fieldAlign = computed(() => normalizeAlign(props.field?.align || props.field?.textAlign || props.field?.props?.align))
-const fieldAlignClass = computed(() => fieldAlign.value === 'left' ? '' : `ai-form-item-align-${fieldAlign.value}`)
-const formItemClass = computed(() => [
-  `ai-form-item--${props.field?.type || 'input'}`,
-  (props.field?.readonly || props.field?.props?.readonly) ? 'ai-form-item--readonly' : '',
-  fieldAlignClass.value,
-  props.field?.field ? `ai-form-item-field-${props.field.field}` : '',
-  props.field?.formItemClass,
-].filter(Boolean))
-const componentControlStyle = computed(() => {
-  const runtimeStyle = fieldRuntimeControl.value.style || {}
-  return Object.keys(runtimeStyle).length
-    ? { ...(props.field?.componentStyle || props.field?.style || {}), ...runtimeStyle }
-    : props.field?.componentStyle || props.field?.style || undefined
-})
-const componentControlClass = computed(() => [
-  `ai-form-control--${props.field?.type || 'input'}`,
-  fieldRuntimeControl.value.className,
-  props.field?.componentClass,
-].filter(Boolean))
-const recordSelectorConfig = computed(() => normalizeRecordSelectorConfig(props.field))
-const fieldMultiple = computed(() => isFieldMultiple(props.field) || recordSelectorConfig.value.multiple === true)
-const recordSelectorRuntimeContext = computed(() => ({
-  ...(props.context || {}),
-  formData: props.formData || {},
-  form: props.formData || {},
-  record: props.context?.record || props.formData || {},
-  row: props.context?.currentRow || props.context?.row || props.formData || {},
-  query: route.query || {},
-  params: route.params || {},
-  route: {
-    query: route.query || {},
-    params: route.params || {},
-    path: route.path,
-    fullPath: route.fullPath,
-    name: route.name,
-  },
-}))
-/** 引用字段显示名称冗余键（<field>Name）：选中时随主列一起提交，回显零关联查询。 */
-const relationLabelValueField = computed(() => {
-  const field = props.field || {}
-  return firstNonBlank(field.props?.labelValueField, field.labelValueField, field.field ? `${field.field}Name` : '')
-})
-const recordSelectorDisplayText = computed(() => {
-  const config = recordSelectorConfig.value
-  const labelField = props.field?.labelField || props.field?.props?.labelField || props.field?.props?.targetLabelField || config.targetLabelField || config.labelTargetField
-  // 伴随列冗余值（<field>Name）来自详情接口，优先展示；其次用户配置的回显目标字段
-  if (relationLabelValueField.value && props.formData?.[relationLabelValueField.value])
-    return props.formData[relationLabelValueField.value]
-  if (labelField && props.formData?.[labelField])
-    return props.formData[labelField]
-  return normalizeDisplayText(props.value)
-})
-const fieldDescription = computed(() => props.field?.props?.description || props.field?.description || '')
-const fieldLabelTip = computed(() => props.field?.props?.labelTip || props.field?.labelTip || '')
-const fieldBadge = computed(() => props.field?.props?.badge || props.field?.badge || '')
-const manualFieldEventEnabled = computed(() => props.context?.hasFieldEvent?.('MANUAL', props.field?.field) === true)
-const blurFieldEventEnabled = computed(() => props.context?.hasFieldEvent?.('BLUR', props.field?.field) === true)
-const scanFieldEventEnabled = computed(() => props.context?.hasFieldEvent?.('SCAN_COMPLETE', props.field?.field) === true)
-const fieldEventState = computed(() => props.context?.getFieldEventState?.(props.field?.field) || {
-  status: 'idle',
-  loading: false,
-  message: '',
-})
-const showFieldEventFeedback = computed(() => manualFieldEventEnabled.value
-  || scanFieldEventEnabled.value
-  || scanFeedback.value.message
-  || fieldEventState.value.loading
-  || Boolean(fieldEventState.value.message))
-const isSectionTitleField = computed(() => {
-  return !isLegacyGroupTitleField(props.field) && ['divider', 'elDivider', 'AiFormSectionTitle', 'aiFormSectionTitle', 'formSectionTitle', 'FormSectionTitle']
-    .includes(props.field?.type || props.field?.componentKey || props.field?.nodeType)
-})
-const isGroupTitleField = computed(() => {
-  return isLegacyGroupTitleField(props.field) || ['title', 'fcTitle', 'sectionTitle', 'groupTitle', 'groupHeader', 'GroupHeader', 'titleBlock', 'section']
-    .includes(props.field?.type || props.field?.componentKey || props.field?.nodeType)
-})
-const isFieldRequired = computed(() => {
-  if (Object.prototype.hasOwnProperty.call(fieldRuntimeControl.value, 'required') && fieldRuntimeControl.value.required !== undefined)
-    return fieldRuntimeControl.value.required === true
-  if (props.field?.required === true)
-    return true
-  const rules = props.field?.rules
-  if (!rules)
-    return false
-  return (Array.isArray(rules) ? rules : [rules]).some(rule => rule?.required === true)
-})
-const fieldDictType = computed(() => props.field?.dictType || props.field?.props?.dictType || '')
-const cascadeConfig = computed(() => resolveCascadeConfig(props.field))
-const dictCascadeConfig = computed(() => {
-  if (!cascadeConfig.value)
-    return null
-  return {
-    ...cascadeConfig.value,
-    sourceOptions: sourceDictOptions.value,
-  }
-})
-const remoteOptionSource = computed(() => {
-  if (shouldSuppressDesignerRemoteOptions(props.field))
-    return null
-  return resolveDynamicOptionSource(props.field)
-})
-
-/**
- * 远程选项源的内容签名：params 已含 ${field} 引用解析后的值与级联参数值，
- * 值不变则签名不变。remoteOptionSource 每次重算都返回新对象（引用比较恒不等），
- * 若直接 watch 对象本身，任意字段值变化都会让所有远程下拉重新请求、loading 闪烁。
- */
-const remoteOptionSourceKey = computed(() => {
-  const source = remoteOptionSource.value
-  if (!source)
-    return ''
-  return JSON.stringify([
-    source.type,
-    source.api,
-    source.dictType,
-    source.sourceType,
-    source.sourceKey,
-    source.pageNum,
-    source.pageSize,
-    source.waitForParent === true,
-    Array.isArray(source.waitForFields) ? source.waitForFields.join(',') : '',
-    source.params || {},
-  ])
-})
-
-const runtimePageWidgetKey = computed(() => {
-  const field = props.field || {}
-  const componentKey = String(field.componentKey || '').trim()
-  if (componentKey && isPageWidgetComponentKey(componentKey))
-    return componentKey
-  const type = String(field.type || '').trim()
-  return isPageWidgetComponentKey(type) ? type : ''
-})
-const isRuntimePageWidgetField = computed(() => {
-  if (!runtimePageWidgetKey.value)
-    return false
-  const bindingMode = props.field?.fieldBinding?.mode
-  // 显式 virtual 绑定 或 未配置 fieldBinding 的挂件组件（预览模式兜底）
-  if (bindingMode === 'virtual' || props.field?.virtual === true || props.field?.isVirtual === true)
-    return true
-  return !props.field?.fieldBinding && !props.field?.field
-})
-const runtimePageWidgetProps = computed(() => {
-  const field = props.field || {}
-  const widgetKey = runtimePageWidgetKey.value
-  const fieldProps = field.props && typeof field.props === 'object' ? field.props : {}
-  const next = {
-    ...fieldProps,
-  }
-  if (field.label && !next.title && ['rich-text', 'markdown', 'barcode', 'qrcode', 'transfer', 'audio-player', 'video-player', 'iframe'].includes(widgetKey))
-    next.title = field.label
-  if (isFilledValue(props.value)) {
-    if (widgetKey === 'rich-text' || widgetKey === 'markdown')
-      next.content = props.value
-    else if (widgetKey === 'transfer')
-      next.value = Array.isArray(props.value) ? props.value : String(props.value).split(',').map(item => item.trim()).filter(Boolean)
-    else if (widgetKey === 'barcode' || widgetKey === 'qrcode')
-      next.value = props.value
-    else if (widgetKey === 'audio-player' || widgetKey === 'video-player' || widgetKey === 'iframe' || widgetKey === 'avatar')
-      next.src = props.value
-  }
-  return next
-})
-
-function isLegacyGroupTitleField(field = {}) {
-  const fieldProps = field?.props || {}
-  return field?.nodeType === 'divider'
-    && !field?.componentKey
-    && Object.prototype.hasOwnProperty.call(fieldProps, 'description')
-    && !Object.prototype.hasOwnProperty.call(fieldProps, 'title')
-}
-const cascadeSourceValue = computed(() => {
-  const cascade = cascadeConfig.value
-  return cascade?.enabled && cascade.sourceField ? props.formData?.[cascade.sourceField] : undefined
-})
-const sourceFieldConfig = computed(() => findSchemaField(cascadeConfig.value?.sourceField))
-const sourceDictType = computed(() => cascadeConfig.value?.sourceDictType || sourceFieldConfig.value?.dictType || sourceFieldConfig.value?.props?.dictType || '')
-
-// 组织→人员级联：源组织字段的值作为人员弹窗的过滤范围，组织重选时人员组件同步刷新
-const userSelectCascadeOrgId = computed(() => {
-  const cascade = cascadeConfig.value
-  if (!cascade?.enabled || !cascade.sourceField || !isUserSelectField(props.field))
-    return null
-  const orgId = props.formData?.[cascade.sourceField]
-  return orgId === null || orgId === undefined || orgId === '' ? null : orgId
-})
-const userSelectCascadeIncludeChildren = computed(() => cascadeConfig.value?.includeChildren !== false)
-
-function isCascadeDisabledByEmptyParent() {
-  const cascade = cascadeConfig.value
-  if (!cascade?.enabled || cascade.emptyStrategy !== 'disabled' || !cascade.sourceField)
-    return false
-  const sourceValue = props.formData?.[cascade.sourceField]
-  return sourceValue === null || sourceValue === undefined || sourceValue === ''
-}
-
-watch(
-  remoteOptionSourceKey,
-  () => {
-    const source = remoteOptionSource.value
-    if (!source) {
-      remoteOptions.value = []
-      return
-    }
-    loadRemoteOptions(source)
-  },
-  { immediate: true },
-)
-
-watch(fieldDictType, loadDictOptions, { immediate: true })
-watch(sourceDictType, loadSourceDictOptions, { immediate: true })
-watch(cascadeSourceValue, (value, oldValue) => {
-  if (oldValue === undefined || value === oldValue || !cascadeConfig.value?.clearOnParentChange)
-    return
-  clearCurrentValue()
-})
-
-/**
- * 获取选项数据 - 使用 computed 确保响应式
- */
-const currentOptions = computed(() => {
-  const field = props.field
-
-  // 优先使用 options 函数
-  if (typeof field.options === 'function') {
-    const result = field.options({
-      formData: props.formData,
-      field,
-      context: props.context,
-    })
-
-    // 如果返回的是 Promise，需要在外部处理
-    // 这里我们检查是否有缓存的选项
-    if (result instanceof Promise) {
-      // 如果有缓存的选项，使用缓存
-      if (field._cachedOptions && Array.isArray(field._cachedOptions)) {
-        return withCurrentValueOption(resolveCascadedOptions(field._cachedOptions))
-      }
-      // 否则返回空数组，并异步加载
-      cacheAsyncOptions(field, result)
-      return []
-    }
-
-    return withCurrentValueOption(resolveCascadedOptions(result))
-  }
-
-  // 其次使用 options 数组
-  if (field.options && Array.isArray(field.options) && field.options.length > 0) {
-    return withCurrentValueOption(resolveCascadedOptions(field.options))
-  }
-
-  // 检查 props.options（兼容旧的配置方式）
-  if (field.props?.options && Array.isArray(field.props.options) && field.props.options.length > 0) {
-    return withCurrentValueOption(resolveCascadedOptions(field.props.options))
-  }
-
-  const currentChildrenSource = resolveCurrentChildrenSource(field)
-  if (currentChildrenSource) {
-    return withCurrentValueOption(resolveCascadedOptions(
-      buildCurrentChildrenOptions(currentChildrenSource, props.context),
-    ))
-  }
-
-  if (fieldDictType.value) {
-    const options = resolveCascadedOptions(dictOptions.value)
-    if (field.type === 'cascader')
-      return buildDictTreeOptions(options)
-    return withCurrentValueOption(options)
-  }
-
-  if (remoteOptionSource.value) {
-    return withCurrentValueOption(resolveCascadedOptions(remoteOptions.value))
-  }
-
-  // 最后处理 enumType (仅当 options 为空时)
-  if (field.enumType) {
-    // 这里应该根据 enumType 获取对应的枚举数据
-    // 由于这是一个示例,我们返回一个空数组
-    // 在实际项目中,这里应该从父组件传递的 context 中获取数据
-    // 或者通过 props 传递具体的选项数据
-    console.warn(`字段 ${field.field} 使用了 enumType: ${field.enumType},但未提供具体选项数据`)
-    return []
-  }
-
-  return []
-})
-
-function withCurrentValueOption(options = []) {
-  const result = Array.isArray(options) ? [...options] : []
-  const field = props.field || {}
-  if (props.value === null || props.value === undefined || props.value === '')
-    return result
-  const labelValue = resolveSelectionLabelValue(field)
-  if (labelValue === null || labelValue === undefined || labelValue === '')
-    return result
-  const values = Array.isArray(props.value)
-    ? props.value
-    : fieldMultiple.value && typeof props.value === 'string'
-      ? parseSelectionValues(props.value, true)
-      : [props.value]
-  const labels = Array.isArray(labelValue)
-    ? labelValue
-    : String(labelValue).split(',').map(item => item.trim()).filter(Boolean)
-  values.forEach((value, index) => {
-    if (flattenOptionNodes(result).some(option => isSameOptionValue(option?.value ?? option?.key, value)))
-      return
-    result.unshift({
-      value,
-      key: value,
-      label: labels[index] || labels[0] || String(value),
-    })
-  })
-  return result
-}
-
-function cacheAsyncOptions(field, promise) {
-  promise.then((options) => {
-    field._cachedOptions = options
-  })
-}
-
-async function loadDictOptions(dictType) {
-  if (!dictType) {
-    dictOptions.value = []
-    return
-  }
-  dictOptions.value = await getDictData(dictType)
-}
-
-async function loadSourceDictOptions(dictType) {
-  if (!dictType) {
-    sourceDictOptions.value = []
-    return
-  }
-  sourceDictOptions.value = await getDictData(dictType)
-}
-
-function resolveOptionSource(field = {}) {
-  if (isUserSelectField(field))
-    return null
-  if (shouldSuppressDesignerRemoteOptions(field))
-    return null
-  const configuredSource = field.optionSource || field.props?.optionSource
-  if (hasEffectiveOptionSource(configuredSource)) {
-    const source = normalizeOptionSource(configuredSource)
-    if (shouldSuppressDesignerRemoteOptions(field, source))
-      return null
-    return source
-  }
-  if (isObjectReferenceField(field)) {
-    const generated = buildObjectReferenceOptionSource(field)
-    if (generated)
-      return generated
-  }
-  if (isOrgTreeSelectField(field)) {
-    return {
-      type: 'tree',
-      api: 'get@/system/org/tree',
-      valueField: 'id',
-      keyField: 'id',
-      labelField: 'orgName',
-      fallbackLabelFields: ['name'],
-      childrenField: 'children',
-    }
-  }
-  return null
-}
-
-function shouldSuppressDesignerRemoteOptions(field = {}, source = null) {
-  if (!isDesignerPreviewContext())
-    return false
-  if (isObjectReferenceField(field) || isRecordSelectorField(field))
-    return true
-  if (source?.type === 'businessRecordSelector')
-    return true
-  return String(source?.api || field?.optionSource?.api || field?.props?.optionSource?.api || '').includes('selector/query')
-}
-
-function isDesignerPreviewContext() {
-  const context = props.context || {}
-  const mode = String(context.mode || context.source || context.scene || '').trim()
-  return context.designerPreview === true
-    || context.designMode === true
-    || ['designer', 'designer-preview', 'form-designer', 'design', 'canvas'].includes(mode)
-}
-
-function hasEffectiveOptionSource(source) {
-  if (!source)
-    return false
-  if (typeof source === 'string')
-    return source.trim() !== ''
-  if (typeof source !== 'object')
-    return false
-  if (['CURRENT_CHILDREN', 'current_children', 'currentChildren'].includes(String(source.type || '')))
-    return true
-  if (String(source.type || '') === 'QUERY_SOURCE')
-    return Boolean(String(source.sourceKey || '').trim())
-  return Boolean(
-    String(source.api || source.url || '').trim()
-    || Array.isArray(source.options)
-    || Array.isArray(source.data),
-  )
-}
-
-function resolveCurrentChildrenSource(field = {}) {
-  const source = field.optionSource || field.props?.optionSource
-  if (!source || typeof source !== 'object')
-    return null
-  return ['CURRENT_CHILDREN', 'current_children', 'currentChildren'].includes(String(source.type || ''))
-    ? source
-    : null
-}
-
-function buildCurrentChildrenOptions(source = {}, context = {}) {
-  const relationKey = String(source.relationKey || source.childKey || '').trim()
-  const collections = context?.childCollections && typeof context.childCollections === 'object'
-    ? context.childCollections
-    : {}
-  const rows = relationKey && Array.isArray(collections[relationKey]) ? collections[relationKey] : []
-  const valueField = source.valueField || 'id'
-  const labelField = source.labelField || 'label'
-  const disabledField = source.disabledField || ''
-  const seen = new Set()
-  return rows
-    .filter(row => row && (!source.persistedOnly || hasPersistedOptionId(row)))
-    .map((row) => {
-      const value = row[valueField]
-      if (value === null || value === undefined || value === '' || seen.has(String(value)))
-        return null
-      seen.add(String(value))
-      const label = row[labelField] ?? row.name ?? row.title ?? value
-      return {
-        ...row,
-        value,
-        key: row.key ?? value,
-        label: String(label),
-        ...(disabledField ? { disabled: row[disabledField] === true } : {}),
-      }
-    })
-    .filter(Boolean)
-}
-
-function hasPersistedOptionId(row = {}) {
-  const value = row.id ?? row.ID ?? row.recordId
-  return value !== null && value !== undefined && String(value).trim() !== ''
-}
-
-function normalizeOptionSource(source) {
-  if (typeof source === 'string')
-    return { api: source }
-  const next = { ...(source || {}) }
-  if (!next.api && next.url)
-    next.api = next.url
-  if (!next.params && typeof next.paramsText === 'string')
-    next.params = safeParseObject(next.paramsText)
-  return next
-}
-
-function safeParseObject(value = '') {
-  const text = String(value || '').trim()
-  if (!text)
-    return {}
-  try {
-    const parsed = JSON.parse(text)
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
-  }
-  catch {
-    return text.split(/[&\n]/).reduce((result, item) => {
-      const content = item.trim()
-      if (!content)
-        return result
-      const separator = content.includes('=') ? '=' : content.includes(':') ? ':' : ''
-      if (!separator)
-        return result
-      const index = content.indexOf(separator)
-      const key = content.slice(0, index).trim()
-      const itemValue = content.slice(index + 1).trim()
-      if (key && itemValue)
-        result[key] = itemValue
-      return result
-    }, {})
-  }
-}
-
-function resolveDynamicOptionSource(field = {}) {
-  const source = resolveOptionSource(field)
-  if (!source)
-    return null
-  const resolvedParams = resolveDynamicParams(source.params || {})
-  // 记录哪些参数来自 ${field} 引用且当前为空，QUERY_SOURCE 需要等这些字段有值后再发起请求
-  const waitForFields = []
-  if (source.type === 'QUERY_SOURCE') {
-    for (const [key, rawValue] of Object.entries(source.params || {})) {
-      if (typeof rawValue !== 'string')
-        continue
-      const matched = rawValue.match(/^\$\{(.+)\}$/) || rawValue.match(/^\$form\.(.+)$/)
-      if (matched) {
-        const resolved = resolvedParams[key]
-        if (resolved === undefined || resolved === null || resolved === '')
-          waitForFields.push(matched[1])
-      }
-    }
-  }
-  const next = {
-    ...source,
-    params: resolvedParams,
-  }
-  if (waitForFields.length)
-    next.waitForFields = waitForFields
-  ensureSelectorQueryObjectCode(next, field)
-  const cascade = cascadeConfig.value
-  if (cascade?.enabled && cascade.mode === 'remoteParam' && cascade.sourceField && cascade.paramName) {
-    const sourceValue = props.formData?.[cascade.sourceField]
-    if ((sourceValue === null || sourceValue === undefined || sourceValue === '') && cascade.emptyStrategy !== 'all') {
-      next.waitForParent = true
-    }
-    next.params = {
-      ...next.params,
-      [cascade.paramName]: sourceValue,
-    }
-  }
-  return next
-}
-
-function ensureSelectorQueryObjectCode(source = {}, field = {}) {
-  if (!String(source.api || '').includes('selector/query'))
-    return source
-  const objectCode = isObjectReferenceField(field)
-    ? resolveObjectReferenceConfig(field).objectCode
-    : normalizeRecordSelectorConfig({
-      ...field,
-      ...source,
-      params: source.params,
-    }).objectCode
-  if (!objectCode)
-    return source
-  source.params = {
-    ...(source.params || {}),
-    objectCode,
-    businessObjectCode: source.params?.businessObjectCode || objectCode,
-    targetObjectCode: source.params?.targetObjectCode || objectCode,
-  }
-  return source
-}
-
-function resolveDynamicParams(params = {}) {
-  const result = {}
-  Object.entries(params || {}).forEach(([key, value]) => {
-    if (typeof value === 'string') {
-      const matched = value.match(/^\$\{(.+)\}$/) || value.match(/^\$form\.(.+)$/)
-      result[key] = matched ? props.formData?.[matched[1]] : value
-      return
-    }
-    result[key] = value
-  })
-  return result
-}
-
-async function loadRemoteOptions(source, keyword = '') {
-  if (!source)
-    return
-  if (source.waitForParent) {
-    remoteOptions.value = []
-    return
-  }
-  if (source.type === 'businessRecordSelector') {
-    const objectCode = normalizeRecordSelectorConfig(source).objectCode
-    if (!objectCode) {
-      remoteOptions.value = []
-      return
-    }
-  }
-  const requestSeq = ++remoteRequestSeq
-  remoteLoading.value = true
-  try {
-    if (source.type === 'businessRecordSelector') {
-      const objectCode = normalizeRecordSelectorConfig(source).objectCode
-      const selectorPayload = {
-        ...(source.params || {}),
-        objectCode,
-        businessObjectCode: source.businessObjectCode || source.params?.businessObjectCode || objectCode,
-        targetObjectCode: source.targetObjectCode || source.params?.targetObjectCode || objectCode,
-        keyword: keyword || undefined,
-        keywordFields: source.keywordFields || source.params?.keywordFields || [],
-        displayFields: source.displayFields || source.params?.displayFields || [],
-        searchParams: source.searchParams || source.params?.searchParams || {},
-      }
-      const res = await queryBusinessRecordSelector(selectorPayload, {
-        pageNum: source.pageNum || 1,
-        pageSize: source.pageSize || 100,
-      })
-      if (requestSeq !== remoteRequestSeq)
-        return
-      remoteOptions.value = normalizeRemoteOptions(res?.data || {}, source)
-      return
-    }
-
-    if (source.type === 'QUERY_SOURCE') {
-      // 设计器预览模式下不调用 execute 接口，只展示元数据（请求参数 / 返回字段）供用户配置映射
-      if (isDesignerPreviewContext()) {
-        remoteOptions.value = []
-        return
-      }
-      // 配置了参数但解析后全部为空时阻断请求，避免后端报必填参数错误；
-      // 字段填值后 watch 自动重新触发。无参数或任一参数有值时正常发出。
-      const resolvedEntries = Object.entries(source.params || {})
-      const hasAnyParamValue = resolvedEntries.some(([, v]) => v !== undefined && v !== null && v !== '')
-      if (resolvedEntries.length > 0 && !hasAnyParamValue) {
-        remoteOptions.value = []
-        return
-      }
-      // 过滤空值参数：${字段名} 引用解析后为空时自动剥离
-      const rawParams = source.params || {}
-      const params = {}
-      for (const [key, value] of Object.entries(rawParams)) {
-        if (value !== undefined && value !== null && value !== '')
-          params[key] = value
-      }
-      if (keyword && source.keywordParam)
-        params[source.keywordParam] = keyword
-      try {
-        const res = await executeLowcodeQuerySource({
-          sourceType: source.sourceType,
-          sourceKey: source.sourceKey,
-          params,
-          pageNum: source.pageNum || 1,
-          pageSize: source.pageSize || 50,
-        })
-        if (requestSeq !== remoteRequestSeq)
-          return
-        const result = res?.data || {}
-        const normalized = normalizeRemoteOptions(result, source)
-        remoteOptions.value = normalized
-      }
-      catch (err) {
-        if (requestSeq !== remoteRequestSeq)
-          return
-        console.warn(
-          `[AiFormItem] 查询源加载失败 [${source.sourceType}/${source.sourceKey}]，已发送参数:`,
-          params,
-          '错误:',
-          err?.message || err,
-        )
-        remoteOptions.value = []
-      }
-      return
-    }
-
-    if (!source.api)
-      return
-    if (isSelectorQueryApi(source.api)) {
-      const selectorConfig = normalizeRecordSelectorConfig({
-        ...props.field,
-        ...source,
-        ...(source.params || {}),
-        params: source.params,
-      })
-      const objectCode = selectorConfig.objectCode
-      if (!objectCode) {
-        remoteOptions.value = []
-        return
-      }
-      const selectorPayload = {
-        ...(source.params || {}),
-        objectCode,
-        businessObjectCode: selectorConfig.businessObjectCode || objectCode,
-        targetObjectCode: selectorConfig.targetObjectCode || objectCode,
-        keyword: keyword || undefined,
-        keywordFields: source.keywordFields || source.params?.keywordFields || [],
-        displayFields: source.displayFields || source.params?.displayFields || [],
-        searchParams: source.searchParams || source.params?.searchParams || {},
-      }
-      const res = await queryBusinessRecordSelector(selectorPayload, {
-        pageNum: source.pageNum || 1,
-        pageSize: source.pageSize || 100,
-      })
-      if (requestSeq !== remoteRequestSeq)
-        return
-      remoteOptions.value = normalizeRemoteOptions(res?.data || {}, source)
-      return
-    }
-    const { method, url } = parseOptionApi(source.api)
-    const params = {
-      ...(source.params || {}),
-    }
-    if (keyword && source.keywordParam)
-      params[source.keywordParam] = keyword
-    const res = await request({
-      method,
-      url,
-      params: method === 'get' ? params : undefined,
-      data: method === 'get' ? undefined : params,
-    })
-    if (requestSeq !== remoteRequestSeq)
-      return
-    remoteOptions.value = normalizeRemoteOptions(res, source)
-  }
-  catch (error) {
-    console.warn(`[AiFormItem] 加载 ${props.field?.field || ''} 选项失败:`, {
-      error,
-      field: props.field,
-      source,
-      selectorConfig: normalizeRecordSelectorConfig({
-        ...props.field,
-        ...source,
-        ...(source?.params || {}),
-        params: source?.params,
-      }),
-      context: props.context,
-    })
-    remoteOptions.value = []
-  }
-  finally {
-    if (requestSeq === remoteRequestSeq)
-      remoteLoading.value = false
-  }
-}
-
-function isSelectorQueryApi(api = '') {
-  return String(api || '').includes('selector/query')
-}
-
-function parseOptionApi(api) {
-  const text = String(api || '')
-  const [method, ...urlParts] = text.includes('@') ? text.split('@') : ['get', text]
-  return {
-    method: String(method || 'get').toLowerCase(),
-    url: urlParts.join('@') || text,
-  }
-}
-
-function normalizeRemoteOptions(data, source = {}) {
-  const rows = extractOptionRows(data, source)
-  if (!Array.isArray(rows))
-    return []
-  const isTree = source.type === 'tree'
-  return rows.map(row => normalizeOptionNode(row, source, isTree)).filter(Boolean)
-}
-
-function extractOptionRows(data, source = {}, depth = 0) {
-  if (Array.isArray(data))
-    return data
-  if (!data || typeof data !== 'object' || depth > 4)
-    return []
-  if (source.recordsField) {
-    const nested = getNestedValue(data, source.recordsField)
-    if (Array.isArray(nested))
-      return nested
-  }
-  for (const key of ['records', 'list', 'rows', 'items']) {
-    if (Array.isArray(data[key]))
-      return data[key]
-  }
-  if (Array.isArray(data.data))
-    return data.data
-  if (data.data && typeof data.data === 'object')
-    return extractOptionRows(data.data, source, depth + 1)
-  // 外部接口常返回单个对象而非数组：递归进入的内部对象无包装层 key 时视为单行数据
-  if (depth > 0 && !('data' in data) && Object.keys(data).length > 0)
-    return [data]
-  return []
-}
-
-function normalizeOptionNode(row, source = {}, includeChildren = false) {
-  if (!row || typeof row !== 'object')
-    return null
-  const valueField = source.valueField || source.keyField || 'value'
-  const keyField = source.keyField || valueField
-  const labelField = source.labelField || 'label'
-  const childrenField = source.childrenField || 'children'
-  const fallbackValueFields = source.fallbackValueFields || ['value', 'key', keyField, 'id', 'orgId', 'deptId', 'code']
-  const fallbackLabelFields = source.fallbackLabelFields || ['label', 'name', 'title', 'orgName', 'deptName', 'orgShortName']
-  const value = resolveFirstFilled(row, [valueField, ...fallbackValueFields])
-  const label = resolveFirstFilled(row, [labelField, ...fallbackLabelFields])
-  if (value === undefined || value === null || value === '')
-    return null
-  const option = {
-    ...row,
-    value,
-    key: row.key ?? row[keyField] ?? value,
-    label: label === undefined || label === null || label === '' ? String(value ?? '') : String(label),
-  }
-  if (includeChildren) {
-    const children = Array.isArray(row[childrenField])
-      ? row[childrenField]
-      : Array.isArray(row.children)
-        ? row.children
-        : []
-    option.children = children.map(child => normalizeOptionNode(child, source, true)).filter(Boolean)
-  }
-  return option
-}
-
-function resolveFirstFilled(source, fields = []) {
-  const keys = fields.filter((field, index, all) => field && all.indexOf(field) === index)
-  for (const key of keys) {
-    const value = source?.[key]
-    if (value !== undefined && value !== null && value !== '')
-      return value
-  }
-  return undefined
-}
-
-function resolveCascadeConfig(field = {}) {
-  const configured = [field.cascade, field.cascadeConfig, field.props?.cascade, field.props?.cascadeConfig]
-    .find(item => item && typeof item === 'object' && item.sourceField)
-  const raw = configured || {
-    sourceField: field.sourceField || field.props?.sourceField,
-    sourceDictType: field.sourceDictType || field.props?.sourceDictType,
-    linkedDictType: field.linkedDictType || field.props?.linkedDictType,
-    mode: field.matchMode || field.props?.matchMode || field.mode || field.props?.mode,
-    paramName: field.paramName || field.props?.paramName,
-    emptyStrategy: field.emptyStrategy || field.props?.emptyStrategy,
-    clearOnParentChange: field.clearOnParentChange ?? field.clearOnSourceChange ?? field.props?.clearOnParentChange ?? field.props?.clearOnSourceChange,
-  }
-  if (!raw || raw.enabled === false || !raw.sourceField)
-    return null
-  return {
-    enabled: true,
-    sourceField: raw.sourceField,
-    sourceDictType: raw.sourceDictType || '',
-    linkedDictType: raw.linkedDictType || '',
-    mode: raw.mode || raw.matchMode || 'linkedDict',
-    paramName: raw.paramName || '',
-    // 组织→人员级联：是否包含子组织人员，默认包含
-    includeChildren: raw.includeChildren !== false,
-    emptyStrategy: raw.emptyStrategy || 'empty',
-    clearOnParentChange: raw.clearOnParentChange !== false && raw.clearOnSourceChange !== false,
-  }
-}
-
-function resolveCascadedOptions(options = []) {
-  const cascade = cascadeConfig.value
-  if (!cascade?.enabled || !cascade.sourceField)
-    return options
-  const sourceValue = props.formData?.[cascade.sourceField]
-  if (sourceValue === null || sourceValue === undefined || sourceValue === '')
-    return cascade.emptyStrategy === 'all' ? options : []
-  if (cascade.mode === 'remoteParam')
-    return options
-  return (Array.isArray(options) ? options : []).filter(option => matchesCascade(option, sourceValue, cascade))
-}
-
-function matchesCascade(option, sourceValue, cascade) {
-  const raw = option.raw || option
-  if (cascade.mode === 'parentDictCode') {
-    const parentDictCode = raw.parentDictCode ?? raw.parent_dict_code
-    const sourceDictCode = resolveSourceDictCode(sourceValue)
-    return isSameOptionValue(parentDictCode, sourceDictCode) || isSameOptionValue(parentDictCode, sourceValue)
-  }
-  if (cascade.mode === 'linkedDict') {
-    const linkedType = raw.linkedDictType ?? raw.linked_dict_type
-    const linkedValue = raw.linkedDictValue ?? raw.linked_dict_value
-    const expectedType = cascade.linkedDictType || cascade.sourceDictType || sourceDictType.value
-    const typeMatched = !expectedType || isSameOptionValue(linkedType, expectedType)
-    return typeMatched && isSameOptionValue(linkedValue, sourceValue)
-  }
-  return true
-}
-
-function resolveSourceDictCode(sourceValue) {
-  const matched = sourceDictOptions.value.find(option => isSameOptionValue(option.value, sourceValue))
-  return matched?.dictCode ?? matched?.raw?.dictCode ?? sourceValue
-}
-
-function buildDictTreeOptions(options = []) {
-  const nodes = (Array.isArray(options) ? options : []).map(option => ({
-    ...option,
-    key: option.dictCode ?? option.key ?? option.value,
-    value: option.value,
-    label: option.label,
-    children: [],
-  }))
-  const byCode = new Map(nodes.map(node => [String(node.dictCode ?? node.key), node]))
-  const roots = []
-  nodes.forEach((node) => {
-    const parentCode = node.parentDictCode ?? node.raw?.parentDictCode
-    if (parentCode !== null && parentCode !== undefined && parentCode !== '' && Number(parentCode) !== 0 && byCode.has(String(parentCode))) {
-      byCode.get(String(parentCode)).children.push(node)
-    }
-    else {
-      roots.push(node)
-    }
-  })
-  nodes.forEach((node) => {
-    if (!node.children.length)
-      delete node.children
-  })
-  return roots
-}
-
-function findSchemaField(fieldName) {
-  if (!fieldName)
-    return null
-  const schemas = [
-    ...(props.context?.schema || []),
-    ...(props.context?.allSchema || []),
-  ]
-  return schemas.find(item => item?.field === fieldName) || null
-}
-
-function normalizeAlign(value) {
-  const align = String(value || '').toLowerCase()
-  return ['left', 'center', 'right'].includes(align) ? align : 'left'
-}
-
-function clearCurrentValue() {
-  if (props.value === null || props.value === undefined || props.value === '')
-    return
-  emit('update:value', fieldMultiple.value ? '' : null)
-  // 级联清空时同步清掉人员选中名称回显（<field>Name），避免组织重选后显示残留旧名称
-  if (isUserSelectField(props.field))
-    patchSelectionLabelValue(props.field, '')
-}
-
-function getNestedValue(source, path) {
-  return String(path || '')
-    .split('.')
-    .filter(Boolean)
-    .reduce((value, key) => value?.[key], source)
-}
-
-function resolveOptionValue(rawValue) {
-  return normalizeOptionValue(rawValue, currentOptions.value, fieldMultiple.value)
-}
-
-/**
- * n-slider range 模式要求 value 为二元数组；值为 null 时组件内部 (range ? value : [value]).map 会崩溃，
- * 归一化兜底：range 模式非法值回退 [min, max]
- */
-function resolveSliderValue(rawValue, field = {}) {
-  const isRange = field.range === true || field.props?.range === true
-  if (isRange) {
-    if (Array.isArray(rawValue) && rawValue.length === 2)
-      return rawValue
-    return [Number(field.min ?? field.props?.min ?? 0), Number(field.max ?? field.props?.max ?? 100)]
-  }
-  return rawValue
-}
-
-function normalizeOptionValue(rawValue, options = [], multiple = false) {
-  if (rawValue === null || rawValue === undefined || rawValue === '')
-    return multiple ? [] : rawValue
-
-  const values = multiple
-    ? parseSelectionValues(rawValue, true)
-    : rawValue
-
-  if (!Array.isArray(options) || !options.length)
-    return values
-
-  if (Array.isArray(values))
-    return values.map(item => findOptionValue(options, item)).filter(item => item !== undefined)
-
-  return findOptionValue(options, values)
-}
-
-function findOptionValue(options = [], rawValue) {
-  const match = flattenOptionNodes(options).find(option => isSameOptionValue(option?.value ?? option?.key, rawValue))
-  if (match)
-    return match.value ?? match.key
-  return rawValue
-}
-
-function flattenOptionNodes(options = []) {
-  const result = []
-  const walk = (nodes) => {
-    ;(Array.isArray(nodes) ? nodes : []).forEach((node) => {
-      if (!node || typeof node !== 'object')
-        return
-      result.push(node)
-      if (Array.isArray(node.children))
-        walk(node.children)
-    })
-  }
-  walk(options)
-  return result
-}
-
-function isSameOptionValue(left, right) {
-  if (left === right)
-    return true
-  if (left === null || left === undefined || right === null || right === undefined)
-    return false
-  return String(left) === String(right)
-}
-
-function normalizeRuntimeFieldType(type) {
-  const value = String(type || '')
-  if (ORG_TREE_SELECT_TYPES.has(value))
-    return 'orgTreeSelect'
-  if (USER_SELECT_TYPES.has(value))
-    return 'userSelect'
-  return value
-}
-
-function isOrgTreeSelectField(field = {}) {
-  return normalizeRuntimeFieldType(field.type || field.componentType) === 'orgTreeSelect'
-}
-
-function isUserSelectField(field = {}) {
-  return normalizeRuntimeFieldType(field.type || field.componentType) === 'userSelect'
-}
-
-function isObjectReferenceField(field = {}) {
-  return normalizeRuntimeFieldType(field.type || field.componentType || field.componentKey) === 'objectReference'
-}
-
-function isRecordSelectorField(field = {}) {
-  return normalizeRuntimeFieldType(field.type || field.componentType || field.componentKey) === 'recordSelector'
-}
-
-/** 关联选择统一渲染：objectReference 默认下拉、recordSelector 默认弹窗，selectorMode 配置可覆盖。 */
-const isRelationSelectorField = computed(() => isObjectReferenceField(props.field) || isRecordSelectorField(props.field))
-
-const relationSelectorMode = computed(() => {
-  const field = props.field || {}
-  const mode = field.selectorMode || field.props?.selectorMode || field.basicProps?.selectorMode
-  if (mode === 'dropdown' || mode === 'popup')
-    return mode
-  return isObjectReferenceField(field) ? 'dropdown' : 'popup'
-})
-
-function resolveObjectReferenceConfig(field = {}) {
-  const props = field.props || {}
-  const objectCode = firstNonBlank(
-    field.referenceObjectCode,
-    props.referenceObjectCode,
-    field.basicProps?.referenceObjectCode,
-    field.referenceConfig?.referenceObjectCode,
-    props.referenceConfig?.referenceObjectCode,
-    field.basicProps?.referenceConfig?.referenceObjectCode,
-    normalizeRecordSelectorConfig(field).objectCode,
-  )
-  return {
-    objectCode,
-    valueField: firstNonBlank(
-      props.referenceValueField,
-      props.valueField,
-      props.targetValueField,
-      field.referenceValueField,
-      field.valueField,
-      field.targetValueField,
-      'id',
-    ),
-    labelField: firstNonBlank(
-      props.referenceDisplayField,
-      props.displayField,
-      props.labelField,
-      props.targetLabelField,
-      field.referenceDisplayField,
-      field.displayField,
-      field.labelField,
-      field.targetLabelField,
-    ),
-  }
-}
-
-function firstNonBlank(...values) {
-  return values.map(value => String(value ?? '').trim()).find(Boolean) || ''
-}
-
-function buildObjectReferenceOptionSource(field = {}) {
-  const config = resolveObjectReferenceConfig(field)
-  if (!config.objectCode || !config.labelField)
-    return null
-  return {
-    type: 'businessRecordSelector',
-    objectCode: config.objectCode,
-    valueField: config.valueField,
-    labelField: config.labelField,
-    recordsField: 'records',
-    pageNum: 1,
-    pageSize: 100,
-    displayFields: [`${config.labelField}:${config.labelField}`],
-    keywordFields: [config.labelField],
-  }
-}
-
-// objectReference remote search support
-const objectReferenceRemoteEnabled = computed(() => {
-  return !isDesignerPreviewContext()
-    && isRelationSelectorField.value
-    && relationSelectorMode.value === 'dropdown'
-    && Boolean(resolveObjectReferenceConfig(props.field).objectCode)
-})
-const objectReferenceSearchKeyword = ref('')
-let objectReferenceSearchTimer = null
-
-function handleObjectReferenceSearch(keyword) {
-  objectReferenceSearchKeyword.value = keyword || ''
-  if (objectReferenceSearchTimer)
-    clearTimeout(objectReferenceSearchTimer)
-  objectReferenceSearchTimer = setTimeout(() => {
-    reloadObjectReferenceOptions(keyword)
-  }, 300)
-}
-
-function handleObjectReferenceUpdate(value) {
-  handleUpdate(value)
-  // Sync label value from selected option
-  syncSelectionLabelFromOptions(props.field, value)
-}
-
-async function reloadObjectReferenceOptions(keyword = '') {
-  if (isDesignerPreviewContext())
-    return
-  const config = resolveObjectReferenceConfig(props.field)
-  if (!config.objectCode || !config.labelField)
-    return
-  remoteLoading.value = true
-  try {
-    // 过滤参数支持 ${formData.xxx} 模板，与弹窗选择器共用同一套解析逻辑；
-    // 搜索字段优先用选择器配置，未配置时退回显示字段。
-    const selectorConfig = recordSelectorConfig.value
-    const searchParams = resolveSelectorSearchParams(
-      selectorConfig.searchParams || {},
-      recordSelectorRuntimeContext.value,
-    )
-    const keywordFields = (selectorConfig.keywordFields || []).length
-      ? selectorConfig.keywordFields
-      : [config.labelField]
-    const res = await queryBusinessRecordSelector({
-      objectCode: config.objectCode,
-      keyword: keyword || undefined,
-      keywordFields,
-      displayFields: [`${config.labelField}:${config.labelField}`],
-      searchParams,
-    }, { pageNum: 1, pageSize: 50 })
-    const records = res.data?.records || []
-    remoteOptions.value = records.map(record => ({
-      label: record[config.labelField] || record.name || String(record[config.valueField] || record.id || ''),
-      value: record[config.valueField] || record.id,
-    }))
-  }
-  catch {
-    // Keep existing options on error
-  }
-  finally {
-    remoteLoading.value = false
-  }
-}
-
-function resolveSelectionLabelValue(field = {}) {
-  for (const candidate of resolveSelectionLabelFields(field)) {
-    const value = props.formData?.[candidate]
-    if (isFilledValue(value))
-      return value
-  }
-  return field.labelValue ?? field.props?.labelValue ?? ''
-}
-
-function resolveSelectionLabelFields(field = {}) {
-  const selectionType = isUserSelectField(field) ? 'user' : isOrgTreeSelectField(field) ? 'org' : ''
-  return buildSelectionLabelFields(field, selectionType)
-}
-
-function patchSelectionLabelValue(field = {}, labelValue) {
-  const candidates = resolveSelectionLabelFields(field)
-  if (!candidates.length || typeof props.context?.patchFormData !== 'function')
-    return
-  const normalizedLabel = normalizeLabelValue(labelValue)
-  // 显式配置的 labelValueField（引用字段伴随列）优先，确保显示名称落到随主列一起提交的键上。
-  const explicitLabelField = firstNonBlank(field.props?.labelValueField, field.labelValueField)
-  const patchTargets = explicitLabelField && candidates.includes(explicitLabelField)
-    ? [explicitLabelField, ...candidates.filter(candidate => candidate !== explicitLabelField)]
-    : candidates
-  const patch = {}
-  patchTargets.forEach((candidate, index) => {
-    if (index === 0 || Object.prototype.hasOwnProperty.call(props.formData || {}, candidate))
-      patch[candidate] = isFilledValue(normalizedLabel) ? normalizedLabel : undefined
-  })
-  props.context.patchFormData(patch)
-}
-
-function syncSelectionLabelFromOptions(field = {}, value) {
-  const multiple = isFieldMultiple(field) || fieldMultiple.value
-  const values = parseSelectionValues(value, true)
-  const labels = values
-    .map(item => flattenOptionNodes(currentOptions.value).find(option => isSameOptionValue(option?.value ?? option?.key, item))?.label)
-    .filter(Boolean)
-  const isCleared = values.length === 0
-    || values.every(item => item === null || item === undefined || item === '')
-  if (labels.length || isCleared)
-    patchSelectionLabelValue(field, multiple ? labels : (labels[0] ?? ''))
-}
-
-function normalizeLabelValue(value) {
-  return serializeSelectionLabels(value)
-}
-
-function shouldRenderReadonlySelectionText(field = {}) {
-  const fieldType = normalizeRuntimeFieldType(field.type || field.componentType)
-  return Boolean(field.readonly || field.props?.readonly) && READONLY_SELECTION_TYPES.has(fieldType)
-}
-
-function resolveReadonlySelectionText(field = {}) {
-  const labels = resolveSelectionDisplayLabels(field)
-  if (labels.length)
-    return labels.join(', ')
-  const labelValue = normalizeLabelValue(resolveSelectionLabelValue(field))
-  if (isFilledValue(labelValue))
-    return labelValue
-  return normalizeDisplayText(props.value)
-}
-
-function resolveSelectionDisplayLabels(field = {}) {
-  const multiple = isFieldMultiple(field) || fieldMultiple.value
-  const normalizedValue = normalizeOptionValue(props.value, currentOptions.value, multiple)
-  const values = parseSelectionValues(normalizedValue, true)
-  return values
-    .map(item => flattenOptionNodes(currentOptions.value).find(option => isSameOptionValue(option?.value ?? option?.key, item))?.label)
-    .filter(Boolean)
-}
-
-function normalizeDisplayText(value) {
-  if (Array.isArray(value)) {
-    const text = value.map(item => String(item ?? '').trim()).filter(Boolean).join(', ')
-    return text || '-'
-  }
-  if (value === null || value === undefined)
-    return '-'
-  const text = String(value).trim()
-  return text || '-'
-}
-
-function resolveUserLabel(user = {}) {
-  return String(user?.realName || user?.name || user?.nickname || user?.username || '').trim()
-}
-
-function isFilledValue(value) {
-  if (Array.isArray(value))
-    return value.length > 0
-  return value !== null && value !== undefined && String(value).trim() !== ''
-}
-
-function handleTreeSelectUpdate(field, newValue) {
-  const multiple = isFieldMultiple(field) || fieldMultiple.value
-  const normalizedValue = normalizeOptionValue(newValue, currentOptions.value, multiple)
-  syncIncludeChildrenFlag(field, normalizedValue)
-  if (isOrgTreeSelectField(field) || field?.type === 'treeSelect') {
-    if (isFilledValue(normalizedValue))
-      syncSelectionLabelFromOptions(field, normalizedValue)
-    else
-      patchSelectionLabelValue(field, '')
-  }
-  emit('update:value', serializeSelectionValues(normalizedValue, multiple))
-}
-
-function handleRegionTreeSelectUpdate(field, newValue) {
-  if (!props.context?.isSearch || !field?.field) {
-    emit('update:value', newValue)
-    return
-  }
-  const includeChildrenKey = `${field.field}_includeChildren`
-  if (newValue === null || newValue === undefined || newValue === '') {
-    props.context?.patchFormData?.({ [includeChildrenKey]: undefined })
-    emit('update:value', newValue)
-    return
-  }
-  const textValue = String(newValue)
-  if (textValue.endsWith('ALL')) {
-    props.context?.patchFormData?.({ [includeChildrenKey]: true })
-    emit('update:value', textValue.replace(/ALL$/, ''))
-    return
-  }
-  props.context?.patchFormData?.({ [includeChildrenKey]: undefined })
-  emit('update:value', newValue)
-}
-
-function resolveUserSelectLabel(field) {
-  return resolveSelectionLabelValue(field) ?? ''
-}
-
-function handleUserSelectLabelUpdate(field, labelValue) {
-  patchSelectionLabelValue(field, labelValue)
-}
-
-function handleUserSelect(field, users) {
-  const selectedUsers = Array.isArray(users) ? users : users ? [users] : []
-  const labels = selectedUsers.map(resolveUserLabel).filter(Boolean)
-  const multiple = isFieldMultiple(field) || fieldMultiple.value
-  if (labels.length || !selectedUsers.length)
-    patchSelectionLabelValue(field, multiple ? labels : (labels[0] ?? ''))
-  const events = getComponentEvents(field)
-  if (typeof events.select === 'function')
-    events.select(users)
-}
-
-function syncIncludeChildrenFlag(field, value) {
-  if (!props.context?.isSearch || !field?.field || !(field.type === 'treeSelect' || isOrgTreeSelectField(field)))
-    return
-  const includeChildrenKey = `${field.field}_includeChildren`
-  if (Array.isArray(value) || value === null || value === undefined || value === '') {
-    props.context?.patchFormData?.({ [includeChildrenKey]: undefined })
-    return
-  }
-  if (isOrgTreeSelectField(field)) {
-    props.context?.patchFormData?.({ [includeChildrenKey]: true })
-    return
-  }
-  const selectedNode = flattenOptionNodes(currentOptions.value).find(option => isSameOptionValue(option?.value ?? option?.key, value))
-  if (selectedNode?.children?.length) {
-    props.context?.patchFormData?.({ [includeChildrenKey]: true })
-    return
-  }
-  props.context?.patchFormData?.({ [includeChildrenKey]: undefined })
-}
-
-/**
- * 获取组件事件
- */
-function getComponentEvents(field) {
-  if (!field.on)
-    return {}
-
-  const events = {}
-  Object.keys(field.on).forEach((eventName) => {
-    events[eventName] = (...args) => {
-      if (typeof field.on[eventName] === 'function') {
-        field.on[eventName]({
-          field,
-          formData: props.formData,
-          context: props.context,
-          args,
-        })
-      }
-    }
-  })
-  return events
-}
-
-/**
- * 处理值更新
- */
-function handleUpdate(newValue) {
-  const field = props.field || {}
-  const multiple = fieldMultiple.value
-  if (shouldSyncOptionLabels(field))
-    syncSelectionLabelFromOptions(field, newValue)
-  emit('update:value', multiple ? serializeSelectionValues(newValue, true) : newValue)
-}
-
-function shouldSyncOptionLabels(field = {}) {
-  if (isUserSelectField(field))
-    return false
-  if (isRelationSelectorField.value && relationSelectorMode.value === 'popup')
-    return false
-  const type = normalizeRuntimeFieldType(field.type || field.componentType || field.componentKey)
-  return ['select', 'dictSelect', 'objectReference', 'recordSelector', 'orgTreeSelect', 'treeSelect', 'cascader'].includes(type)
-}
-
-function handleFieldFocusout(event) {
-  if (!blurFieldEventEnabled.value)
-    return
-  if (event?.currentTarget?.contains?.(event.relatedTarget))
-    return
-  props.context?.dispatchFieldEvent?.('BLUR', props.field?.field)
-}
-
-function handleFieldKeyup(event) {
-  if (!scanFieldEventEnabled.value || event?.key !== 'Enter')
-    return
-  event.preventDefault?.()
-  event.stopPropagation?.()
-  props.context?.dispatchFieldEvent?.('SCAN_COMPLETE', props.field?.field)
-}
-
-async function handleScanFieldEvent() {
-  if (scanLoading.value || disabledHandler(props.field))
-    return
-  const scanner = props.context?.scanField
-  if (typeof scanner !== 'function') {
-    setScanFeedback('error', '当前环境不支持扫码')
-    return
-  }
-  scanLoading.value = true
-  setScanFeedback('loading', '')
-  try {
-    const result = await scanner(props.field)
-    if (!result?.value)
-      throw Object.assign(new Error('扫码结果无效'), { code: 'SCAN_INVALID_RESULT' })
-    handleUpdate(result.value)
-    await nextTick()
-    await props.context?.dispatchFieldEvent?.('SCAN_COMPLETE', props.field?.field, { scan: result })
-    setScanFeedback('success', '')
-  }
-  catch (error) {
-    setScanFeedback('error', resolveScanErrorMessage(error))
-  }
-  finally {
-    scanLoading.value = false
-  }
-}
-
-function setScanFeedback(status, message) {
-  scanFeedback.value = { status, message: message || '' }
-}
-
-function resolveScanErrorMessage(error) {
-  switch (error?.code) {
-    case 'SCAN_CANCELLED':
-      return '已取消扫码'
-    case 'SCAN_TIMEOUT':
-      return '扫码超时，请重试'
-    case 'SCAN_UNSUPPORTED':
-      return '当前环境不支持扫码'
-    case 'SCAN_PERMISSION_DENIED':
-      return '请允许浏览器使用摄像头'
-    case 'SCAN_INVALID_RESULT':
-      return '扫码结果无效'
-    default:
-      return '扫码失败，请重试'
-  }
-}
-
-function handleManualFieldEvent() {
-  if (fieldEventState.value.loading)
-    return
-  props.context?.dispatchFieldEvent?.('MANUAL', props.field?.field)
-}
-
-function openRecordSelector() {
-  if (!recordSelectorConfig.value.objectCode) {
-    window.$message?.warning('未配置选择器业务对象')
-    return
-  }
-  recordSelectorVisible.value = true
-}
-
-function clearRecordSelectorValue() {
-  const config = recordSelectorConfig.value
-  const labelField = props.field?.labelField || props.field?.props?.labelField || props.field?.props?.targetLabelField || config.targetLabelField || config.labelTargetField
-  const patch = { [props.field.field]: undefined }
-  if (labelField)
-    patch[labelField] = undefined
-  if (relationLabelValueField.value)
-    patch[relationLabelValueField.value] = undefined
-  props.context?.patchFormData?.(patch)
-  emit('update:value', fieldMultiple.value ? '' : null)
-}
-
-function handleRecordSelectorConfirm({ rows = [], mappings = {} } = {}) {
-  const selectedRows = Array.isArray(rows) ? rows.filter(Boolean) : []
-  if (!selectedRows.length)
-    return
-  const config = recordSelectorConfig.value
-  const multiple = fieldMultiple.value || config.multiple === true
-  const valueField = props.field?.valueField || props.field?.props?.valueField || config.valueField || 'id'
-  const labelField = props.field?.labelField || props.field?.props?.labelField || props.field?.props?.targetLabelField || config.targetLabelField || config.labelTargetField
-  const labelSourceField = props.field?.labelSourceField || props.field?.props?.labelSourceField || config.labelField || config.labelSourceField
-  const labelSource = labelSourceField || firstDisplayFieldName(config.displayFields) || 'name'
-  const values = []
-  const labels = []
-  selectedRows.forEach((selected) => {
-    const rawRecord = extractSelectorRawRecord(selected)
-    const value = rawRecord[valueField] ?? selected[valueField] ?? selected.id
-    if (value === null || value === undefined || String(value).trim() === '')
-      return
-    values.push(value)
-    labels.push(rawRecord[labelSource] ?? selected[labelSource] ?? selected.label ?? '')
-  })
-  const serializedValue = multiple ? serializeSelectionValues(values, true) : (values[0] ?? null)
-  const serializedLabel = multiple ? serializeSelectionLabels(labels) : (labels[0] ?? '')
-  const patch = {
-    ...(multiple ? {} : applyRecordFieldMappings(selectedRows[0], mappings || config.fieldMappings)),
-    [props.field.field]: serializedValue,
-  }
-  if (labelField)
-    patch[labelField] = serializedLabel
-  if (relationLabelValueField.value)
-    patch[relationLabelValueField.value] = serializedLabel
-  props.context?.patchFormData?.(patch)
-  emit('update:value', serializedValue)
-}
-
-/** 弹窗展示字段配置可能是 "field:label" 冒号形式，取纯字段名。 */
-function firstDisplayFieldName(displayFields = []) {
-  const first = Array.isArray(displayFields) ? displayFields[0] : displayFields
-  return String(first || '').split(':')[0].trim() || ''
-}
-
-function handleRuntimePageWidgetUpdate(nextProps = {}) {
-  const widgetKey = runtimePageWidgetKey.value
-  if (widgetKey === 'rich-text' || widgetKey === 'markdown') {
-    emit('update:value', nextProps.content || '')
-    return
-  }
-  if (widgetKey === 'transfer') {
-    emit('update:value', Array.isArray(nextProps.value) ? nextProps.value : [])
-  }
-}
-
-function resolveFormattedRangeValue(value, index) {
-  if (!Array.isArray(value))
-    return null
-  return normalizeFormattedPickerValue(value[index]) ?? null
-}
-
-function normalizeTimestampPickerValue(value) {
-  if (value instanceof Date)
-    return Number.isNaN(value.getTime()) ? undefined : value.getTime()
-  if (typeof value === 'number')
-    return Number.isFinite(value) ? value : undefined
-  return undefined
-}
-
-function normalizeFormattedPickerValue(value) {
-  if (value === null || value === undefined || value === '')
-    return null
-  if (typeof value === 'string') {
-    const text = value.trim()
-    if (!text)
-      return null
-    if (isSupportedPickerText(text))
-      return text
-    return null
-  }
-  return undefined
-}
-
-function isSupportedPickerText(text = '') {
-  return /^\d{4}$/.test(text)
-    || /^\d{4}-\d{2}$/.test(text)
-    || /^\d{4}-\d{2}-\d{2}$/.test(text)
-    || /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?$/.test(text)
-    || /^\d{2}:\d{2}(?::\d{2})?$/.test(text)
-}
-
-function normalizeTimestampRangePickerValue(value) {
-  if (!Array.isArray(value))
-    return undefined
-  const normalized = value.map(item => normalizeTimestampPickerValue(item))
-  return normalized.length === 2 && normalized.every(item => item !== undefined)
-    ? normalized
-    : undefined
-}
-
-function normalizeFormattedRangePickerValue(value) {
-  if (value === null || value === undefined || value === '')
-    return null
-  if (!Array.isArray(value))
-    return undefined
-  const normalized = value.map(item => normalizeFormattedPickerValue(item))
-  if (normalized.every(item => item === null))
-    return null
-  if (normalized.length === 2 && normalized.every(item => typeof item === 'string'))
-    return normalized
-  return value.some(item => typeof item === 'string') ? null : undefined
-}
-
-function resolvePickerDefaultValue(field, range = false) {
-  const configured = field?.pickerDefaultValue ?? field?.props?.pickerDefaultValue ?? field?.props?.defaultPickerValue
-  const value = configured ?? pickerDefaultTimestamp
-  return range ? [value, value] : value
-}
-
-function handleRangeUpdate(index, nextValue) {
-  const next = Array.isArray(props.value) ? [...props.value] : [null, null]
-  next[index] = nextValue
-  emit('update:value', next)
-}
-
-/**
- * 处理文件上传变化
- */
-function handleUploadChange({ fileList }) {
-  emit('update:value', fileList)
-}
-
-/**
- * 复制文本
- */
-function handleCopy(text) {
-  copy(text)
-  window.$message?.success('复制成功')
-}
-
-/**
- * 文件上传成功回调
- */
-function handleUploadSuccess(field, data) {
-  if (field.onSuccess && typeof field.onSuccess === 'function') {
-    field.onSuccess({
-      data,
-      field,
-      formData: props.formData,
-      context: props.context,
-    })
-  }
-}
-
-/**
- * 文件上传失败回调
- */
-function handleUploadError(field, error) {
-  if (field.onError && typeof field.onError === 'function') {
-    field.onError({
-      error,
-      field,
-      formData: props.formData,
-      context: props.context,
-    })
-  }
-}
-
-/**
- * 文件删除回调
- */
-function handleUploadRemove(field, file) {
-  if (field.onRemove && typeof field.onRemove === 'function') {
-    field.onRemove({
-      file,
-      field,
-      formData: props.formData,
-      context: props.context,
-    })
-  }
 }
 </script>
 
-<style scoped>
-.ai-form-control {
-  width: 100%;
-  min-width: 0;
-}
-
-.ai-form-item-body {
-  display: grid;
-  width: 100%;
-  min-width: 0;
-  gap: 6px;
-}
-
-/* 开关控件很窄，避免被拉满整列后看起来离 label 很远 */
-.ai-form-item--switch .ai-form-item-body {
-  width: auto;
-  display: flex;
-  align-items: center;
-  min-height: 32px;
-}
-
-.ai-form-item--switch :deep(.n-form-item-label) {
-  padding-right: 8px;
-}
-
-.ai-form-item--switch :deep(.n-form-item-blank) {
-  flex: 0 0 auto;
-  width: auto !important;
-  display: flex;
-  align-items: center;
-}
-
-.ai-form-switch {
-  flex: 0 0 auto;
-}
-
-.ai-form-item-label {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  gap: 6px;
-  vertical-align: middle;
-}
-
-.ai-form-item-label__text {
-  overflow: hidden;
-  min-width: 0;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ai-form-item-label__badge {
-  display: inline-flex;
-  align-items: center;
-  height: 18px;
-  max-width: 72px;
-  flex: 0 0 auto;
-  padding: 0 6px;
-  border: 1px solid rgba(37, 99, 235, 0.18);
-  border-radius: 999px;
-  background: #eff6ff;
-  color: #2563eb;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 16px;
-}
-
-.ai-form-item-description {
-  margin: 0;
-  color: #64748b;
-  font-size: 12px;
-  line-height: 18px;
-  word-break: break-word;
-}
-
-.ai-form-field-event {
-  display: flex;
-  min-height: 18px;
-  align-items: center;
-  gap: 8px;
-  line-height: 18px;
-}
-
-.ai-form-field-event__action {
-  flex: 0 0 auto;
-  font-size: 12px;
-}
-
-.ai-form-field-event__message {
-  overflow: hidden;
-  color: #64748b;
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ai-form-field-event__message.is-error {
-  color: #dc2626;
-}
-
-.ai-form-field-event__message.is-not_found {
-  color: #b45309;
-}
-
-.ai-form-field-event__message.is-loading {
-  color: #2563eb;
-}
-
-.ai-form-item-label__tip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 15px;
-  height: 15px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  border: 1px solid #cbd5e1;
-  color: #94a3b8;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1;
-  cursor: help;
-  transition: all 0.2s;
-}
-
-.ai-form-item-label__tip:hover {
-  border-color: #2563eb;
-  color: #2563eb;
-}
-
-.ai-form-item-label__tip-content {
-  white-space: pre-line;
-  font-size: 13px;
-  line-height: 1.7;
-}
-
-.ai-form-readonly-text {
-  min-height: 34px;
-  display: flex;
-  align-items: center;
-  color: var(--n-text-color);
-  line-height: 1.6;
-  word-break: break-all;
-}
-
-.ai-form-control :deep(.n-base-selection),
-.ai-form-control :deep(.n-base-selection-label) {
-  align-items: center;
-}
-
-.ai-form-control :deep(.n-base-selection__clear),
-.ai-form-control :deep(.n-base-clear) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-}
-
-.time-range-picker {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  gap: 8px;
-  align-items: center;
-}
-
-.time-range-separator {
-  color: #64748b;
-  font-size: 12px;
-}
-
-.ai-form-item-align-center :deep(.n-input__input-el),
-.ai-form-item-align-center :deep(.n-input__textarea-el),
-.ai-form-item-align-center :deep(.n-input-number-input),
-.ai-form-item-align-center :deep(.n-base-selection-label__render-label) {
-  text-align: center;
-}
-
-.ai-form-item-align-right :deep(.n-input__input-el),
-.ai-form-item-align-right :deep(.n-input__textarea-el),
-.ai-form-item-align-right :deep(.n-input-number-input),
-.ai-form-item-align-right :deep(.n-base-selection-label__render-label) {
-  text-align: right;
-}
-
-.ai-form-item-align-center :deep(.n-base-selection-label),
-.ai-form-item-align-right :deep(.n-base-selection-label) {
-  justify-content: center;
-}
-
-.ai-form-item-align-right :deep(.n-base-selection-label) {
-  justify-content: flex-end;
-}
-
-.ai-form-field-flash {
-  border-radius: 8px;
-  animation: ai-form-field-flash 2.8s ease-in-out;
-}
-
-@keyframes ai-form-field-flash {
-  0%,
-  35%,
-  70%,
-  100% {
-    background: transparent;
-    box-shadow: none;
-  }
-
-  12%,
-  47%,
-  82% {
-    background: rgba(245, 108, 108, 0.1);
-    box-shadow: 0 0 0 4px rgba(245, 108, 108, 0.2);
-  }
-}
-</style>
+<style scoped src="./aiFormItem.css"></style>

@@ -21,6 +21,7 @@ import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.LoginUser;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,6 +40,7 @@ import com.mdframe.forge.starter.core.enums.EnableStatus;
 /**
  * 业务应用聚合服务。
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class BusinessApplicationService extends ServiceImpl<BusinessApplicationMapper, AiBusinessApplication> {
@@ -86,6 +88,43 @@ public class BusinessApplicationService extends ServiceImpl<BusinessApplicationM
             throw new BusinessException("业务应用不存在");
         }
         return application;
+    }
+
+    /**
+     * 仅加载 inAppBuilder，供审批 task-form-context 按 formKey 解析页面表单。
+     * 不走 detail 的统计 JOIN，减少 DB 与网络开销。
+     */
+    public JSONObject loadInAppBuilder(Long applicationId) {
+        if (applicationId == null) {
+            return new JSONObject();
+        }
+        String raw = baseMapper.selectApplicationInAppBuilderJson(resolveTenantId(), applicationId);
+        if (StringUtils.isBlank(raw) || "null".equalsIgnoreCase(raw.trim())) {
+            return new JSONObject();
+        }
+        try {
+            Object parsed = JSON.parse(raw);
+            // MySQL JSON 抽取有时仍是 JSON 字符串字面量，再解一层
+            if (parsed instanceof String text && StringUtils.isNotBlank(text)) {
+                parsed = JSON.parse(text);
+            }
+            if (parsed instanceof JSONObject object) {
+                return object;
+            }
+            if (parsed instanceof Map<?, ?> map) {
+                JSONObject object = new JSONObject();
+                map.forEach((key, value) -> {
+                    if (key != null) {
+                        object.put(String.valueOf(key), value);
+                    }
+                });
+                return object;
+            }
+            return JSON.parseObject(String.valueOf(parsed));
+        } catch (Exception error) {
+            log.debug("解析应用 inAppBuilder 失败: applicationId={}, error={}", applicationId, error.getMessage());
+            return new JSONObject();
+        }
     }
 
     public BusinessApplicationVO publishContext(Long id) {

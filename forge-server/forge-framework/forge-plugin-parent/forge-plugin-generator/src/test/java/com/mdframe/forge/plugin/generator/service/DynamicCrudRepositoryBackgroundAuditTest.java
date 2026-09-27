@@ -58,8 +58,13 @@ class DynamicCrudRepositoryBackgroundAuditTest {
     void backgroundStatusUpdateDoesNotRequireWebSessionAndKeepsTenantPredicate() {
         NamedParameterJdbcTemplate jdbc = mock(NamedParameterJdbcTemplate.class);
         DynamicCrudRepository repository = repository(jdbc);
-        TenantContextHolder.executeWithTenant(7L, () -> repository.updateById(
-                "demo_table", 101L, new LinkedHashMap<>(Map.of("flow_status", "CANCELED"))));
+        try (MockedStatic<SessionHelper> session = mockStatic(SessionHelper.class)) {
+            // 真实 Redis 回调抛的是 NotWebContextException（SaTokenException 子类），不是 SaTokenContextException。
+            session.when(SessionHelper::getUserId).thenThrow(
+                    new cn.dev33.satoken.exception.NotWebContextException("非 web 上下文无法获取 HttpServletRequest"));
+            TenantContextHolder.executeWithTenant(7L, () -> repository.updateById(
+                    "demo_table", 101L, new LinkedHashMap<>(Map.of("flow_status", "CANCELED"))));
+        }
 
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<MapSqlParameterSource> params = ArgumentCaptor.forClass(MapSqlParameterSource.class);

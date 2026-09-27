@@ -18,4 +18,6 @@ public interface DataAuditEventMapper extends BaseMapper<AiDataAuditEvent> {
                                            @Param("objectIds") List<Long> objectIds);
 
     AiDataAuditEvent selectEventById(@Param("tenantId") Long tenantId, @Param("id") Long id);
+
+    int insertBatch(@Param("items") List<AiDataAuditEvent> items);
 }

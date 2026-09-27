@@ -23,6 +23,12 @@
 - generator 模块主代码编译。
 - `git diff --check`。
 
+## 本轮增量验证（2026-09-22）
+
+- `BusinessObjectDesignerService.prepareRuntimeDraft`：关系同步和草稿保存必须使用 `REQUIRES_NEW` 短事务，schema 编译不得处于事务内。
+- 并发契约：同一业务对象的预览准备使用带引用计数的 JVM 锁，避免并发 `designPreview` 重复更新关系记录或清理锁时产生第二把锁。
+- 关系配置契约：JSON 键序/空白差异不应触发无意义的 `updateById`。
+
 ## 手工验收建议
 
 1. 新建应用表单并绑定一个已配置字段的子表。

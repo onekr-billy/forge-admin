@@ -1,9 +1,27 @@
+import fs from 'node:fs'
+import { createRequire } from 'node:module'
 import { FileSystemIconLoader } from '@iconify/utils/lib/loader/node-loaders'
 import presetRemToPx from '@unocss/preset-rem-to-px'
 import { defineConfig, presetAttributify, presetIcons, presetWind3 } from 'unocss'
 import { getIcons } from './build/index.js'
 // 统一的响应式字体插件，集成了静态和动态规则
 import { responsiveFontUnifiedPreset } from './src/plugins/responsive-font-unified.js'
+
+const require = createRequire(import.meta.url)
+
+/** 从本仓库已安装的 @iconify/json 读集合，避免依赖未安装的 @iconify-json/* 或外网 CDN */
+function loadIconifyCollection(name) {
+  return () => {
+    try {
+      const filePath = require.resolve(`@iconify/json/json/${name}.json`)
+      return JSON.parse(fs.readFileSync(filePath, 'utf8'))
+    }
+    catch (error) {
+      console.warn(`[unocss] icon collection unavailable: ${name}`, error?.message || error)
+      return { prefix: name, icons: {} }
+    }
+  }
+}
 
 const icons = getIcons()
 export default defineConfig({
@@ -22,6 +40,16 @@ export default defineConfig({
       collections: {
         'ai-icon': FileSystemIconLoader('./src/assets/icons/ai-icon'),
         'icon': FileSystemIconLoader('./src/assets/icons/ai-icon'),
+        // 业务页面大量使用 i-material-symbols:*；不挂本地集合时 HMR/离线会整站图标变空
+        'material-symbols': loadIconifyCollection('material-symbols'),
+        'material-symbols-light': loadIconifyCollection('material-symbols-light'),
+        'lucide': loadIconifyCollection('lucide'),
+        'mdi': loadIconifyCollection('mdi'),
+        'fa': loadIconifyCollection('fa'),
+        'fa6-solid': loadIconifyCollection('fa6-solid'),
+        'simple-icons': loadIconifyCollection('simple-icons'),
+        'ix': loadIconifyCollection('ix'),
+        'streamline-plump-color': loadIconifyCollection('streamline-plump-color'),
       },
     }),
     presetRemToPx({ baseFontSize: 4 }),

@@ -15,3 +15,12 @@
 - 全量前端 ESLint：未通过，存在 450 个仓库存量错误和 161 个仓库存量警告；本次变更文件定向检查无问题。
 - `git diff --check`：通过。
 - 后端定向测试/编译未执行：当前主机没有 Java 运行时和 Maven 命令。
+
+## 2026-09-22 增量验证
+
+- 范围：修复 `GET /ai/crud-config/render/{configKey}?designPreview=true` 在物化子表关系时的 MySQL `Lock wait timeout`，并补齐契约测试构造器参数。
+- JDK：使用 `/opt/homebrew/Cellar/openjdk@17/17.0.13/libexec/openjdk.jdk/Contents/Home`。
+- 主代码编译：`mvn -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -DskipTests compile -q`，通过。
+- 定向契约测试：`mvn -Penable-tests -pl forge-framework/forge-plugin-parent/forge-plugin-generator -am -Dtest=BusinessApplicationDraftPreviewContractTest -Dsurefire.failIfNoSpecifiedTests=false test -q`，通过（5 tests）。为绕过仓库既有的 `DynamicCrudPrintReadTest` 构造器失配，测试执行期间临时补入一个 `null` 参数，验证后已恢复该无关文件。
+- 差异检查：`git diff --check`，通过。
+- 未执行：真实 Admin/MySQL 并发接口压测；按用户约定不启动服务、不改动业务数据库。全量 generator 测试仍受既有 `DynamicCrudPrintReadTest` 构造器失配阻断。

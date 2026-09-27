@@ -201,7 +201,7 @@
 
 <script setup>
 import { useDialog, useMessage } from 'naive-ui'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, reactive, ref, watch } from 'vue'
 import { businessAppList } from '@/api/business-app'
 import { businessApplicationObjects } from '@/api/business-application'
 import {
@@ -216,12 +216,22 @@ import {
 } from '@/api/business-extension'
 import DictSelect from '@/components/DictSelect.vue'
 import DictTag from '@/components/DictTag.vue'
+import DesignerAsyncLoader from '@/views/app-center/components/designer/DesignerAsyncLoader.vue'
 import {
   extensionMatchesPage,
   resolveExtensionPageContext,
 } from './extension-visual-rule'
-import ExtensionEditorWorkspace from './ExtensionEditorDrawer.vue'
-import ExtensionVersionDrawer from './ExtensionVersionDrawer.vue'
+
+const ExtensionEditorWorkspace = defineAsyncComponent({
+  delay: 120,
+  loadingComponent: DesignerAsyncLoader,
+  loader: () => import('./ExtensionEditorDrawer.vue'),
+})
+const ExtensionVersionDrawer = defineAsyncComponent({
+  delay: 120,
+  loadingComponent: DesignerAsyncLoader,
+  loader: () => import('./ExtensionVersionDrawer.vue'),
+})
 
 const props = defineProps({
   application: {

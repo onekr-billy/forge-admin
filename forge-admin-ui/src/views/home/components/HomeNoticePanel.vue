@@ -55,64 +55,89 @@ watch(() => noticeStore.contextVersion, () => noticeStore.refresh(), { immediate
 </script>
 
 <style scoped>
+.home-notice-panel {
+  overflow: hidden;
+  border: 1px solid var(--border-light, #e5e7eb);
+  border-radius: 8px;
+  background: var(--bg-primary, #fff);
+}
+
 .home-notice-panel header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 8px;
+  min-height: 44px;
+  margin: 0;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-light, #e5e7eb);
 }
+
 h2 {
   display: flex;
   align-items: center;
   gap: 8px;
   margin: 0;
-  font-size: 15px;
-  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #1f2329);
 }
+
 p,
 .notice-empty {
-  color: var(--text-tertiary);
+  margin: 2px 0 0;
+  color: var(--text-tertiary, #86909c);
   font-size: 12px;
-  margin: 6px 0 0;
 }
+
 .notice-empty {
-  padding: 24px 0;
+  padding: 28px 14px;
   text-align: center;
 }
+
+.home-notice-list {
+  padding: 4px 14px 12px;
+}
+
 .home-notice-item {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   width: 100%;
-  padding: 12px 0;
+  padding: 10px 0;
   border: 0;
-  border-bottom: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-light, #e5e7eb);
   background: transparent;
   text-align: left;
   cursor: pointer;
-  color: var(--text-primary);
+  color: var(--text-primary, #1f2329);
 }
+
 .home-notice-item:last-child {
   border-bottom: 0;
 }
+
 .home-notice-item:hover strong {
-  color: var(--primary-color);
+  color: var(--primary-color, #0e42d2);
 }
+
 .notice-status {
   width: 6px;
   height: 6px;
   flex: 0 0 6px;
   margin-top: 8px;
   border-radius: 50%;
-  background: var(--border-light);
+  background: var(--border-light, #e5e7eb);
 }
+
 .unread .notice-status {
-  background: var(--primary-color);
+  background: var(--primary-color, #0e42d2);
 }
+
 .notice-copy {
   min-width: 0;
 }
+
 .notice-copy strong {
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -120,19 +145,22 @@ p,
   overflow: hidden;
   font-size: 13px;
   font-weight: 400;
-  line-height: 1.6;
+  line-height: 1.5;
   overflow-wrap: anywhere;
+  transition: color 0.15s ease;
 }
+
 .unread strong {
   font-weight: 600;
 }
+
 .notice-meta {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 6px;
-  color: var(--text-tertiary);
+  color: var(--text-tertiary, #86909c);
   font-size: 11px;
 }
 </style>

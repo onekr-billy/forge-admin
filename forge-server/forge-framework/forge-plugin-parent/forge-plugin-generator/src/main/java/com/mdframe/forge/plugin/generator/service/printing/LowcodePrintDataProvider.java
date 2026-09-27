@@ -1,6 +1,10 @@
 package com.mdframe.forge.plugin.generator.service.printing;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationMapper;
+import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationObjectMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationVersionMapper;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessApplicationRuntimeService;
 import com.mdframe.forge.plugin.print.entity.PrintBinding;
@@ -27,6 +31,8 @@ public class LowcodePrintDataProvider implements PrintDataProvider {
     private final PrintApplicationAccessAdapter applicationAccess;
     private final BusinessApplicationRuntimeService runtime;
     private final BusinessApplicationVersionMapper versions;
+    private final BusinessApplicationMapper applications;
+    private final BusinessApplicationObjectMapper applicationObjects;
     private final PrintApplicationSnapshotCodec snapshots;
     private final PrintMetadataResolver metadata;
     private final LowcodePrintSourceResolver sources;
@@ -105,16 +111,28 @@ public class LowcodePrintDataProvider implements PrintDataProvider {
             flow = flowContexts.resolveForRecord(actor, request);
         }
         var source = request.source();
-        var portal = runtime.runtimeById(source.applicationId());
-        // 门户已经剔除没有页面权限的节点；来源检查只能在这个过滤后的页面树上进行。
-        var allowed = json.createObjectNode();
-        allowed.putObject("application").set("options", metadata.parse(portal.getApplication().getOptions()));
-        allowed.set("objects", json.valueToTree(portal.getObjects()));
-        sources.object(allowed, source, false);
         if (!SessionHelper.hasPermission("ai:business:" + source.objectCode() + ":query")
                 && !SessionHelper.hasPermission("ai:business:" + source.objectCode() + ":list")) {
             throw PrintFailure.denied();
         }
+        // 设计人员试打：绑定/页面可能尚未进入应用发布快照，来源校验必须走草稿页面树。
+        boolean designer = SessionHelper.hasPermission(PrintDesignAction.MANAGE.permission())
+                || SessionHelper.hasPermission(PrintDesignAction.VIEW.permission());
+        var portal = runtime.runtimeById(source.applicationId());
+        JsonNode allowed;
+        if (designer) {
+            allowed = draftAllowed(actor.tenantId(), source.applicationId());
+            if (allowed == null) {
+                throw PrintFailure.missing();
+            }
+        } else {
+            // 正式运行：门户已经剔除没有页面权限的节点；来源检查只能在这个过滤后的页面树上进行。
+            ObjectNode published = json.createObjectNode();
+            published.putObject("application").set("options", metadata.parse(portal.getApplication().getOptions()));
+            published.set("objects", json.valueToTree(portal.getObjects()));
+            allowed = published;
+        }
+        sources.object(allowed, source, false);
         var version = versions.selectVersion(actor.tenantId(), source.applicationId(), portal.getVersionNo());
         if (version == null || (expectedVersion != null && !expectedVersion.equals(version.getId()))) {
             throw PrintFailure.of(409, "PRINT_APPLICATION_CHANGED", "应用发布版本已变化，请重新打开打印");
@@ -126,9 +144,6 @@ public class LowcodePrintDataProvider implements PrintDataProvider {
                         .thenComparingInt(PrintApplicationSnapshotCodec.Binding::sortOrder)
                         .thenComparing(PrintApplicationSnapshotCodec.Binding::templateId))
                 .toList();
-        // 设计人员试打：绑定可能尚未进入应用发布快照，业务对象也可能没有固定设计版本。
-        boolean designer = SessionHelper.hasPermission(PrintDesignAction.MANAGE.permission())
-                || SessionHelper.hasPermission(PrintDesignAction.VIEW.permission());
         List<AuthorizedPrintContext.VersionRef> refs;
         PrintMetadataResolver.Metadata resolved;
         if (designer) {
@@ -170,6 +185,21 @@ public class LowcodePrintDataProvider implements PrintDataProvider {
         }
         documentAccess.catalog(catalog);
         return new Resolution(version.getId(), refs, resolved, normalized, flow, catalog);
+    }
+
+    private JsonNode draftAllowed(Long tenantId, Long applicationId) {
+        var app = applications.selectEntityById(tenantId, applicationId);
+        if (app == null || app.getOptions() == null || app.getOptions().isBlank()) {
+            return null;
+        }
+        try {
+            ObjectNode allowed = json.createObjectNode();
+            allowed.putObject("application").set("options", json.readTree(app.getOptions()));
+            allowed.set("objects", json.valueToTree(applicationObjects.selectByApplicationId(tenantId, applicationId)));
+            return allowed;
+        } catch (Exception ex) {
+            return null;
+        }
     }
 
     private List<AuthorizedPrintContext.VersionRef> pinnedRefs(Long tenantId,

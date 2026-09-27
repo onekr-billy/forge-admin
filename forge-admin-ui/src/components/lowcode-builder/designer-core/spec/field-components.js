@@ -618,7 +618,7 @@ const treeSelect = {
   } },
   dataSources: ['static', 'remote'],
   print: fieldCommonPrint,
-  fieldDefaults: { fieldType: 'SELECT', businessFieldType: 'SELECT', dataType: 'varchar', componentType: 'treeSelect', length: 128, precision: 2, queryType: 'eq' },
+  fieldDefaults: { fieldType: 'SELECT', businessFieldType: 'SELECT', dataType: 'bigint', componentType: 'treeSelect', length: null, precision: null, queryType: 'eq' },
 }
 
 const customSelect = {

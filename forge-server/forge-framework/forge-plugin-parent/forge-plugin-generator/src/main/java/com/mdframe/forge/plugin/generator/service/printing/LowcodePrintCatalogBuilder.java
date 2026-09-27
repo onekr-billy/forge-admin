@@ -38,10 +38,18 @@ public class LowcodePrintCatalogBuilder {
                     .forEach(zone -> pageFields.addAll(zone.getFieldRefs()));
         }
         for (var field : model.schema().getFields()) {
-            if ((allowed == null && constrained && !pageFields.contains(field.getField())) || !visible(field) || (allowed != null && allowed.stream().noneMatch(ref ->
+            boolean platformManaged = isPlatformManagedPrintField(field);
+            // 页面 zone 只约束业务表单字段；flowStatus 等平台托管字段允许打印模板直接引用
+            if (!platformManaged && allowed == null && constrained && !pageFields.contains(field.getField())) {
+                continue;
+            }
+            if (!visible(field)) {
+                continue;
+            }
+            if (allowed != null && allowed.stream().noneMatch(ref ->
                     Objects.equals(field.getField(), ref.getOrDefault("sourceField", ref.get("field")))
                             && !"HIDDEN".equals(ref.get("fieldStatus")) && !"DISABLED".equals(ref.get("fieldStatus"))
-                            && (!Boolean.FALSE.equals(ref.get("formVisible")) || !Boolean.FALSE.equals(ref.get("listVisible")))))) {
+                            && (!Boolean.FALSE.equals(ref.get("formVisible")) || !Boolean.FALSE.equals(ref.get("listVisible"))))) {
                 continue;
             }
             if (field.getField() == null || !field.getField().matches("[A-Za-z_][A-Za-z0-9_]*")) {
@@ -50,6 +58,18 @@ public class LowcodePrintCatalogBuilder {
             output.add(new PrintFieldCatalogVO.Field(prefix + "." + field.getField(),
                     field.getLabel() == null ? field.getField() : field.getLabel(), type(field)));
         }
+    }
+
+    /** 流程状态等平台字段不依赖页面 fieldRefs，避免发布时被当成“未授权字段”。 */
+    boolean isPlatformManagedPrintField(LowcodeFieldSchema field) {
+        if (field == null || field.getField() == null) {
+            return false;
+        }
+        if ("flowStatus".equals(field.getField()) || "flow_status".equals(field.getColumnName())) {
+            return true;
+        }
+        Map<String, Object> props = field.getAdvancedProps();
+        return props != null && "BUSINESS_FLOW".equals(String.valueOf(props.get("managedBy")));
     }
 
     public boolean visible(LowcodeFieldSchema field) {

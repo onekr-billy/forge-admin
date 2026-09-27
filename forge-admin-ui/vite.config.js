@@ -34,7 +34,8 @@ export default defineConfig(({ mode, command }) => {
       }),
       Vue(),
       VueJsx(),
-      ...(isServe ? [VueDevTools()] : []),
+      // Vue DevTools 会显著抬高长期 HMR 内存；默认关闭，需要时：VITE_DEVTOOLS=1 pnpm dev
+      ...(isServe && viteEnv.VITE_DEVTOOLS === '1' ? [VueDevTools()] : []),
       Unocss(),
       AutoImport({
         imports: ['vue', 'vue-router'],

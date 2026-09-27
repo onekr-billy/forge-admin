@@ -137,6 +137,10 @@ public class LowcodeFieldSchema {
             "userSelect", "userPicker", "orgTreeSelect", "orgSelect", "departmentSelect",
             "departmentTreeSelect", "deptSelect", "deptTreeSelect"
     );
+    /** 配置了动态选项来源时，同样需要冗余保存显示名称的选择类组件 */
+    private static final Set<String> OPTION_SOURCE_SELECTION_COMPONENT_TYPES = Set.of(
+            "select", "radio", "radioButton", "checkbox", "cascader", "treeSelect", "transfer"
+    );
     private static final Set<String> MULTI_SELECT_COMPONENT_TYPES = Set.of(
             "select", "dictSelect", "userSelect", "orgTreeSelect", "objectReference", "recordSelector"
     );
@@ -144,15 +148,46 @@ public class LowcodeFieldSchema {
     public static final int MULTI_SELECT_VARCHAR_LENGTH = 1024;
 
     /**
-     * 需要把显示名称冗余写入伴随列的选择类字段：引用/记录选择器，以及人员、部门。
+     * 需要把显示名称冗余写入伴随列的选择类字段：引用/记录选择器，人员/部门，
+     * 以及配置了非静态 optionSource 的下拉等（值存主列，label 存 fieldName，回显零关联查询）。
      */
     public boolean isSelectionLabelField() {
         if (isReferenceField()) {
             return true;
         }
-        return columnName != null && !columnName.isBlank()
+        if (columnName != null && !columnName.isBlank()
                 && componentType != null
-                && SELECTION_LABEL_COMPONENT_TYPES.contains(componentType);
+                && SELECTION_LABEL_COMPONENT_TYPES.contains(componentType)) {
+            return true;
+        }
+        return hasDynamicOptionSource()
+                && columnName != null && !columnName.isBlank()
+                && componentType != null
+                && OPTION_SOURCE_SELECTION_COMPONENT_TYPES.contains(componentType);
+    }
+
+    /**
+     * 是否配置了需要查源才能拿到 label 的动态选项来源（非 STATIC）。
+     */
+    public boolean hasDynamicOptionSource() {
+        if (basicProps == null || basicProps.isEmpty()) {
+            return false;
+        }
+        Object source = basicProps.get("optionSource");
+        if (!(source instanceof Map<?, ?> map)) {
+            return false;
+        }
+        Object rawType = map.get("type");
+        if (rawType == null) {
+            return false;
+        }
+        String type = String.valueOf(rawType).trim();
+        if (type.isEmpty()) {
+            return false;
+        }
+        String normalized = type.trim().toUpperCase(Locale.ROOT).replace('-', '_');
+        // currentChildren / CURRENT_CHILDREN / QUERY_SOURCE / REMOTE 等均视为动态来源
+        return !"STATIC".equals(normalized);
     }
 
     public boolean isMultipleSelection() {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appendChildTableCatalogFields, applyChildTableFieldPermissions, normalizeFlowFieldCatalog } from '../flow-field-permissions'
+import { appendChildTableCatalogFields, applyChildTableFieldPermissions, normalizeFlowFieldCatalog, resolvePermissionFieldCatalog } from '../flow-field-permissions'
 
 describe('appendChildTableCatalogFields', () => {
   it('把明细表 columns 补进流程模型表单权限目录', () => {
@@ -93,6 +93,39 @@ describe('appendChildTableCatalogFields', () => {
     expect(child.fields[0]).toMatchObject({ writable: true, readonly: false, disabled: false })
   })
 
+  it('子表 allowUpdate 不能把未授权字段一刀切开写', () => {
+    const [child] = applyChildTableFieldPermissions(
+      [{
+        modelCode: 'cgou_business_object_hl92',
+        allowUpdate: true,
+        fields: [
+          { field: 'fieldInput', writable: false, readonly: true, disabled: true },
+          { field: 'fieldInput2', writable: true, readonly: false, disabled: false },
+        ],
+      }],
+      [
+        { scope: 'child', childKey: 'business_object_hl92', childField: 'fieldInput', writable: false },
+        { scope: 'child', childKey: 'business_object_hl92', childField: 'fieldInput2', writable: true },
+      ],
+    )
+
+    expect(child.fields[0]).toMatchObject({ field: 'fieldInput', writable: false, readonly: true, disabled: true })
+    expect(child.fields[1]).toMatchObject({ field: 'fieldInput2', writable: true, readonly: false, disabled: false })
+  })
+
+  it('未命中字段权限时保留后端只读标记，不因 allowUpdate 放开', () => {
+    const [child] = applyChildTableFieldPermissions(
+      [{
+        modelCode: 'cgou_business_object_hl92',
+        allowUpdate: true,
+        fields: [{ field: 'fieldInput', writable: false, readonly: true, disabled: true }],
+      }],
+      [],
+    )
+
+    expect(child.fields[0]).toMatchObject({ writable: false, readonly: true, disabled: true })
+  })
+
   it('节点原始权限能打开已被标成只读的子表字段', () => {
     const raw = JSON.stringify({
       version: 2,
@@ -119,5 +152,50 @@ describe('appendChildTableCatalogFields', () => {
     expect(child.fields[0].writable).toBe(true)
     expect(child.fields[0].props.readonly).toBeUndefined()
     expect(child.fields[0].props.disabled).toBeUndefined()
+  })
+})
+
+describe('resolvePermissionFieldCatalog', () => {
+  it('权限目录优先用设计器子表，丢掉发布态已删除子表', () => {
+    const catalog = resolvePermissionFieldCatalog(
+      [
+        { field: 'title', label: '标题' },
+        { scope: 'child', childKey: 'removed_child', childField: 'name', label: '已删' },
+        { scope: 'child', childKey: 'order_item', childField: 'old_qty', label: '旧数量' },
+      ],
+      {
+        formDesignerSchema: {
+          components: [
+            {
+              componentKey: 'subTable',
+              props: {
+                modelCode: 'order_item',
+                header: '订单明细',
+                columns: [{ fieldCode: 'qty', fieldLabel: '数量' }],
+              },
+            },
+          ],
+        },
+      },
+    )
+
+    expect(catalog.find(item => item.field === 'title')).toBeTruthy()
+    expect(catalog.find(item => item.childKey === 'removed_child')).toBeFalsy()
+    expect(catalog).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: 'child', childKey: 'order_item', childField: 'qty' }),
+    ]))
+    expect(catalog.find(item => item.childField === 'old_qty')).toBeFalsy()
+  })
+
+  it('设计器已无子表时不再回落发布态子表目录', () => {
+    const catalog = resolvePermissionFieldCatalog(
+      [
+        { field: 'title', label: '标题' },
+        { scope: 'child', childKey: 'removed_child', childField: 'name', label: '已删' },
+      ],
+      { formDesignerSchema: { components: [{ componentKey: 'input', props: { field: 'title' } }] } },
+    )
+
+    expect(catalog).toEqual([{ field: 'title', label: '标题' }])
   })
 })

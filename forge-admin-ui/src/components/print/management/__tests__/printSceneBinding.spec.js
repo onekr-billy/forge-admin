@@ -12,9 +12,11 @@ describe('print scene binding', () => {
   })
 
   it('saves missing scenes and removes extras', async () => {
-    const save = vi.fn()
+    const save = vi.fn(async payload => ({
+      data: { id: 9, templateId: 9, scene: payload.scene, status: 1, bindingRevision: 1 },
+    }))
     const remove = vi.fn()
-    await syncPrintTemplateScenes({
+    const next = await syncPrintTemplateScenes({
       source: { applicationId: '1', pageId: 'page_buy' },
       templateId: 9,
       scenes: ['LIST', 'DETAIL'],
@@ -33,12 +35,22 @@ describe('print scene binding', () => {
       status: 1,
     }))
     expect(remove).toHaveBeenCalledWith(2, 3)
+    expect(scenesOfTemplate(next, 9)).toEqual(['LIST', 'DETAIL'])
   })
 
   it('reactivates a disabled binding instead of inserting again', async () => {
-    const save = vi.fn()
+    const save = vi.fn(async payload => ({
+      data: {
+        id: payload.id ?? 8,
+        templateId: 9,
+        scene: payload.scene,
+        status: 1,
+        bindingRevision: (payload.expectedRevision || 0) + 1,
+        sortOrder: payload.sortOrder ?? 0,
+      },
+    }))
     const remove = vi.fn()
-    await syncPrintTemplateScenes({
+    const next = await syncPrintTemplateScenes({
       source: { applicationId: '1' },
       templateId: 9,
       scenes: DEFAULT_PRINT_SCENES,
@@ -54,20 +66,24 @@ describe('print scene binding', () => {
     }))
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ scene: 'DETAIL', id: undefined }))
     expect(remove).not.toHaveBeenCalled()
+    expect(scenesOfTemplate(next, 9)).toEqual(['LIST', 'DETAIL'])
   })
 
   it('skips the network when the selected scenes already match', async () => {
     const save = vi.fn()
     const remove = vi.fn()
-    await syncPrintTemplateScenes({
+    const bindings = [{ id: 1, templateId: 9, scene: 'LIST', status: 1, bindingRevision: 1 }]
+    const next = await syncPrintTemplateScenes({
       source: { applicationId: '1' },
       templateId: 9,
       scenes: ['LIST'],
-      bindings: [{ id: 1, templateId: 9, scene: 'LIST', status: 1, bindingRevision: 1 }],
+      bindings,
       save,
       remove,
     })
     expect(save).not.toHaveBeenCalled()
     expect(remove).not.toHaveBeenCalled()
+    expect(next).toEqual(bindings)
+    expect(next).not.toBe(bindings)
   })
 })

@@ -443,3 +443,12 @@ NODE_OPTIONS=--max-old-space-size=8192 pnpm build
 - 跳过项：未启动 MySQL、Redis、Flowable 或浏览器；真实流程 E2E 和性能门禁仍按 T7.2/T7.3 执行。
 
 - 显式 profile 回归：`mvn -pl forge-framework/forge-plugin-parent/forge-plugin-flow -am -Penable-tests -Dtest=FlowUserGroupGovernanceContractTest -Dforge.test.groups= -Dsurefire.failIfNoSpecifiedTests=false test`，4/4 通过，确认 `-Penable-tests` 可恢复测试编译与执行。
+
+## 本轮缺陷修复（2026-09-22，流程模型版本清理锁 SQL）
+
+- 变更范围：`FlowModelVersionMapper.selectCleanupCandidates` 和 `FlowModelVersionServiceImpl.cleanupVersions`；锁查询移除会被 JSqlParser 重排的排序/行数限制子句，服务层恢复版本号、创建时间、ID 倒序，保持最近版本保留语义。
+- `xmllint --noout forge-server/forge-framework/forge-plugin-parent/forge-plugin-flow/src/main/resources/mapper/FlowModelVersionMapper.xml`：通过。
+- `mvn -pl forge-framework/forge-plugin-parent/forge-plugin-flow,forge-flow/forge-flow-server -am -DskipTests compile`（OpenJDK 17）：BUILD SUCCESS。
+- `mvn -Penable-tests -Dmaven.main.skip=true -Dtest=FlowModelVersionCleanupContractTest,FlowModelVersionGovernanceContractTest -DfailIfNoTests=false test`：3/3 通过；覆盖锁 SQL 不含排序/行数限制、租户/逻辑删除条件、服务层排序和既有版本治理契约。
+- `git diff --check`：通过。
+- 未启动 MySQL、Redis、Flowable 或浏览器；未执行真实接口、MySQL `PREPARE` 语法回验、并发锁竞争和执行计划检查，需在集成环境点击流程模型版本清理接口复验。

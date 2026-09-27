@@ -180,7 +180,7 @@ class BusinessApplicationRuntimeConfigOverlayServiceTest {
                 mock(com.mdframe.forge.plugin.generator.service.businessprocess.BusinessProcessRuntimeActionProjectionService.class);
         BusinessApplicationObjectVO object = new BusinessApplicationObjectVO();
         object.setConfigKey("ps_order");
-        when(applicationObjectService.list(88L)).thenReturn(List.of(object));
+        when(applicationObjectService.containsConfigKey(88L, "ps_order")).thenReturn(true);
         when(projection.compileForRender(eq("ps_order"), eq("order"), isNull(), eq(88L), eq(false))).thenReturn(List.of(Map.of(
                 "key", "startProcess:submit_approval:detail",
                 "label", "提交审批",

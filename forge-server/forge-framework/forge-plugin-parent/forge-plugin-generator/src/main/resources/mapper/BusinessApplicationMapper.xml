@@ -232,6 +232,16 @@
         LIMIT 1
     </select>
 
+    <!-- 审批表单解析只需要 inAppBuilder；不要 CAST AS CHAR，大 JSON 会被截断导致 nodes 为空 -->
+    <select id="selectApplicationInAppBuilderJson" resultType="java.lang.String">
+        SELECT a.options->>'$.inAppBuilder'
+        FROM ai_business_application a
+        WHERE a.tenant_id = #{tenantId}
+          AND a.del_flag = '0'
+          AND a.id = #{id}
+        LIMIT 1
+    </select>
+
     <select id="selectApplicationPublishContext" resultType="com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationVO">
         SELECT a.id AS id,
                a.application_code AS applicationCode,

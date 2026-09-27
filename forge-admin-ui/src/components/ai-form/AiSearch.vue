@@ -154,6 +154,35 @@ const formContext = computed(() => ({
 }))
 
 /**
+ * 与左树筛选一致：补齐 includeChildren；展开值存在 __treeExpanded，提交时由列表请求改写。
+ */
+function withSearchTreeIncludeChildren(data = {}) {
+  const next = { ...(data || {}) }
+  for (const field of schema.value || []) {
+    const type = String(field?.type || field?.componentType || '').trim()
+    if (!['treeSelect', 'orgTreeSelect', 'regionTreeSelect'].includes(type))
+      continue
+    const name = String(field?.field || '').trim()
+    if (!name)
+      continue
+    const allow = field.includeChildren !== false && field.props?.includeChildren !== false
+    const flagKey = `${name}_includeChildren`
+    const expandedKey = `${name}__treeExpanded`
+    const value = next[name]
+    const filled = Array.isArray(value)
+      ? value.length > 0
+      : value !== null && value !== undefined && String(value).trim() !== ''
+    if (!allow || !filled) {
+      delete next[flagKey]
+      delete next[expandedKey]
+      continue
+    }
+    next[flagKey] = true
+  }
+  return next
+}
+
+/**
  * 搜索
  */
 async function handleSearch() {
@@ -165,8 +194,10 @@ async function handleSearch() {
   try {
     searchLoading.value = true
     await formRef.value?.validate()
-    emit('search', { ...formData.value })
-    emit('update:modelValue', { ...formData.value })
+    const payload = withSearchTreeIncludeChildren(formData.value)
+    formData.value = payload
+    emit('search', { ...payload })
+    emit('update:modelValue', { ...payload })
   }
   catch (error) {
     console.warn('表单验证失败:', error)

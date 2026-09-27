@@ -94,7 +94,8 @@ public class CollaborationMessageChannel implements MessageChannel {
             }
         } else {
             connection = socialConfigService.selectConfigById(request.connectionId());
-            if (connection == null || !EnableStatus.ENABLED.matches(connection.getStatus())) {
+            if (connection == null || !java.util.Objects.equals(connection.getTenantId(), request.tenantId())
+                    || !EnableStatus.ENABLED.matches(connection.getStatus())) {
                 return allFailed(userIds, ERROR_CONNECTION_UNAVAILABLE, "企业协同连接不存在或已停用", null);
             }
         }
