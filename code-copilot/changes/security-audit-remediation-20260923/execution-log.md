@@ -1,5 +1,24 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：应用运行时与发布检查租户边界收口
+
+### 实现
+
+- `BusinessApplicationRuntimeService` 的代码、门户、工作台和应用 ID 运行时入口在应用查询及缓存命中前要求可信租户；发布版本缓存和应用 ID 软缓存复用一次捕获的租户，不再把缺失身份静默映射到租户 `1`。
+- `BusinessApplicationAssetSelectionService` 在对象、入口、扩展和流程资产读取前校验租户，并让同一次发布选择的全部 Mapper 查询使用同一租户快照。
+- `BusinessApplicationReadinessService` 将可信租户检查前移到发布上下文读取之前；流程依赖解析和业务绑定查询沿用入口租户，避免检查过程中重复读取可变会话上下文。
+- `BusinessApplicationRuntimeConfigOverlayService` 在解析入口或应用对象归属前要求可信租户，入口查询不再使用默认租户；空渲染配置或空配置键的无副作用返回保持不变。
+
+### 验证
+
+- `BusinessApplicationRuntimeServiceTest`、`BusinessApplicationAssetSelectionServiceTest`、`BusinessApplicationReadinessServiceTest`、`BusinessApplicationRuntimeConfigOverlayServiceTest` 和新增 `BusinessApplicationRuntimeIdentitySecurityTest` 共 32/32 通过；新增 4 个用例确认缺失租户时在应用、版本、资产和流程依赖交互前拒绝。
+- Generator 完整依赖反应堆 33/33 模块成功，`forge-plugin-generator` 1277/1277 测试通过，0 失败、0 错误、0 跳过。
+- `git diff --check` 通过；用户已有 `.DS_Store` 修改未触碰、未纳入本批变更。
+
+### 未覆盖
+
+- 未启动 Admin 或连接真实 MySQL 执行门户、工作台、发布检查及运行配置叠加的跨租户 HTTP 验证；T4.5 发布 Outbox、跨数据源补偿、死信和人工重放仍未完成。
+
 ## 2026-09-28：业务对象设计与发布租户隔离收口
 
 ### 实现
