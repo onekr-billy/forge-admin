@@ -7,6 +7,7 @@ import com.mdframe.forge.flow.dto.FlowTaskActionDTO;
 import com.mdframe.forge.flow.dto.FlowTaskApproveDTO;
 import com.mdframe.forge.flow.dto.FlowTaskDelegateDTO;
 import com.mdframe.forge.flow.dto.FlowTaskRejectDTO;
+import com.mdframe.forge.flow.dto.FlowTaskReturnDTO;
 import com.mdframe.forge.flow.dto.FlowTaskWithdrawDTO;
 import com.mdframe.forge.flow.dto.FlowTaskReassignDTO;
 import com.mdframe.forge.flow.dto.FlowTaskSignDTO;
@@ -266,15 +267,17 @@ public class FlowTaskController {
      * 退回上一审批节点
      */
     @PostMapping("/return")
-    public RespInfo<Void> returnTask(@RequestBody FlowTaskActionDTO dto) {
+    public RespInfo<Void> returnTask(@RequestBody FlowTaskReturnDTO dto) {
         if (isBlankId(dto.getTaskId())) {
             return RespInfo.error("任务ID不能为空");
         }
 
         String userId = FlowSessionIdentity.requireUserId(dto.getUserId());
+        Long tenantId = resolveTrustedTenant(dto.getTenantId());
         flowTaskService.returnTask(dto.getTaskId(), userId,
                 optionalText(dto.getComment()), optionalText(dto.getSignature()),
-                optionalText(dto.getTargetActivityId()));
+                optionalText(dto.getTargetActivityId()), tenantId,
+                optionalText(dto.getIdempotencyKey()), optionalText(dto.getRequestDigest()));
         return RespInfo.success("已退回", null);
     }
 

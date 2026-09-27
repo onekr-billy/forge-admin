@@ -22,6 +22,31 @@ import static org.mockito.Mockito.when;
 class FlowClientDelegatedIdentityTest {
 
     @Test
+    void shouldSendStableReturnIdentityAndTrustedTenant() {
+        RestTemplate restTemplate = mock(RestTemplate.class);
+        when(restTemplate.exchange(
+                eq("http://flow/api/flow/task/return"),
+                eq(HttpMethod.POST), any(HttpEntity.class), eq(String.class)))
+                .thenReturn(new ResponseEntity<>(
+                        "{\"code\":200,\"msg\":\"ok\",\"data\":null}",
+                        HttpStatus.OK));
+        FlowClient client = new FlowClient(restTemplate, "http://flow", "static-token");
+
+        FlowResult<Void> result = client.returnTask(
+                "task-1", "101", "退回修改", null, "draft-node",
+                1L, "flow:return-key-1", "0123456789abcdef");
+
+        assertThat(result.isSuccess()).isTrue();
+        ArgumentCaptor<HttpEntity<String>> entity = ArgumentCaptor.forClass(HttpEntity.class);
+        verify(restTemplate).exchange(any(String.class), eq(HttpMethod.POST), entity.capture(), eq(String.class));
+        assertThat(entity.getValue().getBody())
+                .contains("\"taskId\":\"task-1\"")
+                .contains("\"tenantId\":1")
+                .contains("\"idempotencyKey\":\"flow:return-key-1\"")
+                .contains("\"requestDigest\":\"0123456789abcdef\"");
+    }
+
+    @Test
     void shouldStartDelegatedFlowWithoutClientSuppliedUserFields() {
         RestTemplate restTemplate = mock(RestTemplate.class);
         when(restTemplate.exchange(

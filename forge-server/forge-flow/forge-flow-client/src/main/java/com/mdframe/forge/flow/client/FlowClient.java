@@ -416,6 +416,16 @@ public class FlowClient {
      */
     public FlowResult<Void> returnTask(String taskId, String userId, String comment,
                                        String signature, String targetActivityId) {
+        return returnTask(taskId, userId, comment, signature, targetActivityId,
+                null, null, null);
+    }
+
+    /**
+     * 带可信租户与远程幂等凭证的退回入口。
+     */
+    public FlowResult<Void> returnTask(String taskId, String userId, String comment,
+                                       String signature, String targetActivityId,
+                                       Long tenantId, String idempotencyKey, String requestDigest) {
         String url = flowServiceUrl + "/api/flow/task/return";
         Map<String, Object> params = new HashMap<>();
         params.put("taskId", taskId);
@@ -423,6 +433,9 @@ public class FlowClient {
         params.put("comment", comment);
         if (signature != null) params.put("signature", signature);
         if (targetActivityId != null) params.put("targetActivityId", targetActivityId);
+        if (tenantId != null) params.put("tenantId", tenantId);
+        if (idempotencyKey != null) params.put("idempotencyKey", idempotencyKey);
+        if (requestDigest != null) params.put("requestDigest", requestDigest);
         return post(url, params, new TypeReference<FlowResult<Void>>() {});
     }
 

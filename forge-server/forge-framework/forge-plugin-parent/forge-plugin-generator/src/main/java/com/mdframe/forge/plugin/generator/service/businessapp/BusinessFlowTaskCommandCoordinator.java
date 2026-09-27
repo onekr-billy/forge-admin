@@ -153,7 +153,8 @@ final class BusinessFlowTaskCommandCoordinator {
                     dto.getIdempotencyKey(), dto.getRequestDigest());
             case "return" -> flowClient.returnTask(
                     query.getTaskId(), userId, dto.getComment(), dto.getSignature(),
-                    StringUtils.trimToNull(dto.getTargetActivityId()));
+                    StringUtils.trimToNull(dto.getTargetActivityId()), resolveTrustedTaskTenant(dto),
+                    dto.getIdempotencyKey(), dto.getRequestDigest());
             default -> flowClient.approve(
                     query.getTaskId(), userId, dto.getComment(), dto.getSignature(), variables,
                     resolveTrustedTaskTenant(dto),

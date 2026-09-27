@@ -353,15 +353,26 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void returnTask(String taskId, String userId, String comment, String signature) {
-        returnTask(taskId, userId, comment, signature, null);
+        returnTask(taskId, userId, comment, signature, null,
+                SessionHelper.getTenantId(), null, null);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void returnTask(String taskId, String userId, String comment, String signature,
                            String requestedTargetActivityId) {
+        returnTask(taskId, userId, comment, signature, requestedTargetActivityId,
+                SessionHelper.getTenantId(), null, null);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void returnTask(String taskId, String userId, String comment, String signature,
+                           String requestedTargetActivityId, Long tenantId,
+                           String idempotencyKey, String requestDigest) {
         taskActionCoordinator().returnTask(
-                taskId, userId, comment, signature, requestedTargetActivityId);
+                taskId, userId, comment, signature, requestedTargetActivityId,
+                tenantId, idempotencyKey, requestDigest);
     }
 
     @Override

@@ -320,7 +320,7 @@ class FlowControllerBoundaryContractTest {
     }
 
     @Test
-    void formInstanceStatusAndCleanupSqlShouldBindTenantInTheirOwnStatements() throws IOException {
+    void formInstanceStatusProjectionAndCleanupSqlShouldBindTenantInTheirOwnStatements() throws IOException {
         String xml = mapperXml("FlowFormInstanceMapper.xml");
 
         assertThat(statement(xml, "update", "updateStatusByProcessInstanceId"))
@@ -331,12 +331,13 @@ class FlowControllerBoundaryContractTest {
         String mapper = Files.readString(Path.of(
                 "../../forge-framework/forge-plugin-parent/forge-plugin-flow/src/main/java/"
                         + "com/mdframe/forge/starter/flow/mapper/FlowFormInstanceMapper.java"));
-        String listener = Files.readString(Path.of(
+        String projectionHandler = Files.readString(Path.of(
                 "../../forge-framework/forge-plugin-parent/forge-plugin-flow/src/main/java/"
-                        + "com/mdframe/forge/starter/flow/listener/FlowTaskEventListener.java"));
+                        + "com/mdframe/forge/starter/flow/service/FlowProjectionHandler.java"));
         assertThat(mapper).contains("@Param(\"tenantId\") Long tenantId");
-        assertThat(listener).contains(
-                "updateStatusByProcessInstanceId(processInstanceId, status, tenantId)");
+        assertThat(projectionHandler)
+                .contains("formInstanceMapper.applyProjectionStatus(",
+                        "processInstanceId, formStatus, tenantId, outbox.getEventId(), outbox.getId())");
     }
 
     @Test

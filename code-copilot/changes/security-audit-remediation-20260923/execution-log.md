@@ -1,5 +1,26 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：T4.4 退回动作远端幂等回放
+
+### 实现
+
+- 修复业务待办 `return` 已生成稳定凭证、但在 `BusinessFlowTaskCommandCoordinator -> FlowClient -> FlowTaskController -> FlowTaskService` 链路中被丢弃的问题；退回请求现在完整透传可信租户、`idempotencyKey` 和 `requestDigest`。
+- Flow 端退回动作在访问 Flowable 运行时任务之前，先按租户锁定本地任务镜像并校验动作、摘要、操作者和已完成状态；同一已完成请求直接幂等成功，不会因为原运行时任务已迁移而误报“任务不存在”。
+- 首次退回完成后在同一事务持久化 `RETURN` 动作身份和 `RETURNED` 状态；不同摘要、不同动作、跨租户或不同操作者的重放继续失败关闭。旧的不带凭证调用仍保留兼容入口。
+- 更新 Flow Server 的表单状态租户契约：不再要求已废弃的监听器直接更新路径，改为验证当前 `FlowProjectionHandler` 使用租户、事件 ID 和顺序号写入表单状态投影。
+
+### 验证
+
+- 定向反应堆测试 22/22 通过，覆盖低代码 return 分支透传、FlowClient 请求体、Controller 可信租户转发、RETURN 授权回放，以及在访问已消失的 Flowable 任务前返回成功。
+- 受影响模块完整测试：FlowClient 16/16、`forge-plugin-flow` 228/228、Flow Server 48/48、Generator 1366/1366，均为 0 失败、0 错误、0 跳过；Flow Server 测试通过 38 模块反应堆编译。
+- `git diff --check` 通过；本批未修改巨型组件或开展巨型类拆分。
+
+### 未覆盖
+
+- 未连接真实 Flowable 注入退回成功后 HTTP 响应丢失，也未建立本地持久化审批/退回命令 Outbox；本批闭环的是同一稳定请求到达 Flow 服务后的安全回放。
+- 全链完整测试在与本批无关的 `forge-plugin-ai` 基线用例 `OpenAiCompatibleProviderAdapterTest.validateShouldRequireCompleteCompatibleConfiguration` 处失败：空 provider code 进入 `Map.of(...).get(null)` 触发 NPE，而用例期望 `BusinessException`。该问题未影响上述受影响模块完整测试，留待后续按优先级修复。
+- 撤回、重提、主动状态同步、Redis 入箱前 ACK 和授权人工重放仍属于 T4.4 未完成项；T4.2/T4.3 巨型组件/巨型类改造继续按用户要求排除。
+
 ## 2026-09-28：T4.4 审批动作稳定幂等凭证
 
 ### 实现

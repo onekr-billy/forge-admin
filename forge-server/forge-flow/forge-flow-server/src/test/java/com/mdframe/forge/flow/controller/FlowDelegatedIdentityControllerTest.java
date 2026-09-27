@@ -4,6 +4,7 @@ import com.mdframe.forge.flow.dto.FlowInstanceStartDTO;
 import com.mdframe.forge.flow.dto.FlowInstanceTerminateDTO;
 import com.mdframe.forge.flow.dto.FlowTaskApproveDTO;
 import com.mdframe.forge.flow.dto.FlowTaskRejectDTO;
+import com.mdframe.forge.flow.dto.FlowTaskReturnDTO;
 import com.mdframe.forge.starter.auth.config.FlowDelegationSessionVerifier;
 import com.mdframe.forge.starter.core.context.ExecutionIdentity;
 import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
@@ -110,6 +111,29 @@ class FlowDelegatedIdentityControllerTest {
         verify(flowTaskService).reject(
                 "task-1", "101", "不同意", null, 1L,
                 "flow-action-key-1001", "sha256:digest");
+    }
+
+    @Test
+    void shouldPassTrustedReturnIdentityToTaskService() {
+        FlowTaskService flowTaskService = mock(FlowTaskService.class);
+        FlowTaskController controller = new FlowTaskController(
+                flowTaskService, mock(FlowOverdueReminderService.class));
+
+        try (var ignored = ExecutionIdentityContextHolder.open(identity())) {
+            FlowTaskReturnDTO request = new FlowTaskReturnDTO();
+            request.setTaskId("task-1");
+            request.setUserId("101");
+            request.setTenantId(1L);
+            request.setTargetActivityId("draft-node");
+            request.setComment("退回修改");
+            request.setIdempotencyKey("flow:return-key-1");
+            request.setRequestDigest("sha256:return-digest");
+            controller.returnTask(request);
+        }
+
+        verify(flowTaskService).returnTask(
+                "task-1", "101", "退回修改", null, "draft-node", 1L,
+                "flow:return-key-1", "sha256:return-digest");
     }
 
     @Test
