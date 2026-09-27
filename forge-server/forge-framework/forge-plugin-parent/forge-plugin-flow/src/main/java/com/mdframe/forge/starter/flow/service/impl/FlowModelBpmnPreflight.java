@@ -49,10 +49,12 @@ final class FlowModelBpmnPreflight {
 
     static void validateBpmnStructure(String bpmnXml) {
         BpmnXmlUtils.BpmnAnalysis analysis = analyzeSingleProcess(bpmnXml);
-        if (analysis.nodes().stream().noneMatch(node -> "startEvent".equals(node.type()))) {
+        if (analysis.nodes().stream().noneMatch(
+                node -> node.topLevel() && "startEvent".equals(node.type()))) {
             throw new RuntimeException("流程模型缺少开始节点，请至少配置一个开始节点。");
         }
-        if (analysis.nodes().stream().noneMatch(node -> "endEvent".equals(node.type()))) {
+        if (analysis.nodes().stream().noneMatch(
+                node -> node.topLevel() && "endEvent".equals(node.type()))) {
             throw new RuntimeException("流程模型缺少结束节点，请至少配置一个结束节点。");
         }
         Set<String> nodeIds = analysis.nodes().stream()
@@ -77,7 +79,9 @@ final class FlowModelBpmnPreflight {
             String label = (name == null || name.isBlank()) ? id : name;
             if ("scriptTask".equalsIgnoreCase(type)
                     || "callActivity".equalsIgnoreCase(type)
-                    || "subProcess".equalsIgnoreCase(type)) {
+                    || "subProcess".equalsIgnoreCase(type)
+                    || "transaction".equalsIgnoreCase(type)
+                    || "adHocSubProcess".equalsIgnoreCase(type)) {
                 throw new RuntimeException(String.format(
                         "节点 [%s] 使用了暂不支持的执行类型 [%s]，请改用用户任务或受支持的抄送节点。",
                         label == null ? "未命名" : label, type));

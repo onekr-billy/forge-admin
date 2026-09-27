@@ -92,6 +92,31 @@ class FlowModelBpmnPreflightTest {
         RuntimeException conditionalDefault = assertThrows(RuntimeException.class,
                 () -> FlowModelBpmnPreflight.validateExecutableNodesAndGatewayConditions(invalidDefault));
         assertTrue(conditionalDefault.getMessage().contains("默认分支"));
+
+        String cdataCondition = document(body.formatted("",
+                "<bpmn:conditionExpression><![CDATA[${approved == true}]]></bpmn:conditionExpression>"));
+        assertDoesNotThrow(() -> FlowModelBpmnPreflight.validateExecutableNodesAndGatewayConditions(cdataCondition));
+    }
+
+    @Test
+    void nestedUnsupportedContainerCannotSupplyProcessBoundaries() {
+        String nestedOnly = document("""
+                <bpmn:transaction id='nested'>
+                  <bpmn:startEvent id='nestedStart'/>
+                  <bpmn:userTask id='nestedTask' flowable:candidateUsers='1'/>
+                  <bpmn:endEvent id='nestedEnd'/>
+                  <bpmn:sequenceFlow id='nestedFirst' sourceRef='nestedStart' targetRef='nestedTask'/>
+                  <bpmn:sequenceFlow id='nestedLast' sourceRef='nestedTask' targetRef='nestedEnd'/>
+                </bpmn:transaction>
+                """);
+
+        RuntimeException missingTopLevelStart = assertThrows(RuntimeException.class,
+                () -> FlowModelBpmnPreflight.validateBpmnStructure(nestedOnly));
+        assertTrue(missingTopLevelStart.getMessage().contains("缺少开始节点"));
+
+        RuntimeException unsupportedContainer = assertThrows(RuntimeException.class,
+                () -> FlowModelBpmnPreflight.validateExecutableNodesAndGatewayConditions(nestedOnly));
+        assertTrue(unsupportedContainer.getMessage().contains("暂不支持的执行类型"));
     }
 
     @Test

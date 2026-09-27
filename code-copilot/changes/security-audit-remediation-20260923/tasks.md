@@ -287,7 +287,7 @@
 - [x] 将 `validateNoProcessData()` 从 Service 层 `LambdaQueryWrapper` 迁移到 Mapper XML，显式加入租户和逻辑删除条件。
 - [ ] 为 Flowable 镜像、候选人、业务状态和通知事件增加唯一 event id、顺序/版本、幂等写入和补偿任务；避免 `fallbackExecution=true` 在无事务上下文直接发送不可回收通知。（已移除 `fallbackExecution=true`，通知只在事务成功提交后消费；唯一事件 ID、顺序版本、Outbox 和补偿任务仍未完成）
 - [x] 禁止日志输出原始 BPMN、流程变量和完整通知 URL；Webhook 继续使用出站场景 allowlist/private-network policy。（原始 BPMN/流程变量日志已移除；Webhook 日志仅保留 scheme/host/port 和异常类型，请求仍统一走 `FLOW_API` 受控出站场景）
-- [ ] 增加 XXE/DOCTYPE、CDATA、单引号、命名空间、属性重排、多 process、嵌套节点、非法引用和事件乱序测试。（本轮已覆盖 XXE/DOCTYPE、单引号、命名空间/属性顺序、多 process、非法引用和不支持执行节点；其余留待集成验证）
+- [ ] 增加 XXE/DOCTYPE、CDATA、单引号、命名空间、属性重排、多 process、嵌套节点、非法引用和事件乱序测试。（BPMN 解析矩阵已覆盖：XXE/DOCTYPE、CDATA、单引号、命名空间/属性顺序、多 process、非法引用、不支持执行节点及嵌套容器绕过；事件乱序测试随唯一事件 ID/顺序版本/Outbox 任务继续保留）
 
 ## Phase 5：收尾和上线门禁
 

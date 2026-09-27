@@ -31,7 +31,8 @@ public final class BpmnXmlUtils {
 
     private static final Set<String> EXECUTABLE_NODE_TYPES = Set.of(
             "startEvent", "endEvent", "userTask", "serviceTask", "scriptTask",
-            "exclusiveGateway", "parallelGateway", "inclusiveGateway", "callActivity", "subProcess");
+            "exclusiveGateway", "parallelGateway", "inclusiveGateway", "callActivity", "subProcess",
+            "transaction", "adHocSubProcess");
 
     private BpmnXmlUtils() {
     }
@@ -61,7 +62,7 @@ public final class BpmnXmlUtils {
                 }
                 String type = localName(element);
                 if (EXECUTABLE_NODE_TYPES.contains(type)) {
-                    nodes.add(new BpmnNodeInfo(type, attributesOf(element)));
+                    nodes.add(new BpmnNodeInfo(type, attributesOf(element), isDirectProcessChild(element)));
                 }
                 if ("sequenceFlow".equals(type)) {
                     sequenceFlows.add(new BpmnSequenceFlowInfo(
@@ -526,6 +527,11 @@ public final class BpmnXmlUtils {
         return idx >= 0 ? nodeName.substring(idx + 1) : nodeName;
     }
 
+    private static boolean isDirectProcessChild(Element element) {
+        Node parent = element.getParentNode();
+        return parent instanceof Element parentElement && "process".equals(localName(parentElement));
+    }
+
     private static String normalizeText(String text) {
         return text == null ? "" : text.replaceAll("\\s+", " ").trim();
     }
@@ -541,7 +547,7 @@ public final class BpmnXmlUtils {
                                List<BpmnSequenceFlowInfo> sequenceFlows) {
     }
 
-    public record BpmnNodeInfo(String type, Map<String, String> attributes) {
+    public record BpmnNodeInfo(String type, Map<String, String> attributes, boolean topLevel) {
 
         public String attribute(String name) {
             String direct = attributes.get(name);

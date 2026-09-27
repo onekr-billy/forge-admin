@@ -265,6 +265,14 @@
 - 实际结果：`FlowNotificationContentRendererTest` 与 `FlowWebhookNotifierTest` 定向回归 7/7；`forge-plugin-flow` 完整测试 197/197，0 失败、0 错误、0 跳过；源码扫描无 `fallbackExecution=true` 和完整 Webhook URL 日志。
 - 环境限制：本轮未实现通知 Outbox、唯一事件 ID、顺序版本、失败补偿与人工重放；也未连接真实 Webhook 目标执行 DNS 重绑定和网络策略集成验证。
 
+## 1.30 2026-09-28 BPMN 嵌套执行容器绕过修复
+
+- 顶层边界：流程结构校验只能把 `process` 的直属 `startEvent`/`endEvent` 视为流程边界；嵌套容器内部的开始/结束节点不能替代顶层节点。
+- 执行白名单：`transaction` 与 `adHocSubProcess` 必须进入可执行节点识别集合并按不支持类型拒绝，不能因未被解析器识别而绕过 `subProcess`/`callActivity`/`scriptTask` 同级限制。
+- 表达式兼容：合法 `conditionExpression` 的 CDATA 写法必须继续通过；结构加固不能退化单引号、命名空间前缀或属性顺序兼容性。
+- 实际结果：`FlowModelBpmnPreflightTest` 与 `BpmnXmlUtilsTest` 定向回归 10/10；`forge-plugin-flow` 完整测试 198/198，0 失败、0 错误、0 跳过。
+- 环境限制：未部署到真实 Flowable 引擎执行恶意 transaction/adHocSubProcess 模型；事件乱序仍属于通知 Outbox 与顺序版本任务，不计入本批完成项。
+
 ## 2. P0 必跑验证
 
 ### 动态脚本与 HTML

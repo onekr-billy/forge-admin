@@ -1,5 +1,22 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：BPMN 嵌套执行容器绕过修复
+
+### 实现
+
+- `BpmnXmlUtils` 为可执行节点补充是否属于 `process` 直属子节点的结构信息；`FlowModelBpmnPreflight` 只允许顶层开始/结束节点满足流程边界要求。
+- 将 BPMN `transaction` 与 `adHocSubProcess` 纳入可执行节点识别，并与 `subProcess`、`callActivity`、`scriptTask` 一样在当前受限执行模型中明确拒绝。
+- 修复前，只有 transaction 内嵌开始、用户任务、结束和连线的模型会被结构与执行白名单校验同时放行；修复后分别因缺少顶层开始节点和不支持的执行容器被拒绝。
+
+### 验证
+
+- `FlowModelBpmnPreflightTest` 与 `BpmnXmlUtilsTest` 定向回归 10/10 通过，新增 transaction 嵌套边界绕过及合法 CDATA 条件表达式用例。
+- `forge-plugin-flow` 完整测试 198/198 通过，0 失败、0 错误、0 跳过；`git diff --check` 通过。
+
+### 未覆盖
+
+- 未连接真实 Flowable 引擎部署恶意 transaction/adHocSubProcess 模型；通知事件乱序验证仍待唯一事件 ID、顺序版本和 Outbox 能力完成后执行。
+
 ## 2026-09-28：Flow 通知提交边界与 Webhook 日志脱敏
 
 ### 实现
