@@ -53,19 +53,25 @@ public class BusinessTriggerExecutor {
      */
     @Async
     public void executeTriggersAsync(BusinessEvent event) {
-        Long tenantId = trustedTenantId(event);
-        if (tenantId == null || !BusinessEventEnvelope.isTrusted(event)) {
-            log.error("拒绝执行缺少可信信封的业务事件, objectCode={}, eventType={}",
-                    event == null ? null : event.getObjectCode(), event == null ? null : event.getEventType());
-            return;
-        }
         try {
-            TenantContextHolder.executeWithTenant(tenantId, () -> executeMatchingTriggers(event, tenantId));
+            executeTriggers(event);
         } catch (Exception e) {
             log.error("触发器执行异常, objectCode={}, eventType={}",
                     event == null ? null : event.getObjectCode(),
                     event == null ? null : event.getEventType(), e);
         }
+    }
+
+    /**
+     * 同步接收已由 Outbox 认领的事件。方法返回前，每个匹配触发器都已持久化自己的
+     * 幂等执行命令，因此 Outbox 可以安全完成本次投递。
+     */
+    public void executeTriggers(BusinessEvent event) {
+        Long tenantId = trustedTenantId(event);
+        if (tenantId == null || !BusinessEventEnvelope.isTrusted(event)) {
+            throw new BusinessException("拒绝执行缺少可信信封的业务事件");
+        }
+        TenantContextHolder.executeWithTenant(tenantId, () -> executeMatchingTriggers(event, tenantId));
     }
 
     private void executeMatchingTriggers(BusinessEvent event, Long tenantId) {

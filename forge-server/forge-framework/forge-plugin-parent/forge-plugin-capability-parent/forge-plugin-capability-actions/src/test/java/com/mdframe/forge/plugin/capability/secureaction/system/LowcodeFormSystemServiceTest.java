@@ -9,7 +9,7 @@ import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessObjectQueryDTO
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectVO;
 import com.mdframe.forge.plugin.generator.mapper.BusinessDocumentConfigMapper;
 import com.mdframe.forge.plugin.generator.mapper.GenDatasourceMapper;
-import com.mdframe.forge.plugin.generator.manager.DynamicCrudCreateManager;
+import com.mdframe.forge.plugin.generator.manager.DynamicCrudMutationManager;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceResolver;
 import com.mdframe.forge.plugin.generator.service.*;
 import com.mdframe.forge.plugin.generator.service.businessapp.*;
@@ -38,7 +38,7 @@ class LowcodeFormSystemServiceTest {
     private final BusinessObjectService objects = mock(BusinessObjectService.class);
     private final LowcodeRuntimeDataSourceResolver resolver = new LowcodeRuntimeDataSourceResolver(mapper, datasources);
     private final LowcodeFormSystemService service = new LowcodeFormSystemService(
-            objects, actions, configs, new DynamicCrudCreateManager(records, events, transactions),
+            objects, actions, configs, new DynamicCrudMutationManager(records, events),
             new LowcodeFormInvocationGuard(receipts, transactions), resolver, mapper,
             new CapabilitySchemaValidator(), documents);
     private final AiBusinessObjectDesignVersion version = new AiBusinessObjectDesignVersion();

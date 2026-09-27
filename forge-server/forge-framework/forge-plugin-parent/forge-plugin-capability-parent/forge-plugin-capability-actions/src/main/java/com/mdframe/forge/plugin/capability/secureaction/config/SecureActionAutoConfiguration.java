@@ -34,7 +34,7 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessProcessMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessProcessVersionMapper;
 import com.mdframe.forge.plugin.capability.secureaction.mapper.LowcodeFormReceiptMapper;
 import com.mdframe.forge.plugin.generator.service.AiCrudConfigService;
-import com.mdframe.forge.plugin.generator.manager.DynamicCrudCreateManager;
+import com.mdframe.forge.plugin.generator.manager.DynamicCrudMutationManager;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceResolver;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessObjectService;
 import com.mdframe.forge.plugin.generator.mapper.BusinessDocumentConfigMapper;
@@ -87,7 +87,7 @@ public class SecureActionAutoConfiguration {
     @Bean
     public LowcodeFormSystemService lowcodeFormSystemService(
             BusinessObjectService objects, BusinessObjectActionService actions, AiCrudConfigService configs,
-            DynamicCrudCreateManager formCreate, LowcodeFormInvocationGuard invocations,
+            DynamicCrudMutationManager formCreate, LowcodeFormInvocationGuard invocations,
             LowcodeRuntimeDataSourceResolver datasourceResolver,
             ObjectMapper mapper, CapabilitySchemaValidator validator,
             BusinessDocumentConfigMapper documents) {

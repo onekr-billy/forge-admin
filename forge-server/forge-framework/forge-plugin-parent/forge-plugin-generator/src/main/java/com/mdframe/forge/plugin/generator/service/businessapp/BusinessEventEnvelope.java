@@ -73,6 +73,33 @@ public final class BusinessEventEnvelope {
         return "EVENT:" + sha256(event == null ? "" : StringUtils.defaultString(event.getEventId()));
     }
 
+    /** 为已盖章事件补充聚合序号，并刷新完整信封摘要。 */
+    public static BusinessEvent assignAggregateSequence(BusinessEvent event, long aggregateSequence) {
+        if (event == null || aggregateSequence <= 0 || !isTrusted(event)) {
+            throw new IllegalArgumentException("业务事件缺少可信信封或聚合序号无效");
+        }
+        event.setAggregateSequence(aggregateSequence);
+        event.setEventDigest(payloadDigest(event));
+        return event;
+    }
+
+    /** 不含 Outbox 聚合序号的逻辑载荷摘要，用于稳定事件 ID 的重复写入校验。 */
+    public static String logicalDigest(BusinessEvent event) {
+        return sha256(canonicalJson(commonMaterial(event, false)));
+    }
+
+    public static String aggregateKey(BusinessEvent event) {
+        if (event == null || event.getTenantId() == null || event.getTenantId() <= 0
+                || StringUtils.isBlank(event.getObjectCode())) {
+            throw new IllegalArgumentException("业务事件缺少聚合身份");
+        }
+        String recordIdentity = StringUtils.defaultIfBlank(event.getRecordId(), event.getEventId());
+        if (StringUtils.isBlank(recordIdentity)) {
+            throw new IllegalArgumentException("业务事件缺少记录身份");
+        }
+        return sha256(event.getTenantId() + ":" + event.getObjectCode().trim() + ":" + recordIdentity.trim());
+    }
+
     private static boolean isAllowedEventType(String source, String eventType) {
         if (StringUtils.isBlank(eventType)) {
             return false;
@@ -95,14 +122,17 @@ public final class BusinessEventEnvelope {
     }
 
     private static String payloadDigest(BusinessEvent event) {
-        return sha256(canonicalJson(commonMaterial(event)));
+        return sha256(canonicalJson(commonMaterial(event, true)));
     }
 
-    private static Map<String, Object> commonMaterial(BusinessEvent event) {
+    private static Map<String, Object> commonMaterial(BusinessEvent event, boolean includeAggregateSequence) {
         Map<String, Object> material = new LinkedHashMap<>();
         material.put("eventId", event.getEventId());
         material.put("eventSource", event.getEventSource());
         material.put("eventVersion", event.getEventVersion());
+        if (includeAggregateSequence) {
+            material.put("aggregateSequence", event.getAggregateSequence());
+        }
         material.put("tenantId", event.getTenantId());
         material.put("eventType", event.getEventType());
         material.put("suiteCode", event.getSuiteCode());

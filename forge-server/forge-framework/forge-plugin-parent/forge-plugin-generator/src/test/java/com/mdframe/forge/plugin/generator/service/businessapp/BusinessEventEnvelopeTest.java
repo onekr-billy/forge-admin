@@ -70,6 +70,21 @@ class BusinessEventEnvelopeTest {
         assertFalse(BusinessEventEnvelope.isTrusted(event));
     }
 
+    @Test
+    @DisplayName("Outbox 分配聚合序号后刷新完整摘要且保持逻辑摘要")
+    void assignsAggregateSequenceWithoutChangingLogicalIdentity() {
+        BusinessEvent event = stamp(Map.of("status", "DRAFT"), "stable-update");
+        String eventId = event.getEventId();
+        String logicalDigest = BusinessEventEnvelope.logicalDigest(event);
+
+        BusinessEventEnvelope.assignAggregateSequence(event, 7L);
+
+        assertEquals(eventId, event.getEventId());
+        assertEquals(7L, event.getAggregateSequence());
+        assertEquals(logicalDigest, BusinessEventEnvelope.logicalDigest(event));
+        assertTrue(BusinessEventEnvelope.isTrusted(event));
+    }
+
     private BusinessEvent stamp(Map<String, Object> recordData) {
         return stamp(recordData, null);
     }

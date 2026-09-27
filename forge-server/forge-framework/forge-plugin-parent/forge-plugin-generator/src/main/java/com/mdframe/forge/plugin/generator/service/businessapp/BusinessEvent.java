@@ -34,6 +34,9 @@ public class BusinessEvent {
     /** 信封载荷 SHA-256 摘要，用于发现传递期间的意外修改。 */
     private String eventDigest;
 
+    /** 同一租户、业务对象和记录内的单调事件序号，由事务 Outbox 分配。 */
+    private Long aggregateSequence;
+
     /** 事件类型 */
     private String eventType;
 
