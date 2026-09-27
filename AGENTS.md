@@ -508,6 +508,18 @@ ORDER BY installed_rank DESC;
 - 按稳定业务边界拆成 Facade/Orchestrator、策略、编译器、领域服务、仓储等组件；入口保留公开 API 和事务边界，不得仅为凑行数制造无职责的转发类或循环依赖。
 - 每个拆分阶段必须有编译及相关契约/回归测试，特别核对租户、权限、状态机、回调幂等、运行时 JSON 与 SQL 协议。
 
+### 5.16 代码形态上限与 AI 编码红线
+
+> 短清单，细则见 `code-copilot/rules/coding-style.md` §9–§12。新增代码必须达标；修改存量代码时不得让指标继续恶化。
+
+- **形态上限**：单方法 ≤ **80 行**（前后端一致），单行 ≤ **120** 字符，认知复杂度 ≤ **15**，参数 ≤ **5** 个（超过封装 DTO），嵌套 ≤ **3** 层。类与 SFC 行数仍以 5.14、5.15 为准。
+- **注入与事务**：构造器注入（`@RequiredArgsConstructor` + `final`），新代码禁止字段 `@Autowired`；写事务用 `@Transactional(rollbackFor = Exception.class)`，禁止自调用期望事务生效，事务内禁止远程调用。
+- **线程池**：新代码禁止 `Executors.newXxx`，用 Spring `ThreadPoolTaskExecutor`（有界队列、命名线程、传递租户上下文）。
+- **注入防护**：Mapper XML 只用 `#{}`；`${}` 仅限经白名单校验的表名/列名/排序字段。
+- **鉴权**：非公开接口必须有 `@SaCheckPermission` 等鉴权注解；禁止用前端传入的 `tenantId`/`userId` 做权限判断；禁止为跑通代码关闭鉴权、租户拦截或放开 CORS `*`。
+- **依赖**：禁止引入未确认真实存在的依赖，优先复用 `forge-dependencies` BOM；新增依赖须在 Spec 说明。
+- **AI 行为**：先搜索确认类/方法/组件存在再调用，禁止臆造 API；只改当前 Task 相关代码；禁止删测试、放宽断言、加 `eslint-disable`/`@SuppressWarnings` 来通过检查。
+
 
 ---
 
@@ -642,7 +654,7 @@ curl -s -X DELETE http://localhost:8580/system/user/123 \
 4. **`code-copilot/rules/coding-style.md`** — 编码规范
 5. **`forge-admin-ui/DESIGN.md`** — 前端界面设计、公共组件、资产卡片和交互规范（前端 UI/样式变更必读）
 6. **`code-copilot/rules/domain-rules.md`** — 业务领域约束
-7. **`code-copilot/rules/security.md`** — 安全红线
+7. **`code-copilot/rules/coding-style.md` §10** — 安全编码细则（OWASP Top 10:2025 + AI 生成代码风险）
 8. **`code-copilot/rules/automated-testing-standard.md`** — 自动化测试与验证标准（执行 `/test` 和阶段验证时必读）
 9. **`code-copilot/memory/pitfalls.md`** — 踩坑记录（每次新对话必读）
 10. **`code-copilot/memory/decisions.md`** — 项目决策记录

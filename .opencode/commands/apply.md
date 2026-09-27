@@ -27,23 +27,29 @@ agent: general
 1. **读取任务详情**
    - 明确任务目标
    - 确认涉及文件
+   - 首个 Task 开始前使用 `read` 工具读取 `code-copilot/rules/coding-style.md`（重点 §9 Java 形态与范式、§10 安全编码、§11 前端补充、§12 AI 编码行为约束），整个变更内遵守
 
 2. **执行代码变更**
    - 使用 `edit` 工具修改现有文件
    - 使用 `write` 工具创建新文件
    - 使用 `glob` 和 `grep` 工具搜索相关代码
 
-3. **验证证据（Verification 铁律）**
+3. **规范自检**
+   - 对照 AGENTS.md 5.16 与 `coding-style.md` §9.1 检查本 Task 新增/修改方法的行数、参数、嵌套、复杂度
+   - 对照 `coding-style.md` §10 检查鉴权注解、`${}` 使用、敏感数据、新增依赖
+   - 不达标先修正再进入编译验证
+
+4. **验证证据（Verification 铁律）**
    - 使用 `bash` 工具执行编译命令
    - 展示完整编译输出
    - 如有错误，立即修复
 
-4. **Git Commit**
+5. **Git Commit**
    - 一个 Task 一个 Commit
    - Message 格式：`[$1] <中文简述>`
    - 使用 `bash` 工具执行 git add 和 git commit
 
-5. **更新日志**
+6. **更新日志**
    - 使用 `edit` 工具更新 `tasks.md` 任务状态
    - 使用 `edit` 工具更新 `spec.md` 执行日志
 

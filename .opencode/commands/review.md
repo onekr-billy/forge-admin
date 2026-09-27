@@ -39,7 +39,7 @@ agent: general
 
 1. **读取代码规则**
    - 使用 `read` 工具读取 `code-copilot/rules/coding-style.md`
-   - 使用 `read` 工具读取 `.opencode/instructions/code-rules.md`
+   - 使用 `read` 工具读取根目录 `AGENTS.md` 第 5 章（关键约定，含 5.16 代码形态上限与 AI 编码红线）
 
 2. **检查代码质量**
    - 代码风格是否符合规范
