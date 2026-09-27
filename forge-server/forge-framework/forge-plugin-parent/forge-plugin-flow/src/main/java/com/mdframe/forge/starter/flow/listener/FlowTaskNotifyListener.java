@@ -116,10 +116,11 @@ public class FlowTaskNotifyListener {
     private FlowWebhookNotifier flowWebhookNotifier;
 
     /**
-     * 事务提交后异步消费通知事件；无事务上下文时（fallbackExecution）直接异步执行
+     * 仅在事务成功提交后异步消费通知事件。无事务上下文时不得直接发送，
+     * 避免数据库状态尚未形成可靠提交边界时产生不可补偿的外部副作用。
      */
     @Async("flowEventExecutor")
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onNotifyEvent(FlowTaskNotifyEvent event) {
         try {
             switch (event.getType()) {

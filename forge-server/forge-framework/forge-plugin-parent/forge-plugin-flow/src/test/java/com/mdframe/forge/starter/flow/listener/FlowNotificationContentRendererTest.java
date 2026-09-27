@@ -70,6 +70,6 @@ class FlowNotificationContentRendererTest {
         assertEquals("flowEventExecutor", async.value());
         assertNotNull(transactional);
         assertEquals(TransactionPhase.AFTER_COMMIT, transactional.phase());
-        assertTrue(transactional.fallbackExecution());
+        assertFalse(transactional.fallbackExecution());
     }
 }

@@ -109,8 +109,8 @@ public class FlowWebhookNotifier {
                         attempt, safeTarget, message.getEventType(), message.getBusinessKey());
                 return;
             } catch (Exception e) {
-                log.warn("[FlowWebhook] 回调失败(attempt={}/{}): target={}, eventType={}, error={}",
-                        attempt, MAX_RETRY, safeTarget, message.getEventType(), e.getMessage());
+                log.warn("[FlowWebhook] 回调失败(attempt={}/{}): target={}, eventType={}, failureType={}",
+                        attempt, MAX_RETRY, safeTarget, message.getEventType(), safeFailureType(e));
                 if (attempt < MAX_RETRY) {
                     try {
                         if (retryDelayMillis > 0) {
@@ -121,8 +121,8 @@ public class FlowWebhookNotifier {
                         return;
                     }
                 } else {
-                    log.error("[FlowWebhook] 回调最终失败，已放弃: target={}, eventType={}, businessKey={}",
-                            safeTarget, message.getEventType(), message.getBusinessKey(), e);
+                    log.error("[FlowWebhook] 回调最终失败，已放弃: target={}, eventType={}, businessKey={}, failureType={}",
+                            safeTarget, message.getEventType(), message.getBusinessKey(), safeFailureType(e));
                 }
             }
         }
@@ -155,7 +155,7 @@ public class FlowWebhookNotifier {
         }
     }
 
-    private String safeTarget(String webhookUrl) {
+    static String safeTarget(String webhookUrl) {
         try {
             URI uri = URI.create(webhookUrl.trim());
             if (uri.getScheme() == null || uri.getHost() == null) {
@@ -167,6 +167,14 @@ public class FlowWebhookNotifier {
         } catch (IllegalArgumentException exception) {
             return "<invalid>";
         }
+    }
+
+    static String safeFailureType(Throwable failure) {
+        if (failure == null) {
+            return "UnknownFailure";
+        }
+        String simpleName = failure.getClass().getSimpleName();
+        return simpleName == null || simpleName.isBlank() ? "UnknownFailure" : simpleName;
     }
 
     private static ObjectMapper createObjectMapper() {

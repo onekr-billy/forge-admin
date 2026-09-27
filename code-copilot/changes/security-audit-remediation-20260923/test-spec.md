@@ -257,6 +257,14 @@
 - 实际结果：定向测试分别为插件 9/9、Flow Server 28/28；`forge-plugin-flow` 完整测试 196/196，`forge-flow-server` 完整测试 46/46，均为 0 失败、0 错误、0 跳过；此前四个回归基线失败全部清零。
 - 环境限制：本轮未连接真实 MySQL/Flowable 或启动 Flow Server 执行动态表单任务提交与监控分页 HTTP 验收；以校验器行为测试、委托链源码契约和两个模块完整测试作为自动化证据。
 
+## 1.29 2026-09-28 Flow 通知提交边界与 Webhook 日志脱敏
+
+- 提交边界：`FlowTaskNotifyListener` 只允许在 `AFTER_COMMIT` 阶段消费，`fallbackExecution` 必须保持 false；无事务事件不能直接触发站内信、协同卡片、Redis 或 Webhook 外部副作用。
+- 日志边界：Webhook 日志目标只保留小写的 scheme、host 和显式 port，不得包含 userinfo、path、query 或 fragment；失败日志只记录异常类型，不记录可能携带完整 URL 的异常消息与堆栈。
+- 出站边界：实际请求仍必须使用 `SecureOutboundClient` 的 `FLOW_API` 场景，继续执行协议、域名/IP、私网、重定向、超时、响应大小、并发隔离和熔断策略。
+- 实际结果：`FlowNotificationContentRendererTest` 与 `FlowWebhookNotifierTest` 定向回归 7/7；`forge-plugin-flow` 完整测试 197/197，0 失败、0 错误、0 跳过；源码扫描无 `fallbackExecution=true` 和完整 Webhook URL 日志。
+- 环境限制：本轮未实现通知 Outbox、唯一事件 ID、顺序版本、失败补偿与人工重放；也未连接真实 Webhook 目标执行 DNS 重绑定和网络策略集成验证。
+
 ## 2. P0 必跑验证
 
 ### 动态脚本与 HTML

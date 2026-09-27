@@ -60,6 +60,17 @@ class FlowWebhookNotifierTest {
         verify(client, times(2)).execute(any());
     }
 
+    @Test
+    void shouldRedactWebhookCredentialsPathAndFailureMessageFromLogFields() {
+        assertEquals("https://hooks.example.com:8443",
+                FlowWebhookNotifier.safeTarget(
+                        "https://user:password@hooks.example.com:8443/callback?token=hidden#fragment"));
+        assertEquals("<invalid>", FlowWebhookNotifier.safeTarget("not-a-url?token=hidden"));
+        assertEquals("IllegalStateException",
+                FlowWebhookNotifier.safeFailureType(
+                        new IllegalStateException("https://hooks.example.com/callback?token=hidden")));
+    }
+
     private FlowEventMessage message() {
         return FlowEventMessage.builder()
                 .eventType(FlowEventMessage.PROCESS_COMPLETED)

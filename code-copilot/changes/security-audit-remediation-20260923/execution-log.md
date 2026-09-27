@@ -1,5 +1,23 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：Flow 通知提交边界与 Webhook 日志脱敏
+
+### 实现
+
+- `FlowTaskNotifyListener` 移除 `fallbackExecution=true`，通知事件只在 Spring 事务成功提交后进入异步执行器，避免无事务上下文直接产生无法随业务状态回滚的外部副作用。
+- `FlowWebhookNotifier` 将日志目标固定脱敏为 scheme/host/显式 port，移除异常消息和异常堆栈输出，只保留异常类型；userinfo、回调路径、query 密钥和 fragment 均不进入日志。
+- Webhook 请求仍统一通过 `SecureOutboundClient` 的 `FLOW_API` 场景发送，未绕过既有出站 allowlist、私网阻断、重定向复核和超时限制。
+
+### 验证
+
+- `FlowNotificationContentRendererTest` 与 `FlowWebhookNotifierTest` 定向回归 7/7 通过，新增 userinfo/path/query/fragment 和异常消息脱敏断言。
+- `forge-plugin-flow` 完整测试 197/197 通过，0 失败、0 错误、0 跳过。
+- 源码扫描无 `fallbackExecution=true`，无记录完整 `webhookUrl` 或 Webhook 异常消息的日志；`git diff --check` 通过。
+
+### 未覆盖
+
+- 通知唯一事件 ID、顺序版本、持久化 Outbox、重试补偿、死信和人工重放仍未完成；未连接真实 Webhook 服务执行 DNS 重绑定及网络故障注入。
+
 ## 2026-09-28：Flow 动态数组必填与拆分职责契约回归
 
 ### 实现
