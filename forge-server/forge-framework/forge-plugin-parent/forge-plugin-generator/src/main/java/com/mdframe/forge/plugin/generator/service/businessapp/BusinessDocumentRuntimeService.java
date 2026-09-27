@@ -51,7 +51,7 @@ public class BusinessDocumentRuntimeService {
             vo.setMessage("业务对象编码不能为空");
             return vo;
         }
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireTenantId();
         DocumentRuntimeContext context = resolveRuntimeContext(tenantId, objectCode);
         String canonicalObjectCode = context.objectCode();
         String businessKey = buildBusinessKey(canonicalObjectCode, recordId);
@@ -110,7 +110,7 @@ public class BusinessDocumentRuntimeService {
             return result;
         }
 
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireTenantId();
         DocumentRuntimeContext context = resolveRuntimeContext(tenantId, objectCode);
         AiBusinessDocumentConfig config = context.documentConfig();
         BusinessDocumentConfigVO configVO = config == null ? null : documentConfigService.toVO(config, context.runtimeConfig());
@@ -691,13 +691,13 @@ public class BusinessDocumentRuntimeService {
             return null;
         }
         return crudConfigMapper.selectPublishedByObjectCodeOrConfigKey(
-                tenantId != null ? tenantId : resolveTenantId(), objectCodeOrConfigKey);
+                requireTenantId(tenantId), objectCodeOrConfigKey);
     }
 
     private AiBusinessDocumentConfig resolveEnabledDocumentConfig(Long tenantId,
                                                                   String objectCodeOrConfigKey,
                                                                   AiCrudConfig runtimeConfig) {
-        Long effectiveTenantId = tenantId != null ? tenantId : resolveTenantId();
+        Long effectiveTenantId = requireTenantId(tenantId);
         LinkedHashSet<String> configKeys = new LinkedHashSet<>();
         if (runtimeConfig != null) {
             configKeys.add(runtimeConfig.getConfigKey());
@@ -728,7 +728,7 @@ public class BusinessDocumentRuntimeService {
                                                    String objectCodeOrConfigKey,
                                                    AiCrudConfig runtimeConfig,
                                                    AiBusinessDocumentConfig documentConfig) {
-        Long effectiveTenantId = tenantId != null ? tenantId : resolveTenantId();
+        Long effectiveTenantId = requireTenantId(tenantId);
         AiBusinessObject object = null;
         if (documentConfig != null && StringUtils.isNotBlank(documentConfig.getConfigKey())) {
             object = businessObjectMapper.selectByConfigKey(effectiveTenantId, documentConfig.getConfigKey());
@@ -834,14 +834,27 @@ public class BusinessDocumentRuntimeService {
         return result.toString();
     }
 
-    private Long resolveTenantId() {
+    private Long requireTenantId() {
         Long tenantId;
         try {
             tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
             tenantId = null;
         }
-        return tenantId != null ? tenantId : 1L;
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("业务单据运行时缺少可信租户上下文");
+        }
+        return tenantId;
+    }
+
+    private Long requireTenantId(Long tenantId) {
+        if (tenantId == null) {
+            return requireTenantId();
+        }
+        if (tenantId <= 0) {
+            throw new BusinessException("业务单据运行时缺少可信租户上下文");
+        }
+        return tenantId;
     }
 
     private String resolveUserId() {

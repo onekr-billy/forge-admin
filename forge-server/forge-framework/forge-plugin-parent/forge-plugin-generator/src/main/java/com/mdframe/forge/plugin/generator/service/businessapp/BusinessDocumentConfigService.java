@@ -55,10 +55,11 @@ public class BusinessDocumentConfigService {
     }
 
     public BusinessDocumentConfigVO getConfig(Long objectId) {
-        AiBusinessObject object = objectService.requireEntity(objectId);
-        AiBusinessDocumentConfig config = documentConfigMapper.selectByObjectId(resolveTenantId(), objectId);
+        Long tenantId = requireTenantId();
+        AiBusinessObject object = objectService.requireEntity(tenantId, objectId);
+        AiBusinessDocumentConfig config = documentConfigMapper.selectByObjectId(tenantId, objectId);
         if (config == null) {
-            config = documentConfigMapper.selectByObjectCode(resolveTenantId(), object.getObjectCode());
+            config = documentConfigMapper.selectByObjectCode(tenantId, object.getObjectCode());
         }
         if (config == null) {
             BusinessDocumentConfigVO vo = new BusinessDocumentConfigVO();
@@ -90,7 +91,8 @@ public class BusinessDocumentConfigService {
         if (dto == null) {
             throw new BusinessException("单据配置不能为空");
         }
-        AiBusinessObject object = objectService.requireEntity(objectId);
+        Long tenantId = requireTenantId();
+        AiBusinessObject object = objectService.requireEntity(tenantId, objectId);
         boolean enabled = Boolean.TRUE.equals(dto.getDocumentEnabled());
         String documentNoRule = noRuleEngine().normalizeTemplate(StringUtils.firstNonBlank(dto.getNoRuleTemplate(), dto.getDocumentNoRule()));
         List<BusinessDocumentConfigVO.StatusMappingRowVO> statusRows = normalizeStatusRows(
@@ -99,7 +101,6 @@ public class BusinessDocumentConfigService {
         if (StringUtils.isNotBlank(documentNoRule)) {
             noRuleEngine().validateTemplate(documentNoRule);
         }
-        Long tenantId = resolveTenantId();
         String documentNoField = text(readObjectMap(dto.getOptions()).get("documentNoField"));
         if (enabled && StringUtils.isNotBlank(documentNoRule) && StringUtils.isBlank(documentNoField)) {
             AiCrudConfig runtimeConfig = crudConfigMapper.selectByConfigKey(tenantId, object.getConfigKey());
@@ -107,13 +108,13 @@ public class BusinessDocumentConfigService {
         }
         if (enabled) {
             validateRequiredField("单据状态字段", dto.getStatusField());
-            validateObjectField(object, dto.getStatusField(), "单据状态字段");
-            validateOptionalObjectField(object, dto.getStarterField(), "发起人字段");
-            validateOptionalObjectField(object, dto.getOwnerField(), "负责人字段");
+            validateObjectField(object, dto.getStatusField(), "单据状态字段", tenantId);
+            validateOptionalObjectField(object, dto.getStarterField(), "发起人字段", tenantId);
+            validateOptionalObjectField(object, dto.getOwnerField(), "负责人字段", tenantId);
             if (StringUtils.isNotBlank(documentNoRule) && StringUtils.isBlank(documentNoField)) {
                 throw new BusinessException("启用编号规则时必须配置单据编号字段");
             }
-            validateOptionalObjectField(object, documentNoField, "单据编号字段");
+            validateOptionalObjectField(object, documentNoField, "单据编号字段", tenantId);
         }
 
         AiBusinessDocumentConfig config = documentConfigMapper.selectByObjectId(tenantId, objectId);
@@ -138,7 +139,7 @@ public class BusinessDocumentConfigService {
         config.setStarterField(StringUtils.trimToNull(dto.getStarterField()));
         config.setOwnerField(StringUtils.trimToNull(dto.getOwnerField()));
         String requestedFlowKey = StringUtils.trimToNull(dto.getDefaultFlowKey());
-        AiBusinessBinding mainFlowBinding = selectMainFlowBinding(resolveTenantId(), object.getObjectCode());
+        AiBusinessBinding mainFlowBinding = selectMainFlowBinding(tenantId, object.getObjectCode());
         config.setDefaultFlowKey(mainFlowBinding == null
                 ? requestedFlowKey
                 : StringUtils.defaultIfBlank(resolveFlowModelKey(readBindingConfig(mainFlowBinding.getBindingConfig())),
@@ -151,11 +152,11 @@ public class BusinessDocumentConfigService {
         } else {
             documentConfigMapper.updateById(config);
         }
-        syncLegacyFlowBindingIfNeeded(object, requestedFlowKey, config.getDocumentName());
+        syncLegacyFlowBindingIfNeeded(object, requestedFlowKey, config.getDocumentName(), tenantId);
     }
 
     public AiBusinessDocumentConfig selectEnabledByObjectCode(String objectCode) {
-        return selectEnabledByObjectCode(resolveTenantId(), objectCode);
+        return selectEnabledByObjectCode(requireTenantId(), objectCode);
     }
 
     public AiBusinessDocumentConfig selectEnabledByObjectCode(Long tenantId, String objectCode) {
@@ -163,7 +164,7 @@ public class BusinessDocumentConfigService {
             return null;
         }
         AiBusinessDocumentConfig config = documentConfigMapper.selectByObjectCode(
-                tenantId != null ? tenantId : resolveTenantId(), objectCode);
+                requireTenantId(tenantId), objectCode);
         if (config == null || !EnableStatus.ENABLED.matches(config.getDocumentEnabled())) {
             return null;
         }
@@ -175,7 +176,7 @@ public class BusinessDocumentConfigService {
             return null;
         }
         AiBusinessDocumentConfig config = documentConfigMapper.selectByConfigKey(
-                tenantId != null ? tenantId : resolveTenantId(), configKey);
+                requireTenantId(tenantId), configKey);
         if (config == null || !EnableStatus.ENABLED.matches(config.getDocumentEnabled())) {
             return null;
         }
@@ -187,7 +188,7 @@ public class BusinessDocumentConfigService {
     }
 
     public BusinessDocumentConfigVO toVO(AiBusinessDocumentConfig config, AiCrudConfig runtimeConfig) {
-        Long tenantId = config.getTenantId() != null ? config.getTenantId() : resolveTenantId();
+        Long tenantId = requireTenantId(config.getTenantId());
         Map<String, Object> mainFlowSummary = EnableStatus.ENABLED.matches(config.getDocumentEnabled())
                 ? buildMainFlowSummary(tenantId, config.getObjectCode(), config.getDefaultFlowKey())
                 : unconfiguredMainFlowSummary();
@@ -208,7 +209,7 @@ public class BusinessDocumentConfigService {
                                           AiCrudConfig runtimeConfig,
                                           Map<String, Object> mainFlowSummary) {
         Map<String, Object> options = readObjectMap(config.getOptions());
-        Long tenantId = config.getTenantId() != null ? config.getTenantId() : resolveTenantId();
+        Long tenantId = requireTenantId(config.getTenantId());
         BusinessDocumentConfigVO vo = new BusinessDocumentConfigVO();
         vo.setId(config.getId());
         vo.setObjectId(config.getObjectId());
@@ -268,7 +269,7 @@ public class BusinessDocumentConfigService {
         if (config == null) {
             return null;
         }
-        Long effectiveTenantId = tenantId != null ? tenantId : resolveTenantId();
+        Long effectiveTenantId = requireTenantId(tenantId);
         AiCrudConfig runtimeConfig = null;
         if (StringUtils.isNotBlank(config.getConfigKey())) {
             runtimeConfig = crudConfigMapper.selectByConfigKey(effectiveTenantId, config.getConfigKey());
@@ -387,7 +388,7 @@ public class BusinessDocumentConfigService {
             return;
         }
         AiBusinessDocumentConfig config = documentConfigMapper.selectByObjectCode(
-                tenantId != null ? tenantId : resolveTenantId(), objectCode);
+                requireTenantId(tenantId), objectCode);
         if (config == null) {
             return;
         }
@@ -612,7 +613,7 @@ public class BusinessDocumentConfigService {
         if (StringUtils.isBlank(objectCode)) {
             return null;
         }
-        Long effectiveTenantId = tenantId != null ? tenantId : resolveTenantId();
+        Long effectiveTenantId = requireTenantId(tenantId);
         AiBusinessBinding flowBinding = bindingMapper.selectBindingByTypeAndCode(
                 effectiveTenantId, "OBJECT", objectCode, "FLOW");
         if (isBindingEnabled(flowBinding)) {
@@ -644,11 +645,13 @@ public class BusinessDocumentConfigService {
         return "MANUAL";
     }
 
-    private void syncLegacyFlowBindingIfNeeded(AiBusinessObject object, String requestedFlowKey, String documentName) {
+    private void syncLegacyFlowBindingIfNeeded(AiBusinessObject object,
+                                               String requestedFlowKey,
+                                               String documentName,
+                                               Long tenantId) {
         if (object == null || StringUtils.isBlank(object.getObjectCode()) || StringUtils.isBlank(requestedFlowKey)) {
             return;
         }
-        Long tenantId = resolveTenantId();
         AiBusinessBinding existing = selectMainFlowBinding(tenantId, object.getObjectCode());
         if (existing != null) {
             return;
@@ -705,26 +708,29 @@ public class BusinessDocumentConfigService {
         }
     }
 
-    private void validateOptionalObjectField(AiBusinessObject object, String field, String label) {
+    private void validateOptionalObjectField(AiBusinessObject object,
+                                             String field,
+                                             String label,
+                                             Long tenantId) {
         if (StringUtils.isBlank(field)) {
             return;
         }
-        validateObjectField(object, field, label);
+        validateObjectField(object, field, label, tenantId);
     }
 
-    private void validateObjectField(AiBusinessObject object, String field, String label) {
-        Set<String> fields = collectObjectFields(object);
+    private void validateObjectField(AiBusinessObject object, String field, String label, Long tenantId) {
+        Set<String> fields = collectObjectFields(object, tenantId);
         if (!fields.contains(field)) {
             throw new BusinessException(label + "不存在: " + field);
         }
     }
 
-    private Set<String> collectObjectFields(AiBusinessObject object) {
+    private Set<String> collectObjectFields(AiBusinessObject object, Long tenantId) {
         Set<String> fields = new LinkedHashSet<>(SYSTEM_FIELDS);
         if (object == null || StringUtils.isBlank(object.getConfigKey())) {
             return fields;
         }
-        AiCrudConfig config = crudConfigMapper.selectByConfigKey(resolveTenantId(), object.getConfigKey());
+        AiCrudConfig config = crudConfigMapper.selectByConfigKey(requireTenantId(tenantId), object.getConfigKey());
         if (config == null || StringUtils.isBlank(config.getModelSchema())) {
             return fields;
         }
@@ -859,13 +865,26 @@ public class BusinessDocumentConfigService {
         return new BusinessDocumentNoRuleEngine(sequenceService);
     }
 
-    private Long resolveTenantId() {
+    private Long requireTenantId() {
         Long tenantId;
         try {
             tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
             tenantId = null;
         }
-        return tenantId != null ? tenantId : 1L;
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("业务单据配置缺少可信租户上下文");
+        }
+        return tenantId;
+    }
+
+    private Long requireTenantId(Long tenantId) {
+        if (tenantId == null) {
+            return requireTenantId();
+        }
+        if (tenantId <= 0) {
+            throw new BusinessException("业务单据配置缺少可信租户上下文");
+        }
+        return tenantId;
     }
 }

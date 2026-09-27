@@ -1,5 +1,25 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：业务单据、流程变量与关联运行时租户边界收口
+
+### 实现
+
+- `BusinessDocumentConfigService` 在对象、配置和绑定读取前捕获可信租户，并将其贯穿字段校验、配置保存及历史流程绑定同步；显式租户入口拒绝非正数租户，不再回退租户 `1`。
+- `BusinessDocumentNoRuleEngine` 在序列申请前验证配置租户或当前租户，避免缺失身份时把不同调用者的编号落入默认租户共享序列；`BusinessDocumentRuntimeService` 的单条和批量运行态入口改为 fail-closed。
+- `BusinessFlowVariableResolver` 在流程模型和对象字段目录访问前校验租户，并将同一租户用于运行配置查询；缺失身份错误不再被字段解析的兼容异常处理吞掉。
+- `BusinessRelationRuntimeService` 的源对象读取改用 `selectByIdForTenant`，同时修复把已启用运行配置误判成“已停用”的状态分支。
+
+### 验证
+
+- 新增 `BusinessDocumentWorkflowIdentitySecurityTest` 6/6，覆盖单据配置、编号、运行态、流程变量及关联运行时的副作用前拒绝，并验证显式租户对象读取和启用发布入口可打开；连同既有单据编号/运行时测试共 31/31 通过。
+- Generator 完整依赖反应堆 33/33 模块成功，`forge-plugin-generator` 1302/1302 测试通过，0 失败、0 错误、0 跳过。
+- 完整测试首次在沙箱外启动时无法读取用户 Maven 缓存中的 Byte Buddy agent，未进入编译或测试；复制同一 agent 到 `/private/tmp` 后重跑通过。
+- `git diff --check` 通过；用户已有 `.DS_Store` 修改未触碰、未纳入本批变更。
+
+### 未覆盖
+
+- 未启动 Admin 或连接真实 MySQL/Flowable 执行单据配置、单号并发、流程变量和对象关联 HTTP 跨租户验证；T4.5 发布 Outbox、跨数据源补偿、死信和人工重放仍未完成。
+
 ## 2026-09-28：运行态业务数据租户边界收口
 
 ### 实现
