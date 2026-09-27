@@ -12,8 +12,6 @@ import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeLogicDeleteStrategy
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeTenantStrategy;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceContext;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceContextHolder;
-import com.mdframe.forge.plugin.generator.service.lowcode.runtime.OracleRuntimeDatabaseDialect;
-import com.mdframe.forge.plugin.generator.service.lowcode.runtime.PostgreSqlRuntimeDatabaseDialect;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.RuntimeDatabaseDialect;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.RuntimeDatabaseDialectFactory;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.RuntimeJdbcTemplateProvider;
@@ -162,7 +160,8 @@ public class DynamicCrudRepository {
         appendSqlCondition(whereClause, params, dataScopeCondition);
         appendSearchConditions(whereClause, params, searchParams, allowedSearchFields, searchTypeMap, fieldColumnMapping);
 
-        JoinedListSql joinedSql = resolveListJoinSql(mainTableName, selectFields, joins, aggregateChildren);
+        DynamicCrudJoinQueryCompiler.QueryPlan joinedSql = joinQueryCompiler()
+                .resolveListPlan(mainTableName, selectFields, joins, aggregateChildren);
         String countSql = (joinedSql.distinctMainRows() ? "SELECT COUNT(DISTINCT " + qualifyPrimaryKey("t0") + ") " : "SELECT COUNT(*) ")
                 + joinedSql.fromClause() + buildWhereSql(whereClause);
         Long total = jdbc().queryForObject(countSql, params, Long.class);
@@ -199,7 +198,7 @@ public class DynamicCrudRepository {
         appendIdParam(params, id);
         appendSqlCondition(whereClause, params, dataScopeCondition);
 
-        String sql = buildJoinSelectClause(selectFields) + " " + buildJoinedFromClause(mainTableName, joins)
+        String sql = buildJoinSelectClause(selectFields) + " " + joinQueryCompiler().buildJoinedFromClause(mainTableName, joins)
                 + buildWhereSql(whereClause);
         sql = limitSql(sql, 1);
         List<Map<String, Object>> results = jdbc().queryForList(sql, params);
@@ -333,7 +332,8 @@ public class DynamicCrudRepository {
         appendSqlCondition(whereClause, params, dataScopeCondition);
         appendSearchConditions(whereClause, params, searchParams, allowedSearchFields, searchTypeMap, fieldColumnMapping);
 
-        JoinedListSql joinedSql = resolveListJoinSql(mainTableName, selectFields, joins, aggregateChildren);
+        DynamicCrudJoinQueryCompiler.QueryPlan joinedSql = joinQueryCompiler()
+                .resolveListPlan(mainTableName, selectFields, joins, aggregateChildren);
         String countSql = (joinedSql.distinctMainRows() ? "SELECT COUNT(DISTINCT " + qualifyPrimaryKey("t0") + ") " : "SELECT COUNT(*) ")
                 + joinedSql.fromClause() + buildWhereSql(whereClause);
         Long total = jdbc().queryForObject(countSql, params, Long.class);
@@ -377,7 +377,8 @@ public class DynamicCrudRepository {
         appendSqlCondition(whereClause, params, dataScopeCondition);
         appendSearchConditions(whereClause, params, searchParams, allowedSearchFields, searchTypeMap, fieldColumnMapping);
 
-        JoinedListSql joinedSql = resolveListJoinSql(mainTableName, selectFields, joins, aggregateChildren);
+        DynamicCrudJoinQueryCompiler.QueryPlan joinedSql = joinQueryCompiler()
+                .resolveListPlan(mainTableName, selectFields, joins, aggregateChildren);
         String dataSql = paginateSql(buildJoinSelectClause(selectFields, joinedSql.distinctMainRows()) + " " + joinedSql.fromClause()
                 + buildWhereSql(whereClause) + buildOrderByClause(orderBy), pageNum, pageSize);
         return jdbc().queryForList(dataSql, params);
@@ -464,7 +465,8 @@ public class DynamicCrudRepository {
         appendSqlCondition(whereClause, params, dataScopeCondition);
         appendCustomConditions(whereClause, params, conditions, allowedFields, fieldColumnMapping);
 
-        JoinedListSql joinedSql = resolveListJoinSql(mainTableName, selectFields, joins, aggregateChildren);
+        DynamicCrudJoinQueryCompiler.QueryPlan joinedSql = joinQueryCompiler()
+                .resolveListPlan(mainTableName, selectFields, joins, aggregateChildren);
         String countSql = (joinedSql.distinctMainRows() ? "SELECT COUNT(DISTINCT " + qualifyPrimaryKey("t0") + ") " : "SELECT COUNT(*) ")
                 + joinedSql.fromClause() + buildWhereSql(whereClause);
         logDynamicSql("自定义查询统计(左连接)", countSql, params);
@@ -1295,161 +1297,28 @@ public class DynamicCrudRepository {
     }
 
     private String buildJoinSelectClause(List<JoinField> fields) {
-        return buildJoinSelectClause(fields, false);
+        return joinQueryCompiler().buildSelectClause(fields);
     }
 
     private String buildJoinSelectClause(List<JoinField> fields, boolean distinct) {
-        LinkedHashSet<String> selectItems = new LinkedHashSet<>();
-        for (JoinField field : fields) {
-            selectItems.add(qualifyColumn(field.tableAlias(), field.columnName()) + " AS " + quoteIdentifier(field.fieldName()));
-        }
-        return "SELECT " + (distinct ? "DISTINCT " : "") + String.join(", ", selectItems);
-    }
-
-    private boolean selectsOnlyMainTable(List<JoinField> fields) {
-        return fields != null && fields.stream().allMatch(field -> "t0".equals(field.tableAlias()));
-    }
-
-    private record JoinedListSql(String fromClause, boolean distinctMainRows) {
-    }
-
-    /**
-     * 列表查出子表列时，按子表外键聚合成一行再左连接，避免一对多把主表行乘开。
-     */
-    private JoinedListSql resolveListJoinSql(String mainTableName,
-                                             List<JoinField> selectFields,
-                                             List<JoinSpec> joins,
-                                             boolean aggregateChildren) {
-        boolean shouldAggregate = aggregateChildren && !selectsOnlyMainTable(selectFields);
-        String fromClause = shouldAggregate
-                ? buildAggregatedJoinedFromClause(mainTableName, joins, selectFields)
-                : buildJoinedFromClause(mainTableName, joins);
-        return new JoinedListSql(fromClause, shouldAggregate || selectsOnlyMainTable(selectFields));
-    }
-
-    private String buildAggregatedJoinedFromClause(String mainTableName, List<JoinSpec> joins, List<JoinField> selectFields) {
-        StringBuilder sql = new StringBuilder("FROM ")
-                .append(mainTableName)
-                .append(" t0");
-        for (JoinSpec join : joins) {
-            sql.append(" LEFT JOIN (")
-                    .append(buildAggregatedChildSelect(join, selectFields))
-                    .append(") ")
-                    .append(join.tableAlias())
-                    .append(" ON ")
-                    .append(qualifyColumn(join.tableAlias(), join.joinColumn()))
-                    .append(" = ")
-                    .append(qualifyColumn("t0", join.mainColumn()));
-        }
-        return sql.toString();
-    }
-
-    private String buildAggregatedChildSelect(JoinSpec join, List<JoinField> selectFields) {
-        LinkedHashSet<String> columns = new LinkedHashSet<>();
-        columns.add(join.joinColumn());
-        if (selectFields != null) {
-            for (JoinField field : selectFields) {
-                if (field != null && join.tableAlias().equals(field.tableAlias()) && StringUtils.isNotBlank(field.columnName())) {
-                    columns.add(field.columnName());
-                }
-            }
-        }
-        Set<String> tableColumns = getTableColumns(join.tableName());
-        boolean hasId = tableColumns.contains("id");
-        StringBuilder sql = new StringBuilder("SELECT ");
-        boolean first = true;
-        for (String column : columns) {
-            if (!first) {
-                sql.append(", ");
-            }
-            first = false;
-            if (column.equals(join.joinColumn())) {
-                sql.append(quoteIdentifier(column));
-                continue;
-            }
-            sql.append(aggregateExpression(column, hasId)).append(" AS ").append(quoteIdentifier(column));
-        }
-        sql.append(" FROM ").append(join.tableName());
-        StringBuilder where = new StringBuilder();
-        Long tenantId = TenantContextHolder.getTenantId();
-        String tenantColumn = tenantColumn();
-        if (tenantId != null && tenantStrategyEnabled() && tableColumns.contains(tenantColumn)) {
-            where.append(quoteIdentifier(tenantColumn)).append(" = :tenantId");
-        }
-        if (hasDelFlag(join.tableName())) {
-            if (!where.isEmpty()) {
-                where.append(" AND ");
-            }
-            where.append(quoteIdentifier(logicDeleteColumn())).append(" = :logicActiveValue");
-        }
-        if (!where.isEmpty()) {
-            sql.append(" WHERE ").append(where);
-        }
-        sql.append(" GROUP BY ").append(quoteIdentifier(join.joinColumn()));
-        return sql.toString();
-    }
-
-    private String aggregateExpression(String column, boolean hasId) {
-        String quoted = quoteIdentifier(column);
-        String orderColumn = hasId ? quoteIdentifier("id") : quoted;
-        RuntimeDatabaseDialect dialect = dialectFactory.resolve(LowcodeRuntimeDataSourceContextHolder.get());
-        if (dialect instanceof PostgreSqlRuntimeDatabaseDialect) {
-            return "string_agg(" + quoted + "::text, '、' ORDER BY " + orderColumn + ")";
-        }
-        if (dialect instanceof OracleRuntimeDatabaseDialect) {
-            return "LISTAGG(" + quoted + ", '、') WITHIN GROUP (ORDER BY " + orderColumn + ")";
-        }
-        return "GROUP_CONCAT(" + quoted + " ORDER BY " + orderColumn + " SEPARATOR '、')";
-    }
-
-    private String buildJoinedFromClause(String mainTableName, List<JoinSpec> joins) {
-        StringBuilder sql = new StringBuilder("FROM ")
-                .append(mainTableName)
-                .append(" t0");
-        Long tenantId = TenantContextHolder.getTenantId();
-        for (JoinSpec join : joins) {
-            sql.append(" LEFT JOIN ")
-                    .append(join.tableName())
-                    .append(" ")
-                    .append(join.tableAlias())
-                    .append(" ON ")
-                    .append(qualifyColumn(join.tableAlias(), join.joinColumn()))
-                    .append(" = ")
-                    .append(qualifyColumn("t0", join.mainColumn()));
-            String tenantColumn = tenantColumn();
-            if (tenantId != null && tenantStrategyEnabled() && getTableColumns(join.tableName()).contains(tenantColumn)) {
-                sql.append(" AND ").append(qualifyColumn(join.tableAlias(), tenantColumn)).append(" = :tenantId");
-            }
-            if (hasDelFlag(join.tableName())) {
-                sql.append(" AND ").append(qualifyColumn(join.tableAlias(), logicDeleteColumn())).append(" = :logicActiveValue");
-            }
-        }
-        return sql.toString();
+        return joinQueryCompiler().buildSelectClause(fields, distinct);
     }
 
     private void validateJoinQuery(String mainTableName, List<JoinField> selectFields, List<JoinSpec> joins) {
-        validateTableName(mainTableName);
-        validateIdentifier("t0");
-        if (selectFields == null || selectFields.isEmpty()) {
-            throw new BusinessException("左连接查询字段不能为空");
-        }
-        for (JoinField field : selectFields) {
-            validateIdentifier(field.tableAlias());
-            validateIdentifier(field.columnName());
-            validateAlias(field.fieldName());
-        }
-        for (JoinSpec join : joins) {
-            validateTableName(join.tableName());
-            validateIdentifier(join.tableAlias());
-            validateIdentifier(join.joinColumn());
-            validateIdentifier(join.mainColumn());
-        }
+        joinQueryCompiler().validate(mainTableName, selectFields, joins);
     }
 
-    private void validateAlias(String alias) {
-        if (StringUtils.isBlank(alias) || !SAFE_ALIAS.matcher(alias).matches()) {
-            throw new BusinessException("非法字段别名: " + alias);
-        }
+    private DynamicCrudJoinQueryCompiler joinQueryCompiler() {
+        return new DynamicCrudJoinQueryCompiler(
+                this::validateTableName,
+                this::validateIdentifier,
+                this::getTableColumns,
+                this::hasDelFlag,
+                () -> dialectFactory.resolve(LowcodeRuntimeDataSourceContextHolder.get()),
+                this::tenantStrategyEnabled,
+                this::tenantColumn,
+                this::logicDeleteColumn
+        );
     }
 
     private String qualifyColumn(String tableAlias, String columnName) {
@@ -1486,6 +1355,12 @@ public class DynamicCrudRepository {
     private String quoteIdentifier(String identifier) {
         validateAlias(identifier);
         return dialectFactory.resolve(LowcodeRuntimeDataSourceContextHolder.get()).quote(identifier);
+    }
+
+    private void validateAlias(String alias) {
+        if (StringUtils.isBlank(alias) || !SAFE_ALIAS.matcher(alias).matches()) {
+            throw new BusinessException("非法字段别名: " + alias);
+        }
     }
 
     private String paginateSql(String sql, int pageNum, int pageSize) {

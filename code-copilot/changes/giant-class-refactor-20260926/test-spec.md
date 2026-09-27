@@ -525,3 +525,13 @@
 - 验证：执行 generator Reactor 编译，重跑业务对象设计器/发布/数据库同步及运行布局相关测试，执行 `git diff --check` 和类行数检查；不启动真实服务。
 
 验证结果：模型/运行配置加载、Schema 补全、校验和持久化已委托 `BusinessObjectDraftSchemaGateway`；相关 14 个测试类共 70 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`BusinessObjectDesignerService` 904 行，新 Gateway 467 行。
+
+## 2026-09-27 第六十八轮增量验证：动态 Join 查询计划编译器
+
+- P0：普通 Join 与子表聚合 Join 的 FROM、连接键、字段别名、主表去重和分页计数语义保持不变。
+- P0：子表聚合继续附加租户和逻辑删除条件；MySQL、PostgreSQL、Oracle 的文本聚合语法分别由方言 Strategy 生成。
+- P0：表名、列名和结果别名继续在 SQL 拼装前失败关闭，非法别名不得进入查询文本。
+- P1：使用 Query Plan Compiler 隔离 Join 校验和 SQL 计划；Repository 仅保留 JDBC 执行、查询参数与事务上下文，新生产类少于 1000 行。
+- 验证：执行 generator Reactor 编译，重跑 Join 编译器与主子表列表定向测试；执行 `git diff --check` 和类行数检查，不启动真实服务。
+
+验证结果：Join 字段投影、原始 LEFT JOIN、子表预聚合和查询计划已委托 `DynamicCrudJoinQueryCompiler`，文本聚合语法下沉 `RuntimeDatabaseDialect`；新增 4 项测试覆盖聚合计划、非聚合计划、非法别名和三种方言。定向 2 个测试类共 9 项通过，0 失败、0 错误；generator Reactor 编译与 `git diff --check` 通过。`DynamicCrudRepository` 1759 行，新 Compiler 213 行。

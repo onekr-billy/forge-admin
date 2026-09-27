@@ -361,3 +361,9 @@
 - 使用 Compiler + Strategy 从 `DynamicCrudRepository` 迁出普通搜索、自定义组合条件、多值/区间归一、操作符白名单和自定义投影字段编译；标识符校验及运行上下文主键通过窄策略回调复用 Repository 现有规则。
 - 入口由 2242 行降至 1884 行，新 `DynamicCrudQueryConditionCompiler` 430 行。新增 3 项协议测试，并把一个仍使用旧单参数构造器的仓储测试改为显式注入数据源模板 Provider 和方言 Factory，确保干净编译不依赖历史 target 缓存。
 - generator Reactor 执行 `clean test` 退出码 0；动态 CRUD、数据权限和业务流程依赖相关 38 个测试类共 160 项，0 失败、0 错误；生命周期测试中预期的状态写入失败 WARN 被 `assertThrows` 覆盖，`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实复杂组合查询、跨库方言与大数据分页仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第六十八个切口：动态 Join 查询计划编译器
+
+- 使用 Query Plan Compiler 从 `DynamicCrudRepository` 迁出 Join 字段投影、连接描述校验、原始 LEFT JOIN、子表按外键预聚合及主表去重决策；Repository 继续掌握 JDBC 执行、参数、数据源路由和分页边界。
+- 扩展 `RuntimeDatabaseDialect.stringAggregate` 策略方法，由 MySQL 默认实现、PostgreSQL 与 Oracle 覆盖各自文本聚合语法，删除 Repository 内对具体方言类的 `instanceof` 分支。入口由 1884 行降至 1759 行，新 `DynamicCrudJoinQueryCompiler` 213 行。
+- generator Reactor 编译退出码 0；执行 `DynamicCrudJoinQueryCompilerTest,DynamicCrudServiceChildListTest` 共 2 类 9 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实跨库 Join、超大子表聚合和执行计划仍需服务环境验收，无服务 PID 需停止。
