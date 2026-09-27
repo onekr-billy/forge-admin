@@ -12,7 +12,6 @@ import com.mdframe.forge.starter.flow.dto.TaskFormInfo;
 import com.mdframe.forge.starter.flow.entity.FlowBusiness;
 import com.mdframe.forge.starter.flow.entity.FlowErrorLog;
 import com.mdframe.forge.starter.flow.entity.FlowTask;
-import com.mdframe.forge.starter.flow.enums.FlowBusinessStatus;
 import com.mdframe.forge.starter.flow.enums.FlowTaskStatus;
 import com.mdframe.forge.starter.flow.mapper.FlowBusinessMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowFormInstanceMapper;
@@ -32,8 +31,6 @@ import com.mdframe.forge.starter.flow.vo.FlowTaskSignRelationVO;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.extern.slf4j.Slf4j;
 import org.flowable.bpmn.model.BpmnModel;
-import org.flowable.bpmn.model.FlowNode;
-import org.flowable.bpmn.model.Process;
 import org.flowable.engine.HistoryService;
 import org.flowable.engine.ProcessEngineConfiguration;
 import org.flowable.engine.RepositoryService;
@@ -41,9 +38,7 @@ import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
 import org.flowable.engine.repository.ProcessDefinition;
 import org.flowable.engine.runtime.ProcessInstance;
-import org.flowable.task.api.DelegationState;
 import org.flowable.task.api.Task;
-import org.flowable.task.api.history.HistoricTaskInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -60,19 +55,7 @@ import java.util.stream.Collectors;
 @Service
 public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> implements FlowTaskService {
 
-    private static final String ACTION_APPROVE = "approve";
-    private static final String ACTION_REJECT = "reject";
-    private static final String ACTION_REJECT_TO_START = "rejectToStart";
-    private static final String ACTION_DELEGATE = "delegate";
-    private static final String ACTION_RETURN = "return";
-    private static final String ACTION_TERMINATE = "terminate";
-    private static final String AUTO_APPROVAL_FIRST_ONLY = "firstOnly";
-    private static final String AUTO_APPROVAL_CONSECUTIVE = "consecutive";
-    private static final String RETURN_SOURCE_ACTIVITY_ID = "FLOW_RETURN_SOURCE_ACTIVITY_ID";
     private static final int MAX_DETAIL_HISTORY_ITEMS = 1000;
-    private static final String RETURN_TARGET_ACTIVITY_ID = "FLOW_RETURN_TARGET_ACTIVITY_ID";
-    private static final String RETURN_TO_START_PENDING = "FLOW_RETURN_TO_START_PENDING";
-    private static final String DIRECT_SEND_VARIABLE = "directSend";
 
     @Autowired
     private RuntimeService runtimeService;
@@ -314,7 +297,8 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void approve(String taskId, String userId, String comment, String signature, Map<String, Object> variables) {
+    public void approve(String taskId, String userId, String comment, String signature,
+                        Map<String, Object> variables) {
         approve(taskId, userId, comment, signature, variables, SessionHelper.getTenantId(), null, null);
     }
 
@@ -324,54 +308,9 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
                         Map<String, Object> variables, Long tenantId,
                         String idempotencyKey, String requestDigest,
                         List<FlowApprovalPointResultDTO> approvalPointResults) {
-        FlowTask storedTask = authorizeTaskAction(
-                taskId, userId, tenantId, "APPROVE", idempotencyKey, requestDigest, FlowTaskStatus.APPROVED);
-        if (storedTask == null) {
-            return;
-        }
-        Task task = taskService.createTaskQuery().taskId(taskId).singleResult();
-        if (task == null) {
-            throw new RuntimeException("任务不存在或已处理");
-        }
-        validateFlowableAssignee(task, userId);
-        // 整个审批事务只解析一次 BPMN：动作校验/必填变量/审批要点与自动同意模式共用，
-        // 避免 getBpmnModel（每次一条命令往返）在同一请求内重复执行
-        BpmnModel actionBpmnModel = repositoryService.getBpmnModel(task.getProcessDefinitionId());
-        FlowTaskNodePolicy nodePolicy = taskNodePolicy();
-        FlowNode actionFlowNode = nodePolicy.resolveFlowNode(actionBpmnModel, task.getTaskDefinitionKey());
-        nodePolicy.validateTaskAction(task, ACTION_APPROVE, comment, signature, actionFlowNode);
-        validateDynamicFormArrayVariables(task, actionFlowNode, variables);
-        nodePolicy.validateRequiredVariables(variables, actionFlowNode);
-        nodePolicy.validateApprovalPoints(approvalPointResults, actionFlowNode);
-
-        try {
-            if (comment != null && !comment.isEmpty()) {
-                taskService.addComment(taskId, task.getProcessInstanceId(), comment);
-            }
-            nodePolicy.recordApprovalPointResults(task, approvalPointResults);
-
-            Map<String, Object> completeVariables = mergeActionVariables(variables, true);
-            completeTask(task, completeVariables);
-            directSendAfterReturn(task, completeVariables, userId);
-
-            FlowTask flowTask = new FlowTask();
-            flowTask.setStatus(FlowTaskStatus.APPROVED.getCode());
-            flowTask.setComment(comment);
-            flowTask.setSignature(signature);
-            flowTask.setCompleteTime(LocalDateTime.now());
-            flowTask.setActionIdempotencyKey(idempotencyKey);
-            flowTask.setActionRequestDigest(requestDigest);
-            flowTask.setActionType(idempotencyKey == null ? null : "APPROVE");
-            updateTaskActionResultRequired(taskId, flowTask);
-
-            log.info("审批通过：taskId={}, userId={}", taskId, userId);
-            autoApproveRepeatedTasks(task.getProcessInstanceId(),
-                    actionBpmnModel == null ? null : actionBpmnModel.getMainProcess());
-        } catch (Exception e) {
-            recordTaskError(task.getProcessInstanceId(), taskId, task.getTaskDefinitionKey(),
-                    task.getName(), "TASK_APPROVE", e);
-            throw e;
-        }
+        taskActionCoordinator().approve(
+                taskId, userId, comment, signature, variables, tenantId,
+                idempotencyKey, requestDigest, approvalPointResults);
     }
 
     @Override
@@ -384,102 +323,16 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     @Transactional(rollbackFor = Exception.class)
     public void reject(String taskId, String userId, String comment, String signature,
                        Long tenantId, String idempotencyKey, String requestDigest) {
-        rejectInternal(taskId, userId, comment, signature, tenantId, idempotencyKey, requestDigest, false);
+        taskActionCoordinator().reject(
+                taskId, userId, comment, signature, tenantId, idempotencyKey, requestDigest, false);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void rejectToStart(String taskId, String userId, String comment, String signature,
                               Long tenantId, String idempotencyKey, String requestDigest) {
-        rejectInternal(taskId, userId, comment, signature, tenantId, idempotencyKey, requestDigest, true);
-    }
-
-    private void rejectInternal(String taskId, String userId, String comment, String signature,
-                                Long tenantId, String idempotencyKey, String requestDigest,
-                                boolean rejectToStart) {
-        FlowTask storedTask = authorizeTaskAction(
-                taskId, userId, tenantId, rejectToStart ? "REJECT_TO_START" : "REJECT",
-                idempotencyKey, requestDigest, FlowTaskStatus.REJECTED);
-        if (storedTask == null) {
-            return;
-        }
-        Task task = taskService.createTaskQuery().taskId(taskId).singleResult();
-        if (task == null) {
-            throw new RuntimeException("任务不存在或已处理");
-        }
-        validateFlowableAssignee(task, userId);
-        taskNodePolicy().validateTaskAction(
-                task, rejectToStart ? ACTION_REJECT_TO_START : ACTION_REJECT, comment, signature);
-
-        try {
-            if (comment != null && !comment.isEmpty()) {
-                taskService.addComment(taskId, task.getProcessInstanceId(), comment);
-            }
-
-            Map<String, Object> variables = mergeActionVariables(null, false);
-            if (rejectToStart) {
-                variables.put("rejectToStart", true);
-                // 保留原驳回节点，供发起人修改后选择直送；具体修改节点仍由业务 BPMN 回路决定。
-                runtimeService.setVariable(task.getProcessInstanceId(), RETURN_SOURCE_ACTIVITY_ID,
-                        task.getTaskDefinitionKey());
-                runtimeService.removeVariable(task.getProcessInstanceId(), RETURN_TARGET_ACTIVITY_ID);
-                runtimeService.setVariable(task.getProcessInstanceId(), RETURN_TO_START_PENDING, true);
-            }
-            completeTask(task, variables);
-
-            FlowTask flowTask = new FlowTask();
-            flowTask.setStatus(FlowTaskStatus.REJECTED.getCode());
-            flowTask.setComment(comment);
-            flowTask.setSignature(signature);
-            flowTask.setCompleteTime(LocalDateTime.now());
-            flowTask.setActionIdempotencyKey(idempotencyKey);
-            flowTask.setActionRequestDigest(requestDigest);
-            flowTask.setActionType(idempotencyKey == null ? null
-                    : (rejectToStart ? "REJECT_TO_START" : "REJECT"));
-            updateTaskActionResultRequired(taskId, flowTask);
-
-            log.info("审批驳回：taskId={}, userId={}", taskId, userId);
-        } catch (Exception e) {
-            recordTaskError(task.getProcessInstanceId(), taskId, task.getTaskDefinitionKey(),
-                    task.getName(), rejectToStart ? "TASK_REJECT_TO_START" : "TASK_REJECT", e);
-            throw e;
-        }
-    }
-
-    /**
-     * 在 Flow 服务最终副作用边界重新校验租户、签收人与任务状态。
-     * 返回 null 表示命中已成功的同请求幂等结果。
-     */
-    private FlowTask authorizeTaskAction(String taskId, String userId, Long tenantId,
-                                         String actionType, String idempotencyKey,
-                                         String requestDigest, FlowTaskStatus completedStatus) {
-        if (tenantId == null || tenantId <= 0) {
-            throw new IllegalStateException("FLOW_TASK_TENANT_REQUIRED");
-        }
-        FlowTask storedTask = baseMapper.selectByTaskIdForUpdateAndTenant(taskId, tenantId);
-        if (FlowTaskActionAuthorization.authorize(
-                storedTask, userId, tenantId, actionType,
-                idempotencyKey, requestDigest, completedStatus)) {
-            return null;
-        }
-        return storedTask;
-    }
-
-    private void validateFlowableAssignee(Task task, String userId) {
-        if (!userId.equals(task.getAssignee())) {
-            throw new RuntimeException("FLOW_TASK_ASSIGNEE_MISMATCH");
-        }
-    }
-
-    private void updateTaskActionResultRequired(String taskId, FlowTask flowTask) {
-        if (!updateTaskByTenant(taskId, flowTask)) {
-            throw new IllegalStateException("FLOW_TASK_STATE_UPDATE_FAILED");
-        }
-    }
-
-    private boolean updateTaskByTenant(String taskId, FlowTask task) {
-        Long tenantId = requireTenantId();
-        return baseMapper.updateByTaskIdAndTenant(taskId, tenantId, task) > 0;
+        taskActionCoordinator().reject(
+                taskId, userId, comment, signature, tenantId, idempotencyKey, requestDigest, true);
     }
 
     @Override
@@ -493,53 +346,8 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     @Transactional(rollbackFor = Exception.class)
     public void delegate(String taskId, String userId, String targetUserId, String comment, String signature,
                          Long tenantId, String idempotencyKey, String requestDigest) {
-        if (isBlank(targetUserId)) {
-            throw new RuntimeException("新处理人不能为空");
-        }
-        if (tenantId == null || tenantId <= 0) {
-            throw new IllegalStateException("FLOW_TASK_TENANT_REQUIRED");
-        }
-        assertTaskMutationActor(taskId, userId, false);
-        validateReassignTarget(targetUserId.trim());
-        FlowTask storedTask = authorizeTaskAction(taskId, userId, tenantId, "DELEGATE",
-                idempotencyKey, requestDigest, FlowTaskStatus.CLAIMED);
-        if (storedTask == null) {
-            return;
-        }
-        Task task = taskService.createTaskQuery().taskId(taskId).singleResult();
-        if (task == null) {
-            throw new RuntimeException("任务不存在或已处理");
-        }
-        taskNodePolicy().validateTaskAction(task, ACTION_DELEGATE, comment, signature);
-
-        try {
-            String owner = task.getAssignee() != null && !task.getAssignee().isEmpty()
-                    ? task.getAssignee()
-                    : userId;
-            if (owner != null && !owner.isEmpty()) {
-                taskService.setOwner(taskId, owner);
-            }
-            taskService.setAssignee(taskId, targetUserId.trim());
-
-            FlowTask flowTask = new FlowTask();
-            // Flowable 已经设置了 assignee，镜像状态必须是已签收；写成待办会导致
-            // 目标用户再次签收失败但列表仍显示“待办”的状态不一致。
-            flowTask.setStatus(FlowTaskStatus.CLAIMED.getCode());
-            flowTask.setComment(comment);
-            flowTask.setSignature(signature);
-            flowTask.setAssignee(targetUserId.trim());
-            flowTask.setOwner(owner);
-            flowTask.setActionIdempotencyKey(idempotencyKey);
-            flowTask.setActionRequestDigest(requestDigest);
-            flowTask.setActionType(idempotencyKey == null ? null : "DELEGATE");
-            updateTaskActionResultRequired(taskId, flowTask);
-
-            log.info("转办任务：taskId={}, from={}, to={}", taskId, userId, targetUserId);
-        } catch (Exception e) {
-            recordTaskError(task.getProcessInstanceId(), taskId, task.getTaskDefinitionKey(),
-                    task.getName(), "TASK_DELEGATE", e);
-            throw e;
-        }
+        taskActionCoordinator().delegate(
+                taskId, userId, targetUserId, comment, signature, tenantId, idempotencyKey, requestDigest);
     }
 
     @Override
@@ -552,380 +360,20 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     @Transactional(rollbackFor = Exception.class)
     public void returnTask(String taskId, String userId, String comment, String signature,
                            String requestedTargetActivityId) {
-        assertTaskTenantForAction(taskId);
-        Task task = taskService.createTaskQuery().taskId(taskId).singleResult();
-        if (task == null) {
-            throw new RuntimeException("任务不存在或已处理");
-        }
-        validateFlowableAssignee(task, userId);
-        FlowTaskNodePolicy nodePolicy = taskNodePolicy();
-        nodePolicy.validateReturnAction(task, comment, signature, requestedTargetActivityId);
-
-        try {
-            String targetActivityId = nodePolicy.resolveReturnTarget(task, requestedTargetActivityId);
-            if (targetActivityId == null || targetActivityId.isEmpty()) {
-                throw new RuntimeException("当前任务没有可退回的上一审批节点");
-            }
-
-            if (comment != null && !comment.isEmpty()) {
-                taskService.addComment(taskId, task.getProcessInstanceId(), "退回：" + comment);
-            }
-
-            // 保存“谁发起退回、退回到哪里”，供修正节点选择直送时使用。
-            runtimeService.setVariable(task.getProcessInstanceId(), RETURN_SOURCE_ACTIVITY_ID,
-                    task.getTaskDefinitionKey());
-            runtimeService.setVariable(task.getProcessInstanceId(), RETURN_TARGET_ACTIVITY_ID, targetActivityId);
-            runtimeService.removeVariable(task.getProcessInstanceId(), RETURN_TO_START_PENDING);
-
-            List<String> currentActivityIds = runtimeService.getActiveActivityIds(task.getProcessInstanceId());
-            if (currentActivityIds == null || currentActivityIds.isEmpty()) {
-                currentActivityIds = Collections.singletonList(task.getTaskDefinitionKey());
-            }
-            if (currentActivityIds.size() != 1
-                    || !Objects.equals(currentActivityIds.get(0), task.getTaskDefinitionKey())) {
-                throw new RuntimeException("当前流程存在多个活动分支，不能安全退回指定节点");
-            }
-            runtimeService.createChangeActivityStateBuilder()
-                    .processInstanceId(task.getProcessInstanceId())
-                    .moveActivityIdTo(task.getTaskDefinitionKey(), targetActivityId)
-                    .changeState();
-
-            FlowTask flowTask = new FlowTask();
-            flowTask.setStatus(FlowTaskStatus.RETURNED.getCode());
-            flowTask.setComment(comment);
-            flowTask.setSignature(signature);
-            flowTask.setCompleteTime(LocalDateTime.now());
-            updateTaskByTenant(taskId, flowTask);
-
-            log.info("退回任务：taskId={}, userId={}, targetActivityId={}", taskId, userId, targetActivityId);
-        } catch (Exception e) {
-            recordTaskError(task.getProcessInstanceId(), taskId, task.getTaskDefinitionKey(),
-                    task.getName(), "TASK_RETURN", e);
-            throw e;
-        }
+        taskActionCoordinator().returnTask(
+                taskId, userId, comment, signature, requestedTargetActivityId);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void reassignByInitiator(String taskId, String userId, String targetUserId, String reason) {
-        if (isBlank(targetUserId)) {
-            throw new RuntimeException("任务不存在或新处理人不能为空");
-        }
-        Long tenantId = SessionHelper.getTenantId();
-        if (tenantId == null || tenantId <= 0) {
-            throw new RuntimeException("FLOW_TASK_TENANT_REQUIRED");
-        }
-        FlowTask localTask = baseMapper.selectByTaskIdForUpdateAndTenant(taskId, tenantId);
-        if (localTask == null || !tenantId.equals(localTask.getTenantId())) {
-            throw new RuntimeException("FLOW_TASK_TENANT_MISMATCH");
-        }
-        Task task = taskService.createTaskQuery().taskId(taskId).singleResult();
-        if (task == null || !Objects.equals(localTask.getProcessInstanceId(), task.getProcessInstanceId())) {
-            throw new RuntimeException("FLOW_TASK_NOT_FOUND");
-        }
-        FlowBusiness business = flowBusinessMapper.selectByProcessInstanceIdAndTenantIdForUpdate(
-                task.getProcessInstanceId(), tenantId);
-        if (business == null || !Objects.equals(business.getProcessInstanceId(), task.getProcessInstanceId())) {
-            throw new RuntimeException("FLOW_TASK_TENANT_MISMATCH");
-        }
-        boolean allowed = Objects.equals(userId, task.getAssignee())
-                || Objects.equals(userId, task.getOwner())
-                || (business != null && Objects.equals(userId, business.getApplyUserId()));
-        if (!allowed) {
-            throw new RuntimeException("仅当前处理人、任务拥有人或流程发起人可以改派");
-        }
-        validateReassignTarget(targetUserId.trim());
-        String owner = !isBlank(task.getAssignee()) ? task.getAssignee() : userId;
-        taskService.setOwner(taskId, owner);
-        taskService.setAssignee(taskId, targetUserId.trim());
-        if (!isBlank(reason)) {
-            taskService.addComment(taskId, task.getProcessInstanceId(), "改派", reason.trim());
-        }
-        FlowTask flowTask = new FlowTask();
-        flowTask.setAssignee(targetUserId.trim());
-        flowTask.setOwner(owner);
-        flowTask.setStatus(FlowTaskStatus.CLAIMED.getCode());
-        flowTask.setComment(reason);
-        if (!updateTaskByTenant(taskId, flowTask)) {
-            throw new IllegalStateException("改派任务状态同步失败");
-        }
-        log.info("流程任务改派：taskId={}, from={}, to={}", taskId, userId, targetUserId);
+        taskActionCoordinator().reassignByInitiator(taskId, userId, targetUserId, reason);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void terminateTask(String taskId, String userId, String comment, String signature) {
-        assertTaskMutationActor(taskId, userId, true);
-        Long tenantId = requireTenantId();
-        Task task = taskService.createTaskQuery().taskId(taskId).singleResult();
-        if (task == null) {
-            throw new RuntimeException("任务不存在或已处理");
-        }
-        taskNodePolicy().validateTaskAction(task, ACTION_TERMINATE, comment, signature);
-
-        try {
-            List<String> activeTaskIds = taskService.createTaskQuery()
-                    .processInstanceId(task.getProcessInstanceId())
-                    .list()
-                    .stream()
-                    .map(Task::getId)
-                    .filter(Objects::nonNull)
-                    .toList();
-            String reason = comment != null && !comment.isBlank() ? comment : "审批人终结流程";
-            taskService.addComment(taskId, task.getProcessInstanceId(), "终结流程：" + reason);
-            runtimeService.deleteProcessInstance(task.getProcessInstanceId(), reason);
-
-            if (!activeTaskIds.isEmpty()) {
-                baseMapper.updateProcessTaskStatusByTaskIds(activeTaskIds, tenantId,
-                        FlowTaskStatus.TERMINATED.getCode(), LocalDateTime.now());
-            }
-
-            FlowBusiness business = flowBusinessMapper.selectByProcessInstanceIdAndTenantIdForUpdate(
-                    task.getProcessInstanceId(), tenantId);
-            if (business != null) {
-                business.setStatus(FlowBusinessStatus.TERMINATED.getCode());
-                business.setEndTime(LocalDateTime.now());
-                business.setUpdateTime(LocalDateTime.now());
-                flowBusinessMapper.updateById(business);
-            }
-
-            FlowTask flowTask = new FlowTask();
-            flowTask.setStatus(FlowTaskStatus.TERMINATED.getCode());
-            flowTask.setComment(comment);
-            flowTask.setSignature(signature);
-            flowTask.setCompleteTime(LocalDateTime.now());
-            updateTaskByTenant(taskId, flowTask);
-
-            log.info("审批人终结流程：taskId={}, processInstanceId={}, userId={}",
-                    taskId, task.getProcessInstanceId(), userId);
-        } catch (Exception e) {
-            recordTaskError(task.getProcessInstanceId(), taskId, task.getTaskDefinitionKey(),
-                    task.getName(), "TASK_TERMINATE", e);
-            throw e;
-        }
-    }
-
-    private Map<String, Object> mergeActionVariables(Map<String, Object> variables, boolean approved) {
-        Map<String, Object> completeVariables = variables != null ? new HashMap<>(variables) : new HashMap<>();
-        completeVariables.put("approved", approved);
-        completeVariables.put("approvalResult", approved ? "approve" : "reject");
-        // rejectToStart 是流程实例变量。每次普通动作都显式清零，避免上一个节点
-        // 的“退回发起人修改”标记残留并误命中后续专用路由。
-        completeVariables.put("rejectToStart", false);
-        return completeVariables;
-    }
-
-    private void validateDynamicFormArrayVariables(Task task,
-                                                   FlowNode flowNode,
-                                                   Map<String, Object> submittedVariables) {
-        formConfigurationResolver().validateDynamicFormArrayVariables(task, flowNode, submittedVariables);
-    }
-
-    /**
-     * 退回节点修正后，按用户选择将新任务直接送回原驳回节点，跳过中间节点。
-     * Flowable complete 后才会创建后继任务，因此这里基于完成后的活动列表做一次状态迁移。
-     */
-    private void directSendAfterReturn(Task completedTask, Map<String, Object> actionVariables, String userId) {
-        String processInstanceId = completedTask.getProcessInstanceId();
-        if (!isProcessRunning(processInstanceId)) {
-            return;
-        }
-        Object source;
-        Object target;
-        Object returnToStartPending;
-        // 三枚直送标记一次全量取回，替代逐 key getVariable 的 3 次独立往返（语义一致：均为流程级变量）
-        Map<String, Object> returnVariables = runtimeService.getVariables(processInstanceId);
-        source = returnVariables == null ? null : returnVariables.get(RETURN_SOURCE_ACTIVITY_ID);
-        target = returnVariables == null ? null : returnVariables.get(RETURN_TARGET_ACTIVITY_ID);
-        returnToStartPending = returnVariables == null ? null : returnVariables.get(RETURN_TO_START_PENDING);
-        boolean returnedToHistoricalNode = target != null
-                && Objects.equals(String.valueOf(target), completedTask.getTaskDefinitionKey());
-        if (source == null || (!returnedToHistoricalNode && !Boolean.TRUE.equals(readBoolean(returnToStartPending)))) {
-            return;
-        }
-        boolean directSend = Boolean.TRUE.equals(readBoolean(
-                actionVariables == null ? null : actionVariables.get(DIRECT_SEND_VARIABLE)));
-        if (!directSend) {
-            clearDirectSendMarks(processInstanceId);
-            return;
-        }
-        if (Boolean.TRUE.equals(readBoolean(returnToStartPending))
-                && !isProcessStarterTask(completedTask, userId)) {
-            throw new RuntimeException("仅流程发起人可以执行驳回后的直送");
-        }
-        String sourceActivityId = String.valueOf(source);
-        List<String> activeActivityIds = runtimeService.getActiveActivityIds(processInstanceId);
-        if (activeActivityIds == null || activeActivityIds.isEmpty()) {
-            return;
-        }
-        if (activeActivityIds.contains(sourceActivityId)) {
-            clearDirectSendMarks(processInstanceId);
-            return;
-        }
-        if (activeActivityIds.size() != 1) {
-            throw new RuntimeException("当前流程存在多个活动分支，不能安全直送");
-        }
-        runtimeService.createChangeActivityStateBuilder()
-                .processInstanceId(processInstanceId)
-                .moveActivityIdTo(activeActivityIds.get(0), sourceActivityId)
-                .changeState();
-        clearDirectSendMarks(processInstanceId);
-    }
-
-    /** 三枚直送标记一次批量清除，替代逐 key removeVariable 的 3 次独立往返 */
-    private void clearDirectSendMarks(String processInstanceId) {
-        runtimeService.removeVariables(processInstanceId, List.of(
-                RETURN_SOURCE_ACTIVITY_ID, RETURN_TARGET_ACTIVITY_ID, RETURN_TO_START_PENDING));
-    }
-
-    private Boolean readBoolean(Object value) {
-        if (value instanceof Boolean bool) {
-            return bool;
-        }
-        if (value == null) {
-            return null;
-        }
-        String text = String.valueOf(value).trim();
-        if ("true".equalsIgnoreCase(text) || "1".equals(text) || "yes".equalsIgnoreCase(text)) {
-            return true;
-        }
-        if ("false".equalsIgnoreCase(text) || "0".equals(text) || "no".equalsIgnoreCase(text)) {
-            return false;
-        }
-        return null;
-    }
-
-    /**
-     * Flowable 委派态任务不能直接 complete，需要先 resolve。
-     */
-    private void completeTask(Task task, Map<String, Object> variables) {
-        String taskId = task.getId();
-        if (DelegationState.PENDING.equals(task.getDelegationState())) {
-            log.info("任务处于委派待解决状态，先 resolve 再 complete：taskId={}, assignee={}, owner={}",
-                    taskId, task.getAssignee(), task.getOwner());
-            taskService.resolveTask(taskId);
-        }
-
-        try {
-            if (variables != null && !variables.isEmpty()) {
-                // 调用方（approve/reject/autoApprove）的 task 均刚从 taskQuery 查出，
-                // ACT_RU_TASK 有行则流程实例必然在运行，isProcessRunning 守卫恒真且多一次往返，
-                // 直接写变量；若并发下流程恰好被终止，setVariables 与 complete 抛出的
-                // FlowableObjectNotFoundException 均会转为同一提示，行为等价
-                runtimeService.setVariables(task.getProcessInstanceId(), variables);
-                taskService.complete(taskId, variables);
-            } else {
-                taskService.complete(taskId);
-            }
-        } catch (org.flowable.common.engine.api.FlowableObjectNotFoundException e) {
-            throw new RuntimeException("任务已处理或流程已结束，请刷新后重试", e);
-        }
-    }
-
-    private boolean isProcessRunning(String processInstanceId) {
-        if (isBlank(processInstanceId)) {
-            return false;
-        }
-        try {
-            return runtimeService.createProcessInstanceQuery()
-                    .processInstanceId(processInstanceId)
-                    .singleResult() != null;
-        } catch (Exception e) {
-            log.debug("判断流程是否仍在运行失败: processInstanceId={}", processInstanceId);
-            return false;
-        }
-    }
-
-    private void autoApproveRepeatedTasks(String processInstanceId, Process resolvedProcess) {
-        ProcessInstance instance;
-        try {
-            instance = isBlank(processInstanceId)
-                    ? null
-                    : runtimeService.createProcessInstanceQuery()
-                    .processInstanceId(processInstanceId)
-                    .singleResult();
-        } catch (Exception e) {
-            return;
-        }
-        if (instance == null) {
-            return;
-        }
-
-        String mode = taskNodePolicy().resolveAutoApprovalMode(
-                resolvedProcess, instance.getProcessDefinitionId());
-        if (!AUTO_APPROVAL_FIRST_ONLY.equals(mode) && !AUTO_APPROVAL_CONSECUTIVE.equals(mode)) {
-            return;
-        }
-
-        Set<String> completedAutomatically = new HashSet<>();
-        int guard = 0;
-        while (guard++ < 30) {
-            List<Task> activeTasks = taskService.createTaskQuery()
-                    .processInstanceId(processInstanceId)
-                    .list();
-            Task matchedTask = null;
-            for (Task activeTask : activeTasks) {
-                if (completedAutomatically.contains(activeTask.getId())) {
-                    continue;
-                }
-                if (shouldAutoApproveTask(activeTask, mode)) {
-                    matchedTask = activeTask;
-                    break;
-                }
-            }
-            if (matchedTask == null) {
-                return;
-            }
-            autoApproveTask(matchedTask, mode);
-            completedAutomatically.add(matchedTask.getId());
-        }
-        log.warn("重复审批自动同意达到保护上限：processInstanceId={}, mode={}", processInstanceId, mode);
-    }
-
-    private boolean shouldAutoApproveTask(Task task, String mode) {
-        if (task == null || isBlank(task.getAssignee())) {
-            return false;
-        }
-        String assignee = task.getAssignee();
-        if (AUTO_APPROVAL_FIRST_ONLY.equals(mode)) {
-            return hasFinishedTaskByAssignee(task.getProcessInstanceId(), assignee);
-        }
-        HistoricTaskInstance previousTask = findLastFinishedTask(task.getProcessInstanceId());
-        return previousTask != null && Objects.equals(previousTask.getAssignee(), assignee);
-    }
-
-    private boolean hasFinishedTaskByAssignee(String processInstanceId, String assignee) {
-        long count = historyService.createHistoricTaskInstanceQuery()
-                .processInstanceId(processInstanceId)
-                .taskAssignee(assignee)
-                .finished()
-                .count();
-        return count > 0;
-    }
-
-    private HistoricTaskInstance findLastFinishedTask(String processInstanceId) {
-        List<HistoricTaskInstance> tasks = historyService.createHistoricTaskInstanceQuery()
-                .processInstanceId(processInstanceId)
-                .finished()
-                .orderByHistoricTaskInstanceEndTime()
-                .desc()
-                .listPage(0, 1);
-        return tasks == null || tasks.isEmpty() ? null : tasks.get(0);
-    }
-
-    private void autoApproveTask(Task task, String mode) {
-        String comment = "系统自动同意（重复审批人）";
-        taskService.addComment(task.getId(), task.getProcessInstanceId(), comment);
-        completeTask(task, mergeActionVariables(null, true));
-
-        FlowTask flowTask = new FlowTask();
-        flowTask.setStatus(FlowTaskStatus.APPROVED.getCode());
-        flowTask.setComment(comment);
-        flowTask.setCompleteTime(LocalDateTime.now());
-        updateTaskByTenant(task.getId(), flowTask);
-
-        log.info("重复审批自动同意：taskId={}, processInstanceId={}, assignee={}, mode={}",
-                task.getId(), task.getProcessInstanceId(), task.getAssignee(), mode);
+        taskActionCoordinator().terminateTask(taskId, userId, comment, signature);
     }
 
     @Override
@@ -1205,6 +653,24 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         );
     }
 
+    private FlowTaskActionCoordinator taskActionCoordinator() {
+        return new FlowTaskActionCoordinator(
+                runtimeService,
+                taskService,
+                repositoryService,
+                historyService,
+                getBaseMapper(),
+                flowBusinessMapper,
+                flowErrorLogService,
+                taskNodePolicy(),
+                formConfigurationResolver(),
+                this::assertTaskMutationActor,
+                this::assertTaskTenantForAction,
+                this::validateReassignTarget,
+                this::isProcessStarterTask
+        );
+    }
+
     private boolean isProcessStarterTask(Task task, String userId) {
         if (task == null || isBlank(userId)) {
             return false;
@@ -1283,6 +749,10 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             throw new IllegalStateException("FLOW_TASK_TENANT_REQUIRED");
         }
         return tenantId;
+    }
+
+    private boolean updateTaskByTenant(String taskId, FlowTask task) {
+        return getBaseMapper().updateByTaskIdAndTenant(taskId, requireTenantId(), task) > 0;
     }
 
     /**
@@ -1483,17 +953,6 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         // 格式：processKey:version:id
         String[] parts = processDefinitionId.split(":");
         return parts.length > 0 ? parts[0] : processDefinitionId;
-    }
-
-    private void recordTaskError(String processInstanceId, String taskId, String activityId,
-                                  String activityName, String errorStage, Throwable e) {
-        FlowErrorLog errorLog = new FlowErrorLog();
-        errorLog.setProcessInstanceId(processInstanceId);
-        errorLog.setTaskId(taskId);
-        errorLog.setActivityId(activityId);
-        errorLog.setActivityName(activityName);
-        errorLog.setErrorStage(errorStage);
-        flowErrorLogService.recordError(errorLog, e);
     }
 
 }

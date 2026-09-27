@@ -81,14 +81,16 @@ class FlowTaskSignContractTest {
                 "../../../forge-flow/forge-flow-server/src/main/java/com/mdframe/forge/flow/controller/FlowTaskController.java"));
         String service = Files.readString(Path.of(
                 "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskServiceImpl.java"));
+        String coordinator = Files.readString(Path.of(
+                "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskActionCoordinator.java"));
         String authorization = Files.readString(Path.of(
                 "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskActionAuthorization.java"));
         assertTrue(dto.contains("private String idempotencyKey"));
         assertTrue(dto.contains("private String requestDigest"));
         assertTrue(controller.contains("optionalText(dto.getIdempotencyKey())"));
         assertTrue(controller.contains("optionalText(dto.getRequestDigest())"));
-        assertTrue(service.contains("authorizeTaskAction(taskId, userId, tenantId, \"DELEGATE\""));
-        assertTrue(service.contains("flowTask.setActionType(idempotencyKey == null ? null : \"DELEGATE\")"));
+        assertTrue(coordinator.contains("authorizeTaskAction(taskId, userId, tenantId, \"DELEGATE\""));
+        assertTrue(coordinator.contains("flowTask.setActionType(idempotencyKey == null ? null : \"DELEGATE\")"));
         assertTrue(authorization.contains("userId.equals(task.getOwner())"));
     }
 }

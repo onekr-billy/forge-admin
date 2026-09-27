@@ -330,3 +330,9 @@
 - 使用 Command + Strategy 从 `FlowTaskServiceImpl` 迁出加签/减签校验、候选人集合变更、多实例执行创建/删除、幂等审计关系和关系列表读取。Facade 保留全部公开接口与 `@Transactional`，通过窄守卫复用任务操作者和目标用户校验。
 - 普通任务候选人路径与 Flowable 多实例路径显式分开，租户锁、人数上限、关系审计、子任务/执行 ID 和评论语义保持不变；入口由 1717 行降至 1499 行，新 `FlowTaskDynamicSignCoordinator` 316 行。
 - flow Reactor 编译退出码 0；执行动态会签、动作授权、状态流转、表单、安全和性能相关 11 类 39 项，0 失败、0 错误；会签源码契约改为分别约束 Facade 事务入口和 Coordinator 策略实现。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库或 Flowable 引擎；真实并行/串行多实例执行和并发幂等仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第六十三个切口：Flowable 任务动作命令协调器
+
+- 使用 Command Coordinator + Template Method 从 `FlowTaskServiceImpl` 迁出审批、驳回、驳回发起人、转办、退回、改派、终结、直送和重复审批自动同意。Facade 保留全部公开方法及 `@Transactional`，通过窄守卫复用任务租户、操作者、目标用户和发起人校验。
+- 命令链继续遵循“租户/幂等授权 → Flowable 节点策略 → 引擎副作用 → 本地任务/业务镜像 → 错误审计”；对比迁移前实现后保留转办 owner 和退回意见的原空串语义。入口由 1499 行降至 958 行，新 `FlowTaskActionCoordinator` 609 行，均低于 1000 行。
+- flow Reactor 编译退出码 0；执行任务动作、直送、动态会签、状态流转、表单、安全和性能相关 11 类 39 项，0 失败、0 错误；直送反射测试改为直接验证 Coordinator，源码契约改为分别约束 Facade 事务装配和 Coordinator 命令实现，没有保留测试专用转发层。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库或 Flowable 引擎；真实并发审批、跨节点退回、流程终结回写和重复审批链仍需服务环境验收，无服务 PID 需停止。

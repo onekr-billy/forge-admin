@@ -14,13 +14,17 @@ class FlowTaskMutationAuthorizationContractTest {
     void highImpactTaskActionsMustCheckMutationActorBeforeFlowableSideEffects() throws IOException {
         String source = Files.readString(Path.of(
                 "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskServiceImpl.java"));
-        int delegateStart = source.indexOf("public void delegate(String taskId");
-        int terminateStart = source.indexOf("public void terminateTask(String taskId");
+        String coordinator = Files.readString(Path.of(
+                "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskActionCoordinator.java"));
+        assertTrue(source.contains("this::assertTaskMutationActor"));
+        assertTrue(source.contains("this::validateReassignTarget"));
+        int delegateStart = coordinator.indexOf("void delegate(String taskId");
+        int terminateStart = coordinator.indexOf("void terminateTask(String taskId");
         assertTrue(delegateStart >= 0 && terminateStart > delegateStart);
-        assertTrue(source.substring(delegateStart, terminateStart).contains("assertTaskMutationActor"));
-        assertTrue(source.substring(delegateStart, terminateStart).contains("validateReassignTarget(targetUserId.trim())"));
-        int terminateEnd = source.indexOf("private Map<String, Object> mergeActionVariables", terminateStart);
-        assertTrue(source.substring(terminateStart, terminateEnd).contains("assertTaskMutationActor"));
+        assertTrue(coordinator.substring(delegateStart, terminateStart).contains("mutationActorGuard.verify"));
+        assertTrue(coordinator.substring(delegateStart, terminateStart).contains("targetUserValidator.accept"));
+        int terminateEnd = coordinator.indexOf("private FlowTask authorizeTaskAction", terminateStart);
+        assertTrue(coordinator.substring(terminateStart, terminateEnd).contains("mutationActorGuard.verify"));
     }
 
     @Test
@@ -70,7 +74,10 @@ class FlowTaskMutationAuthorizationContractTest {
                 "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskFormConfigurationResolver.java"));
         String formCoordinator = Files.readString(Path.of(
                 "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskFormContextCoordinator.java"));
-        assertTrue(source.contains("selectByProcessInstanceIdAndTenantIdForUpdate(\n                    task.getProcessInstanceId(), tenantId)"));
+        String actionCoordinator = Files.readString(Path.of(
+                "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskActionCoordinator.java"));
+        assertTrue(actionCoordinator.contains(
+                "selectByProcessInstanceIdAndTenantIdForUpdate(\n                task.getProcessInstanceId(), tenantId)"));
         assertTrue(formCoordinator.contains("selectByProcessInstanceIdAndTenantId(processInstanceId, tenantId)"));
         assertTrue(formCoordinator.contains("selectByBusinessKeyAndTenantId(tenantId, businessKey)"));
         assertTrue(formCoordinator.contains("selectByIdOrTaskIdAndTenant(taskId, tenantId)"));

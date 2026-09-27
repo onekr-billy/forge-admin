@@ -1,6 +1,12 @@
 package com.mdframe.forge.starter.flow.service.impl;
 
+import com.mdframe.forge.starter.flow.mapper.FlowBusinessMapper;
+import com.mdframe.forge.starter.flow.mapper.FlowTaskMapper;
+import com.mdframe.forge.starter.flow.service.FlowErrorLogService;
+import org.flowable.engine.HistoryService;
+import org.flowable.engine.RepositoryService;
 import org.flowable.engine.RuntimeService;
+import org.flowable.engine.TaskService;
 import org.flowable.engine.runtime.ChangeActivityStateBuilder;
 import org.flowable.engine.runtime.ProcessInstance;
 import org.flowable.engine.runtime.ProcessInstanceQuery;
@@ -9,7 +15,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.List;
@@ -25,22 +30,32 @@ import static org.mockito.Mockito.when;
 @DisplayName("flow task return direct-send state changes")
 class FlowTaskServiceImplStateChangeTest {
 
-    private FlowTaskServiceImpl service;
+    private FlowTaskActionCoordinator service;
     private RuntimeService runtimeService;
     private Method directSendAfterReturn;
     private Method mergeActionVariables;
 
     @BeforeEach
     void setUp() throws Exception {
-        service = new FlowTaskServiceImpl();
         runtimeService = mock(RuntimeService.class);
-        Field runtimeServiceField = FlowTaskServiceImpl.class.getDeclaredField("runtimeService");
-        runtimeServiceField.setAccessible(true);
-        runtimeServiceField.set(service, runtimeService);
-        directSendAfterReturn = FlowTaskServiceImpl.class.getDeclaredMethod(
+        service = new FlowTaskActionCoordinator(
+                runtimeService,
+                mock(TaskService.class),
+                mock(RepositoryService.class),
+                mock(HistoryService.class),
+                mock(FlowTaskMapper.class),
+                mock(FlowBusinessMapper.class),
+                mock(FlowErrorLogService.class),
+                null,
+                null,
+                (taskId, userId, allowInitiator) -> { },
+                taskId -> { },
+                userId -> { },
+                (task, userId) -> true);
+        directSendAfterReturn = FlowTaskActionCoordinator.class.getDeclaredMethod(
                 "directSendAfterReturn", Task.class, Map.class, String.class);
         directSendAfterReturn.setAccessible(true);
-        mergeActionVariables = FlowTaskServiceImpl.class.getDeclaredMethod(
+        mergeActionVariables = FlowTaskActionCoordinator.class.getDeclaredMethod(
                 "mergeActionVariables", Map.class, boolean.class);
         mergeActionVariables.setAccessible(true);
     }
