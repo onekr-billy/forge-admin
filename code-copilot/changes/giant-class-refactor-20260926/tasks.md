@@ -56,12 +56,13 @@
 - [x] 提取业务对象关系 Coordinator 与运行时关系 Projector，集中关系持久化、主子表外键补齐、modelRefs 投影和快照恢复，使 `BusinessObjectDesignerService` 降至 2151 行。
 - [x] 提取业务对象字段设计 Policy，集中运行时元数据保留与业务组件保护，并清理无调用的旧 Payload 降级链，使 `BusinessObjectDesignerService` 降至 1684 行。
 - [x] 提取历史 Page Schema Adapter，集中旧搜索/编辑/列表协议与区域别名迁移，并清理投影职责迁出后的无调用工具链，使 `BusinessObjectDesignerService` 降至 1160 行。
-- [x] 提取草稿 Schema Gateway，集中模型/运行配置加载、领域与数据源补全、校验和双表持久化，使 `BusinessObjectDesignerService` 降至 904 行并满足单类 1000 行目标。
+- [x] 提取草稿 Schema Gateway，集中模型/运行配置加载、领域与数据源补全、校验和双表持久化；补齐前序抽取遗漏的方法边界后 `BusinessObjectDesignerService` 为 909 行，仍满足单类 1000 行目标。
 - [x] 提取 Flowable 流程图 Facade/Assembler，集中 BPMN 图片生成、节点/连线状态投影和人员批量展示，使 `FlowTaskServiceImpl` 降至 2848 行。
 - [x] 提取 Flowable 任务节点 Policy/Specification，集中动作许可、配置覆盖、必填变量、审批要点和退回目标判定，使 `FlowTaskServiceImpl` 降至 2449 行。
 - [x] 提取 Flowable 表单配置 Resolver，集中节点/模型/动态表单/实例快照的分层回退和数组字段权限 Schema 来源，使 `FlowTaskServiceImpl` 降至 2006 行。
 - [x] 提取 Flowable 任务/流程表单上下文 Coordinator，集中访问守卫、业务关联、定义定位、变量回退和动作视图组装，使 `FlowTaskServiceImpl` 降至 1717 行。
 - [x] 提取 Flowable 动态会签 Coordinator，以 Command + Strategy 分离候选人和多实例加签/减签，使 `FlowTaskServiceImpl` 降至 1499 行。
 - [x] 提取 Flowable 任务动作 Command Coordinator，固化授权、策略、引擎副作用、镜像回写和错误审计模板，使 `FlowTaskServiceImpl` 降至 958 行并满足单类 1000 行目标。
+- [x] 提取业务对象表单发布 Validator/Pipeline 与检查结果 Collector，集中组件树、表单治理、字段事件安全和视图投影校验，使 `BusinessObjectPublishService` 降至 2210 行。
 - [ ] 完成业务流程服务级联调和运行配置真实页面验收。
 - [ ] 分阶段拆分动态 CRUD、设计态、发布、Flowable 任务/模型及业务动作/触发器；每阶段独立验证。

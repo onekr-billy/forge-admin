@@ -336,3 +336,10 @@
 - 使用 Command Coordinator + Template Method 从 `FlowTaskServiceImpl` 迁出审批、驳回、驳回发起人、转办、退回、改派、终结、直送和重复审批自动同意。Facade 保留全部公开方法及 `@Transactional`，通过窄守卫复用任务租户、操作者、目标用户和发起人校验。
 - 命令链继续遵循“租户/幂等授权 → Flowable 节点策略 → 引擎副作用 → 本地任务/业务镜像 → 错误审计”；对比迁移前实现后保留转办 owner 和退回意见的原空串语义。入口由 1499 行降至 958 行，新 `FlowTaskActionCoordinator` 609 行，均低于 1000 行。
 - flow Reactor 编译退出码 0；执行任务动作、直送、动态会签、状态流转、表单、安全和性能相关 11 类 39 项，0 失败、0 错误；直送反射测试改为直接验证 Coordinator，源码契约改为分别约束 Facade 事务装配和 Coordinator 命令实现，没有保留测试专用转发层。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库或 Flowable 引擎；真实并发审批、跨节点退回、流程终结回写和重复审批链仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第六十四个切口：业务对象表单发布校验流水线
+
+- 在本轮编译前先修复前序设计器拆分遗留的契约遗漏：恢复 `resolveFormDesignerSchema` 方法边界，补回关系 Coordinator 的嵌入关系/默认关系键规则，并将组件默认策略及其测试归属迁至字段设计 Policy；独立提交为 `13d8f2f6`。
+- 使用 Validator + Pipeline 从 `BusinessObjectPublishService` 迁出表单组件树、表单治理、嵌套表单字段事件、安全路径与映射协议、视图字段引用校验；使用 Collector 统一检查项构造及不可降级阻断白名单。发布 Facade 继续持有上下文加载、事务、在线 DDL 和状态切换顺序。
+- 入口由 2709 行降至 2210 行，新 `BusinessObjectFormPublishValidator` 497 行、`BusinessPublishCheckCollector` 53 行，均低于 1000 行；表单与字段事件测试改为直接验证 Validator，不保留测试专用 Facade 私有方法。
+- generator Reactor 编译退出码 0；执行 `BusinessObject*Test,BusinessApplicationDraftPreviewContractTest,RuntimeDesignerLayoutReaderTest` 共 14 类 70 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin 服务、未连接真实数据库或执行在线 DDL；真实历史表单资产、复杂字段事件和发布事务仍需服务环境验收，无服务 PID 需停止。

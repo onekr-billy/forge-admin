@@ -1,14 +1,11 @@
 package com.mdframe.forge.plugin.generator.service.businessapp;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mdframe.forge.plugin.generator.constant.BusinessPublishCheckLevel;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessPublishCheckItemVO;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -21,18 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Tag("dev")
 class BusinessObjectPublishServiceFormSchemaTest {
 
-    private BusinessObjectPublishService service;
-    private Method checkFormDesignerSchema;
-
-    @BeforeEach
-    void setUp() throws Exception {
-        service = new BusinessObjectPublishService(
-                null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, new ObjectMapper());
-        checkFormDesignerSchema = BusinessObjectPublishService.class.getDeclaredMethod(
-                "checkFormDesignerSchema", Map.class, Set.class, List.class);
-        checkFormDesignerSchema.setAccessible(true);
-    }
+    private final BusinessObjectFormPublishValidator validator = new BusinessObjectFormPublishValidator();
 
     @Test
     @DisplayName("4 列栅格内绑定的业务字段可以通过表单发布检查")
@@ -100,11 +86,9 @@ class BusinessObjectPublishServiceFormSchemaTest {
         assertTrue(items.stream().noneMatch(item -> BusinessPublishCheckLevel.BLOCK.equals(item.getLevel())));
     }
 
-    @SuppressWarnings("unchecked")
-    private List<BusinessPublishCheckItemVO> validate(Map<String, Object> formSchema, Set<String> modelFields)
-            throws Exception {
+    private List<BusinessPublishCheckItemVO> validate(Map<String, Object> formSchema, Set<String> modelFields) {
         List<BusinessPublishCheckItemVO> items = new ArrayList<>();
-        checkFormDesignerSchema.invoke(service, formSchema, modelFields, items);
+        validator.checkFormDesignerSchema(formSchema, modelFields, items);
         return items;
     }
 

@@ -369,6 +369,16 @@
 
 验证结果：任务动作已统一委托 `FlowTaskActionCoordinator`，直送状态测试改为直接验证 Coordinator，安全/状态契约同步验证新职责归属；相关 11 个测试类共 39 项通过，0 失败、0 错误。flow Reactor 编译与 `git diff --check` 通过；`FlowTaskServiceImpl` 958 行，新 Coordinator 609 行，至此二者均满足单类 1000 行目标。
 
+## 2026-09-27 第六十四轮增量验证：业务对象表单发布校验流水线
+
+- P0：表单组件树展平、虚拟布局跳过、组件 ID 去重、字段绑定和缺失字段阻断语义保持不变。
+- P0：字段查询事件的触发源、受管查询源、参数/结果映射、危险键、路径安全、文案长度和不可降级阻断规则保持不变。
+- P0：表单治理、嵌套多表单事件、视图字段投影和发布检查等级归一规则保持不变。
+- P1：使用 Validator + Pipeline 隔离表单发布校验，以 Collector 统一检查项构造与阻断等级；Facade 仅保留上下文编排，新生产类少于 1000 行。
+- 验证：执行 generator Reactor 编译，重跑业务对象设计器、发布、数据库同步和运行布局相关测试；执行 `git diff --check` 和类行数检查，不启动真实服务。
+
+验证结果：前序设计器抽取遗漏的方法边界、关系辅助规则和字段组件默认策略已先恢复；表单组件、治理、字段事件和视图检查已统一委托 `BusinessObjectFormPublishValidator`，检查项等级统一由 `BusinessPublishCheckCollector` 处理。相关 14 个测试类共 70 项通过，0 失败、0 错误；generator Reactor 编译与 `git diff --check` 通过。`BusinessObjectPublishService` 2210 行，新 Validator 497 行、Collector 53 行。
+
 ## 2026-09-26 第四十五轮增量验证：主子表持久化引擎
 
 - P0：主子表详情的数据权限、子表外键修复、关系值解析、读取流水线和审计元数据保持不变。
