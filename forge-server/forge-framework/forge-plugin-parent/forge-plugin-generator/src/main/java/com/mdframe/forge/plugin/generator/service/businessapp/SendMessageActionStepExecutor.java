@@ -6,7 +6,6 @@ import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessActionStepResul
 import com.mdframe.forge.plugin.message.domain.dto.MessageSendRequestDTO;
 import com.mdframe.forge.plugin.message.domain.entity.SysMessage;
 import com.mdframe.forge.starter.core.exception.BusinessException;
-import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
@@ -93,18 +92,20 @@ public class SendMessageActionStepExecutor implements BusinessActionStepExecutor
 
     private void resolveReceivers(MessageSendRequestDTO request, String receiverRule, BusinessActionExecutionContext context) {
         if (StringUtils.isBlank(receiverRule)) {
-            setSingleReceiver(request, resolveUserId());
+            setSingleReceiver(request, BusinessActionStepConfigHelper.requireActorUserId(context));
             return;
         }
         String normalizedRule = receiverRule.trim().toUpperCase(Locale.ROOT);
         if ("STARTER".equals(normalizedRule)) {
-            setSingleReceiver(request, resolveUserId());
+            setSingleReceiver(request, BusinessActionStepConfigHelper.requireActorUserId(context));
         } else if ("OWNER".equals(normalizedRule)) {
             Long ownerId = firstLong(context.getRecordData(), "ownerId", "owner_id", "responsibleId", "responsible_id", "assigneeId", "assignee_id");
-            setSingleReceiver(request, ownerId == null ? resolveUserId() : ownerId);
+            setSingleReceiver(request, ownerId == null
+                    ? BusinessActionStepConfigHelper.requireActorUserId(context) : ownerId);
         } else if ("CREATOR".equals(normalizedRule)) {
             Long creatorId = firstLong(context.getRecordData(), "createBy", "create_by");
-            setSingleReceiver(request, creatorId == null ? resolveUserId() : creatorId);
+            setSingleReceiver(request, creatorId == null
+                    ? BusinessActionStepConfigHelper.requireActorUserId(context) : creatorId);
         } else if (normalizedRule.startsWith("USERS:")) {
             request.setUserIds(new LinkedHashSet<>(parseLongList(receiverRule.substring(receiverRule.indexOf(':') + 1))));
             request.setSendScope("USERS");
@@ -120,7 +121,7 @@ public class SendMessageActionStepExecutor implements BusinessActionStepExecutor
         } else if ("ALL".equals(normalizedRule)) {
             request.setSendScope("ALL");
         } else {
-            setSingleReceiver(request, resolveUserId());
+            setSingleReceiver(request, BusinessActionStepConfigHelper.requireActorUserId(context));
         }
     }
 
@@ -179,13 +180,5 @@ public class SendMessageActionStepExecutor implements BusinessActionStepExecutor
             }
         }
         return ids;
-    }
-
-    private Long resolveUserId() {
-        try {
-            return SessionHelper.getUserId();
-        } catch (Exception e) {
-            return 1L;
-        }
     }
 }

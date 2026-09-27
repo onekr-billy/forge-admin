@@ -110,6 +110,14 @@
 - 实际结果：业务流程 Mapper/Service 25/25、公式与脱敏 5/5、应用相关 13/13、数据审计捕获 8/8；Generator 完整依赖反应堆 33/33 模块成功，`forge-plugin-generator` 1237/1237，0 失败、0 错误、0 跳过。
 - 环境限制：沙箱内完整运行因 MockWebServer 无权绑定临时端口中止，沙箱外同命令复跑通过；未连接真实 MySQL 或启动 Admin，不将实库查询计划和 HTTP 端到端记为通过。
 
+## 1.12 2026-09-28 运行时流程动作可信身份
+
+- 租户边界：流程动作投影必须在任何 Mapper 读取前取得正数租户，同一次投影的业务对象、发布版、草稿和应用查询必须使用同一个可信租户。
+- 执行人边界：流程启动与消息默认接收人只允许服务端 `systemContext`、已校验 capability 服务用户或真实会话用户；缺失时不进入流程/消息副作用，不能回退到用户 `1`。
+- 能力身份：无交互会话的 capability 请求必须将已校验的服务用户投影到系统上下文，后续步骤不再各自猜测执行人。
+- 实际结果：`BusinessProcessRuntimeActionProjectionServiceTest`、`BusinessActionTrustedActorTest`、`BusinessActionExecutionServiceTest`、`BusinessTriggerExecutorEventTest` 共 22/22 通过；Generator 完整依赖反应堆 33/33 成功，`forge-plugin-generator` 1244/1244，0 失败、0 错误、0 跳过。
+- 环境限制：未启动 Admin、MySQL 或 Flowable 端到端；此阶段不代表 Outbox、乱序回调或远程成功本地失败场景已闭环。
+
 ## 2. P0 必跑验证
 
 ### 动态脚本与 HTML
