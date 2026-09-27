@@ -66,5 +66,6 @@
 - [x] 提取业务对象表单发布 Validator/Pipeline 与检查结果 Collector，集中组件树、表单治理、字段事件安全和视图投影校验，使 `BusinessObjectPublishService` 降至 2210 行。
 - [x] 提取业务对象页面/事务动作发布 Validator Chain 与目标 Catalog，集中页面引用、动作完整性和命令策略校验，使 `BusinessObjectPublishService` 降至 1680 行。
 - [x] 提取业务对象设计完整性与部署就绪两条 Validator Chain，分离关系/联动/单据/权限和入口/数据源/DDL 检查，使 `BusinessObjectPublishService` 降至 867 行并满足单类 1000 行目标。
+- [x] 提取动态 CRUD 查询条件 Compiler/Strategy，集中普通搜索、自定义条件、多值/区间运算和投影字段白名单，使 `DynamicCrudRepository` 降至 1884 行。
 - [ ] 完成业务流程服务级联调和运行配置真实页面验收。
 - [ ] 分阶段拆分动态 CRUD、设计态、发布、Flowable 任务/模型及业务动作/触发器；每阶段独立验证。

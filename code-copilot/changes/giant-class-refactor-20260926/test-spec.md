@@ -399,6 +399,16 @@
 
 验证结果：关系/联动/运行配置/单据/权限已委托 `BusinessObjectDesignPublishValidator`，应用入口/数据源/表结构已委托 `BusinessObjectDeploymentPublishValidator`；主链显式保持原执行顺序。相关 14 个测试类共 70 项通过，0 失败、0 错误；generator Reactor 编译与 `git diff --check` 通过。`BusinessObjectPublishService` 867 行，新 Validator 分别 598 行和 436 行，全部满足单类 1000 行目标。
 
+## 2026-09-27 第六十七轮增量验证：动态查询条件编译器
+
+- P0：普通搜索的 LIKE/比较/IN/BETWEEN/NULL、多值 eq 自动转 IN 和 OR-LIKE 分组保持参数化 SQL 语义。
+- P0：自定义条件的 AND/OR、操作符白名单、区间结束值、字段白名单及非法操作符失败关闭保持不变。
+- P0：自定义投影继续自动包含主键，只允许已知列，并拒绝注入型列名。
+- P1：使用 Compiler + Strategy 隔离查询条件和投影 SQL 片段；Repository 保留 JDBC 执行、租户/逻辑删除基线及数据源路由，新生产类少于 1000 行。
+- 验证：执行 generator Reactor 干净构建，重跑动态 CRUD、数据权限和业务流程依赖测试；执行 `git diff --check` 和类行数检查，不启动真实服务。
+
+验证结果：普通搜索、自定义条件和投影字段编译已委托 `DynamicCrudQueryConditionCompiler`；新增 3 项协议测试覆盖多值 IN、OR-LIKE、区间、非法操作符和投影白名单，并修正存量仓储测试的完整构造依赖。相关 38 个测试类共 160 项通过，0 失败、0 错误；generator Reactor `clean test` 与 `git diff --check` 通过。`DynamicCrudRepository` 1884 行，新 Compiler 430 行。
+
 ## 2026-09-26 第四十五轮增量验证：主子表持久化引擎
 
 - P0：主子表详情的数据权限、子表外键修复、关系值解析、读取流水线和审计元数据保持不变。
