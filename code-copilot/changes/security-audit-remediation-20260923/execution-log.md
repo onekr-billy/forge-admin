@@ -1,5 +1,23 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：扩展设计、发布快照与应用回滚可信身份收口
+
+### 实现
+
+- 业务扩展 CRUD 和扩展版本草稿/回滚在编辑锁、实体查询和持久化前捕获一次可信租户与操作者；扩展实体、版本审计字段和应用变更标记共用该身份，不再回退租户/用户 `1`。
+- `BusinessApplicationChangeTracker` 增加显式租户入口，发布与设计写链路可沿用已经校验的租户；会话入口缺少正数租户时在 Mapper 更新前 fail-closed。
+- 应用发布快照准备先解析可信租户，并将同一租户用于应用、对象、扩展、流程、版本和绑定资产查询，避免一个快照跨越不同租户上下文。
+- 应用回滚与恢复入口在读取运行单和执行兼容性检查前捕获租户/操作者快照，扩展版本恢复、流程绑定恢复和应用变更标记全程复用该快照。
+
+### 验证
+
+- `BusinessExtensionServiceTest` 5/5、`BusinessExtensionVersionServiceTest` 3/3、`BusinessApplicationRollbackContractTest` 2/2、`BusinessApplicationPhaseFiveSecurityTest` 5/5、`BusinessExtensionExecutionServiceTest` 8/8、`BusinessApplicationChangeTrackerTest` 2/2，共 25/25 通过。
+- Generator 完整依赖反应堆 33/33 模块成功，`forge-plugin-generator` 1266/1266 测试通过，0 失败、0 错误、0 跳过。
+
+### 未覆盖
+
+- 未连接真实 MySQL/Flowable 或启动 Admin 执行发布快照与应用回滚 HTTP 端到端；T4.5 要求的 DDL Outbox、跨数据源补偿、死信与人工重放仍未完成。
+
 ## 2026-09-28：应用与流程发布写路径可信身份收口
 
 ### 实现
