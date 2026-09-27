@@ -672,3 +672,12 @@
 - P1：新增 Policy 直测并重跑完整 `BusinessDocumentRuntimeServiceTest`；执行 generator Reactor 编译、`git diff --check` 和类行数检查，不启动服务。
 
 验证结果：新增动作 Policy 4 项测试与原运行态 20 项测试全部通过，0 失败、0 错误；generator Reactor 编译与 `git diff --check` 通过。`BusinessDocumentRuntimeService` 867 行，新 Policy 300 行。
+
+## 2026-09-27 第八十四轮增量验证：能力调用契约策略与构建器
+
+- P0：版本 Schema 和调用策略只接受 JSON 对象，非法或非对象内容继续降级为空配置；操作级配置继续覆盖版本级默认值。
+- P0：动作编码、请求/响应说明、流程绑定快照、提交授权字段、示例字段白名单与必填字段检查保持原语义和原提示文案。
+- P1：使用 Policy + Contract Builder 隔离契约解析和调用指引投影；Service 保留应用/版本/操作加载、认证示例和最终协议编排，新生产类少于 1000 行。
+- 验证：执行 capability-platform Reactor 编译，重跑新策略类和原调用指引服务定向测试，执行 `git diff --check` 和类行数检查；不启动真实服务。
+
+验证结果：Schema/策略解析、动作编码、流程/提交检查及请求示例投影已委托 `CapabilityCallContractPolicy`；新增 4 项测试覆盖非法 Schema、操作覆盖、流程提示、提交字段过滤与绑定版本不匹配。相关 2 个测试类共 11 项通过，0 失败、0 错误。capability-platform Reactor 编译与 `git diff --check` 通过；`CapabilityCallGuideService` 850 行，新 Policy 297 行。
