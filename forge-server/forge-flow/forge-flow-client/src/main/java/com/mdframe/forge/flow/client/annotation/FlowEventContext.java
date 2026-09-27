@@ -26,6 +26,15 @@ import java.util.Map;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class FlowEventContext {
 
+    /** Flow 通知 Outbox 生成的稳定事件 ID。 */
+    private String eventId;
+
+    /** 事件协议版本。 */
+    private Integer eventVersion;
+
+    /** Flow 通知 Outbox 的数据库顺序号。 */
+    private Long eventSequence;
+
     /** 事件类型：PROCESS_COMPLETED / PROCESS_REJECTED / PROCESS_CANCELED
      *  兼容 FlowEventMessage.eventType 字段名 */
     @JsonAlias("eventType")

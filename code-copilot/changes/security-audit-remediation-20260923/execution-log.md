@@ -1,5 +1,28 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：T4.4 Flow 回调可靠 Inbox 与顺序 fencing
+
+### 实现
+
+- `FlowEventContext` 补齐 Flow 通知 Outbox 已产生的 `eventId`、`eventVersion`、`eventSequence`，不再在业务侧反序列化时丢弃可靠事件身份。
+- 新增 `ai_business_flow_callback_inbox`：可靠事件先在独立事务持久化可信租户、事件身份、流程/业务聚合摘要、不可变快照和 SHA-256 摘要，再认领执行原业务回调事务；业务事务提交后才以持有者 CAS 标记 COMPLETED。
+- 将 `BusinessFlowEngineEventConsumer` 设为唯一可被 Flow 客户端扫描的 `@FlowBind + @FlowCallback` 入口，移除 `BusinessFlowService` 的订阅标记，避免新旧入口重复消费。缺少可靠身份的旧事件保留兼容直通路径并记录告警。
+- Inbox 按同一流程聚合阻断已知的更早未完成事件，并阻止另一个 PROCESSING 消费者并发写入；迟到事件通过已完成最大顺序号 fencing 跳过业务状态回写。FAILED/过期 PROCESSING 由定时扫描器按指数退避恢复，租约超时可接管，达到上限进入 DEAD。
+- 每次恢复都复验租户、事件 ID/版本/顺序、聚合键、快照和摘要，并重建事件所属租户上下文；错误字段只记录异常类型，不保存原始异常消息或业务数据。
+
+### 验证
+
+- Inbox 服务、消费者、Mapper、既有流程生命周期与审批结果监听定向回归 18/18 通过；覆盖不可变快照恢复、摘要篡改拒绝、迟到事件 fencing、业务事务先于 Inbox 完成、失败留待恢复、旧事件兼容和单一可扫描订阅入口。
+- `forge-plugin-generator` 完整依赖测试 1365/1365，0 失败、0 错误、0 跳过；Admin JDK 17 全依赖聚合编译 46/46 模块成功。
+- `BusinessFlowCallbackInboxMapper.xml` 通过 `xmllint --noout`；V1.0.198 静态扫描未发现 `${...}` 或 `tenant_id = 0`；`git diff --check` 通过。
+- Inbox 服务 224 行、事件消费者 68 行、恢复调度器 36 行、事件信封 56 行，均低于 1000 行；本批未开展用户明确排除的巨型组件/巨型类改造。
+
+### 未覆盖
+
+- 未连接真实 MySQL/Flowable 执行 V1.0.198/Flyway，未执行双 JVM 认领竞争、数据库瞬断、kill -9 租约接管或真实乱序注入；DEAD 尚无独立运维页面和授权重放接口。
+- Inbox 解决事件成功进入业务进程后的本地事务失败恢复；Redis Pub/Sub 在业务数据库不可用、事件尚未成功入箱时仍缺少消费端 ACK，不能宣称端到端 exactly-once。固定 DTO 的旧 `/callback` 接口及不带事件身份的旧发布方继续走兼容路径，也不具备本 Inbox 的去重与顺序保证。
+- T4.4 的审批命令和主动状态同步仍未完成；T4.2/T4.3 巨型组件/巨型类改造继续按用户要求排除。
+
 ## 2026-09-28：T4.4 FlowClient 启动命令持久化与远端成功恢复
 
 ### 实现

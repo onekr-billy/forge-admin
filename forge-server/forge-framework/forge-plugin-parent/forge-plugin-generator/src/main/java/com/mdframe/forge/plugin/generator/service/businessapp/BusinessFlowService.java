@@ -3,7 +3,6 @@ package com.mdframe.forge.plugin.generator.service.businessapp;
 import com.alibaba.fastjson2.JSONObject;
 import com.mdframe.forge.flow.client.FlowClient;
 import com.mdframe.forge.flow.client.FlowResult;
-import com.mdframe.forge.flow.client.annotation.FlowBind;
 import com.mdframe.forge.flow.client.annotation.FlowCallback;
 import com.mdframe.forge.flow.client.annotation.FlowEventContext;
 import com.mdframe.forge.flow.client.spi.FlowBusinessListDisplayItem;
@@ -72,7 +71,6 @@ import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlo
  */
 @Slf4j
 @Service
-@FlowBind(modelKey = "*", businessType = "lowcode-business")
 public class BusinessFlowService {
 
     private static final BusinessFlowStartContextAssembler START_CONTEXT_ASSEMBLER =
@@ -842,13 +840,6 @@ public class BusinessFlowService {
         callbackCoordinator.handleCallback(dto);
     }
 
-    @FlowCallback(on = {
-            FlowCallback.ON_TASK_CREATED,
-            FlowCallback.ON_TASK_COMPLETED,
-            FlowCallback.ON_COMPLETED,
-            FlowCallback.ON_REJECTED,
-            FlowCallback.ON_CANCELED
-    })
     @Transactional(rollbackFor = Exception.class)
     public void handleFlowEngineEvent(FlowEventContext ctx) {
         if (ctx == null) {

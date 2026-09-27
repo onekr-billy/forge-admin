@@ -330,6 +330,15 @@
 - 实际结果：启动命令服务、Mapper 契约、Coordinator 及性能契约定向测试 15/15；`forge-plugin-generator` 完整测试 1356/1356，0 失败、0 错误、0 跳过；Admin JDK 17 聚合编译 46/46 模块成功。Mapper XML、迁移静态扫描和 `git diff --check` 通过。
 - 环境限制：未连接真实 MySQL 执行 V1.0.197/Flyway，未执行双 JVM 租约竞争、FlowClient 网络分区、远端成功后进程崩溃或真实 Flowable 对账；审批、回调和状态同步命令仍属于 T4.4 未完成项。
 
+## 1.37 2026-09-28 Flow 回调可靠 Inbox 与顺序 fencing
+
+- 可靠身份透传：Flow 通知 Outbox 的事件 ID、协议版本和数据库顺序号必须完整反序列化到 `FlowEventContext`；可靠消费者必须是唯一可被 `FlowEventSubscriber` 扫描的回调入口，旧业务服务不得重复订阅。
+- 入箱与事务边界：带可靠身份的事件必须先以独立事务持久化可信租户、流程/业务聚合键、不可变快照和 SHA-256 摘要，再调用原业务回调事务；只有业务事务提交后才能将 Inbox 标记 COMPLETED。重复事件 ID 仅在摘要一致时幂等复用。
+- 顺序与恢复：同一聚合存在已知更早未完成事件或其他 PROCESSING 事件时不得认领；已完成的更高顺序号必须 fencing 迟到事件。FAILED 和过期 PROCESSING 支持退避重试、租约接管和 DEAD，状态更新使用租户、记录 ID、PROCESSING 状态与 lock owner CAS。
+- 租户与篡改边界：跨租户扫描仅返回恢复候选，实际处理前必须复验事件身份、聚合键、快照摘要并重建原租户上下文；错误信息只保存异常类型。
+- 实际结果：Inbox/消费者/Mapper/既有生命周期定向测试 18/18；`forge-plugin-generator` 完整依赖测试 1365/1365，0 失败、0 错误、0 跳过；Admin JDK 17 聚合编译 46/46。Mapper XML、迁移静态扫描和 `git diff --check` 通过。
+- 环境限制：未连接真实 MySQL 执行 V1.0.198/Flyway，未做双 JVM、崩溃和真实乱序故障注入；Redis Pub/Sub 在事件成功入箱前仍无消费端 ACK，旧 `/callback` DTO 和无可靠身份发布方继续走兼容路径。本阶段不能表述为端到端 exactly-once。
+
 ## 2. P0 必跑验证
 
 ### 动态脚本与 HTML
