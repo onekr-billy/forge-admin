@@ -574,3 +574,13 @@
 - 验证：重跑命令仓储、后台审计、写策略、记录查询和 Join 列表回归，执行 `git diff --check` 与类行数检查；不启动真实服务。
 
 验证结果：所有动态变更命令已委托 `DynamicCrudMutationExecutor`，首个 ID 查询同步归入 Record Query Executor；相关 5 个测试类共 15 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`DynamicCrudRepository` 1165 行，新 Mutation Executor 251 行，Record Query Executor 214 行。
+
+## 2026-09-27 第七十三轮增量验证：动态 SQL 支持编译器
+
+- P0：运行时主键字段/列、MySQL/PostgreSQL/Oracle 分页、租户与逻辑删除谓词、数据权限条件和参数绑定保持不变。
+- P0：INSERT/UPDATE/单条与批量 DELETE 的字段顺序、占位符、逻辑删除 SET 和更新时间策略保持不变。
+- P0：Join 详情 ID 参数、基础查询条件和页码偏移在干净编译后仍可用，不依赖历史 target 产物。
+- P1：使用 SQL Support/Compiler 让 Query/Command Executor 共享同一规则；Repository 仅保留公开 Facade 与窄基础设施，所有生产类少于 1000 行。
+- 验证：执行 generator Reactor `clean test`，重跑动态 CRUD、数据权限和业务流程依赖选择器；执行 `git diff --check` 与全量类行数检查，不启动真实服务。
+
+验证结果：主键/方言、基础谓词、Mutation SQL 与参数编译已委托 `DynamicCrudSqlSupport`，Join Compiler 工厂同步迁出装配细节；新增 3 项 SQL 协议测试。首次干净编译发现 Join 详情残留的旧 ID 参数助手，改为当前参数源直接绑定后重跑通过。相关 43 个测试类共 174 项通过，0 失败、0 错误；generator Reactor `clean test` 与 `git diff --check` 通过。`DynamicCrudRepository` 988 行，新 SQL Support 240 行，本阶段全部生产类低于 1000 行。

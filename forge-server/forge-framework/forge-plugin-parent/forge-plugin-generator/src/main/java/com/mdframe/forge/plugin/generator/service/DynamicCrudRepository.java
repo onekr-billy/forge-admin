@@ -9,7 +9,6 @@ import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntime
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.RuntimeDatabaseDialectFactory;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.RuntimeJdbcTemplateProvider;
 import com.mdframe.forge.starter.core.exception.BusinessException;
-import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,7 +20,6 @@ import org.springframework.stereotype.Repository;
 import java.math.BigDecimal;
 import java.util.*;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 /**
  * 动态CRUD数据访问层
@@ -40,7 +38,6 @@ public class DynamicCrudRepository {
 
     private static final String DEFAULT_PRIMARY_KEY = "id";
     private static final Pattern SAFE_IDENTIFIER = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_]{0,63}$");
-    private static final Pattern SAFE_ALIAS = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_]{0,127}$");
 
     public record JoinField(String fieldName, String tableAlias, String columnName) {
     }
@@ -168,9 +165,10 @@ public class DynamicCrudRepository {
         validateJoinQuery(mainTableName, selectFields, joins);
 
         StringBuilder whereClause = new StringBuilder(qualifyPrimaryKey("t0") + " = :id");
-        appendBaseQueryConditions(whereClause, new MapSqlParameterSource(), mainTableName, "t0");
+        sqlSupport().appendBaseQueryConditions(
+                whereClause, new MapSqlParameterSource(), mainTableName, "t0");
         MapSqlParameterSource params = buildBaseQueryParams("t0");
-        appendIdParam(params, id);
+        params.addValue("id", id);
         appendSqlCondition(whereClause, params, dataScopeCondition);
 
         String sql = buildJoinSelectClause(selectFields) + " " + joinQueryCompiler().buildJoinedFromClause(mainTableName, joins)
@@ -488,70 +486,39 @@ public class DynamicCrudRepository {
     }
 
     private StringBuilder buildBaseWhereClause(String tableName) {
-        return buildBaseWhereClause(tableName, null);
+        return sqlSupport().buildBaseWhereClause(tableName, null);
     }
 
     private StringBuilder buildBaseWhereClause(String tableName, String tableAlias) {
-        StringBuilder whereClause = new StringBuilder();
-        appendBaseQueryConditions(whereClause, new MapSqlParameterSource(), tableName, tableAlias);
-        return whereClause;
+        return sqlSupport().buildBaseWhereClause(tableName, tableAlias);
     }
 
     MapSqlParameterSource buildBaseQueryParams() {
-        return buildBaseQueryParams(null);
+        return sqlSupport().buildBaseQueryParams(null);
     }
 
     private MapSqlParameterSource buildBaseQueryParams(String tableAlias) {
-        MapSqlParameterSource params = new MapSqlParameterSource();
-        appendBaseQueryConditions(new StringBuilder(), params, null, tableAlias);
-        appendLogicDeleteParam(params);
-        return params;
+        return sqlSupport().buildBaseQueryParams(tableAlias);
     }
 
     private String buildPageDataSql(String tableName, StringBuilder whereClause, String orderBy, int pageNum, int pageSize) {
-        String dataSql = buildSelectSql("SELECT *", tableName, whereClause);
-        dataSql += buildOrderByClause(orderBy);
-        return paginateSql(dataSql, pageNum, pageSize);
+        return sqlSupport().buildPageDataSql(tableName, whereClause, orderBy, pageNum, pageSize);
     }
 
     String buildOrderByClause(String orderBy) {
-        if (StringUtils.isNotBlank(orderBy)) {
-            return " ORDER BY " + orderBy;
-        }
-        return " ORDER BY " + primaryKeyColumn() + " DESC";
-    }
-
-    private StringBuilder buildIdWhereClause(String tableName) {
-        return buildIdWhereClause(tableName, primaryKeyColumn());
+        return sqlSupport().buildOrderByClause(orderBy);
     }
 
     StringBuilder buildIdWhereClause(String tableName, String primaryKeyColumn) {
-        validateIdentifier(primaryKeyColumn);
-        StringBuilder whereClause = new StringBuilder(primaryKeyColumn + " = :id");
-        appendBaseQueryConditions(whereClause, new MapSqlParameterSource(), tableName);
-        return whereClause;
+        return sqlSupport().buildIdWhereClause(tableName, primaryKeyColumn);
     }
 
     MapSqlParameterSource buildIdQueryParams(Object id) {
-        MapSqlParameterSource params = buildBaseQueryParams();
-        appendIdParam(params, id);
-        return params;
+        return sqlSupport().buildIdQueryParams(id);
     }
 
     void appendBaseQueryConditions(StringBuilder whereClause, MapSqlParameterSource params, String tableName) {
-        appendBaseQueryConditions(whereClause, params, tableName, null);
-    }
-
-    private void appendBaseQueryConditions(StringBuilder whereClause, MapSqlParameterSource params,
-                                           String tableName, String tableAlias) {
-        String tenantColumn = tenantColumn();
-        if (tenantStrategyEnabled() && (tableName == null || getTableColumns(tableName).contains(tenantColumn))) {
-            appendTenantWhereClause(whereClause, params, tableAlias);
-        }
-        if (tableName != null && hasDelFlag(tableName)) {
-            appendWhereCondition(whereClause, qualifyColumn(tableAlias, logicDeleteColumn()) + " = :logicActiveValue");
-            appendLogicDeleteParam(params);
-        }
+        sqlSupport().appendBaseQueryConditions(whereClause, params, tableName, null);
     }
 
     /**
@@ -808,8 +775,10 @@ public class DynamicCrudRepository {
      * 检查表是否有del_flag列（带缓存）
      */
     public boolean hasDelFlag(String tableName) {
+        DynamicCrudWritePolicy policy = writePolicy();
         return tableMetadataGateway().hasLogicDeleteColumn(
-                tableName, logicDeleteColumn(), logicDeleteEnabled(), () -> getTableColumns(tableName));
+                tableName, policy.logicDeleteColumn(), policy.logicDeleteEnabled(),
+                () -> getTableColumns(tableName));
     }
 
     /**
@@ -897,15 +866,11 @@ public class DynamicCrudRepository {
     }
 
     String buildSelectSql(String selectClause, String tableName, StringBuilder whereClause) {
-        String sql = selectClause + " FROM " + tableName;
-        if (whereClause.length() > 0) {
-            sql += " WHERE " + whereClause;
-        }
-        return sql;
+        return sqlSupport().buildSelectSql(selectClause, tableName, whereClause);
     }
 
     private String buildWhereSql(StringBuilder whereClause) {
-        return whereClause.length() > 0 ? " WHERE " + whereClause : "";
+        return sqlSupport().buildWhereSql(whereClause);
     }
 
     private String buildJoinSelectClause(List<JoinField> fields) {
@@ -921,175 +886,63 @@ public class DynamicCrudRepository {
     }
 
     private DynamicCrudJoinQueryCompiler joinQueryCompiler() {
-        return new DynamicCrudJoinQueryCompiler(
-                this::validateTableName,
-                this::validateIdentifier,
-                this::getTableColumns,
-                this::hasDelFlag,
-                () -> dialectFactory.resolve(LowcodeRuntimeDataSourceContextHolder.get()),
-                this::tenantStrategyEnabled,
-                this::tenantColumn,
-                this::logicDeleteColumn
-        );
-    }
-
-    private String qualifyColumn(String tableAlias, String columnName) {
-        if (StringUtils.isBlank(tableAlias)) {
-            return columnName;
-        }
-        return tableAlias + "." + columnName;
+        return DynamicCrudJoinQueryCompiler.create(this, dialectFactory);
     }
 
     private String qualifyPrimaryKey(String tableAlias) {
-        return qualifyColumn(tableAlias, primaryKeyColumn());
+        return sqlSupport().qualifyColumn(tableAlias, primaryKeyColumn());
     }
 
     String primaryKeyColumn() {
-        LowcodeRuntimeDataSourceContext context = LowcodeRuntimeDataSourceContextHolder.get();
-        String columnName = context == null || context.getPrimaryKey() == null
-                ? DEFAULT_PRIMARY_KEY
-                : context.getPrimaryKey().getColumnName();
-        columnName = StringUtils.defaultIfBlank(columnName, DEFAULT_PRIMARY_KEY);
-        validateIdentifier(columnName);
-        return columnName;
+        return sqlSupport().primaryKeyColumn();
     }
 
     private String primaryKeyField() {
-        LowcodeRuntimeDataSourceContext context = LowcodeRuntimeDataSourceContextHolder.get();
-        String field = context == null || context.getPrimaryKey() == null
-                ? DEFAULT_PRIMARY_KEY
-                : context.getPrimaryKey().getField();
-        field = StringUtils.defaultIfBlank(field, DEFAULT_PRIMARY_KEY);
-        validateIdentifier(field);
-        return field;
-    }
-
-    private String quoteIdentifier(String identifier) {
-        validateAlias(identifier);
-        return dialectFactory.resolve(LowcodeRuntimeDataSourceContextHolder.get()).quote(identifier);
-    }
-
-    private void validateAlias(String alias) {
-        if (StringUtils.isBlank(alias) || !SAFE_ALIAS.matcher(alias).matches()) {
-            throw new BusinessException("非法字段别名: " + alias);
-        }
+        return sqlSupport().primaryKeyField();
     }
 
     private String paginateSql(String sql, int pageNum, int pageSize) {
-        long limit = Math.max(1, pageSize);
-        long offset = Math.max(0, pageNum - 1L) * limit;
-        return dialectFactory.resolve(LowcodeRuntimeDataSourceContextHolder.get()).paginate(sql, offset, limit);
+        return sqlSupport().paginate(sql, pageNum, pageSize);
     }
 
     String limitSql(String sql, int limit) {
-        return dialectFactory.resolve(LowcodeRuntimeDataSourceContextHolder.get())
-                .paginate(sql, 0, Math.max(1, limit));
-    }
-
-    private void appendTenantWhereClause(StringBuilder whereClause, MapSqlParameterSource params) {
-        appendTenantWhereClause(whereClause, params, null);
-    }
-
-    private void appendTenantWhereClause(StringBuilder whereClause, MapSqlParameterSource params, String tableAlias) {
-        Long tenantId = TenantContextHolder.getTenantId();
-        if (tenantId == null || !tenantStrategyEnabled()) {
-            return;
-        }
-        appendWhereCondition(whereClause, qualifyColumn(tableAlias, tenantColumn()) + " = :tenantId");
-        params.addValue("tenantId", tenantId);
-    }
-
-    private void appendLogicDeleteParam(MapSqlParameterSource params) {
-        if (params != null && logicDeleteEnabled()) {
-            params.addValue("logicActiveValue", logicActiveValue());
-        }
+        return sqlSupport().limit(sql, limit);
     }
 
     void appendWhereCondition(StringBuilder whereClause, String condition) {
-        appendWhereJoiner(whereClause);
-        whereClause.append(condition);
+        sqlSupport().appendWhereCondition(whereClause, condition);
     }
 
     void appendSqlCondition(StringBuilder whereClause, MapSqlParameterSource params, SqlCondition condition) {
-        if (condition == null || StringUtils.isBlank(condition.sql())) {
-            return;
-        }
-        appendWhereCondition(whereClause, "(" + condition.sql() + ")");
-        if (condition.params() != null) {
-            condition.params().forEach(params::addValue);
-        }
-    }
-
-    private void appendWhereJoiner(StringBuilder whereClause) {
-        if (whereClause.length() > 0) {
-            whereClause.append(" AND ");
-        }
-    }
-
-    private String appendTenantCondition(String sql, MapSqlParameterSource params) {
-        return appendTenantCondition(sql, params, null);
+        sqlSupport().appendSqlCondition(whereClause, params, condition);
     }
 
     String appendTenantCondition(String sql, MapSqlParameterSource params, String tableName) {
-        Long tenantId = TenantContextHolder.getTenantId();
-        if (tenantId == null || !tenantStrategyEnabled()) {
-            return sql;
-        }
-        String tenantColumn = tenantColumn();
-        if (tableName != null && !getTableColumns(tableName).contains(tenantColumn)) {
-            return sql;
-        }
-        params.addValue("tenantId", tenantId);
-        return sql + " AND " + tenantColumn + " = :tenantId";
+        return sqlSupport().appendTenantCondition(sql, params, tableName);
     }
 
     String appendLogicActiveCondition(String sql, MapSqlParameterSource params, String tableName) {
-        if (tableName == null || !hasDelFlag(tableName)) {
-            return sql;
-        }
-        appendLogicDeleteParam(params);
-        return sql + " AND " + logicDeleteColumn() + " = :logicActiveValue";
+        return sqlSupport().appendLogicActiveCondition(sql, params, tableName);
     }
 
     String appendSqlCondition(String sql, MapSqlParameterSource params, SqlCondition condition) {
-        if (condition == null || StringUtils.isBlank(condition.sql())) {
-            return sql;
-        }
-        if (condition.params() != null) {
-            condition.params().forEach(params::addValue);
-        }
-        return sql + " AND (" + condition.sql() + ")";
+        return sqlSupport().appendSqlCondition(sql, params, condition);
     }
 
     String buildInsertSql(String tableName, Map<String, Object> data) {
-        String columns = String.join(", ", data.keySet());
-        String placeholders = data.keySet().stream()
-                .map(col -> ":" + col)
-                .collect(Collectors.joining(", "));
-        return "INSERT INTO " + tableName + " (" + columns + ") VALUES (" + placeholders + ")";
+        return sqlSupport().buildInsertSql(tableName, data);
     }
 
     String buildUpdateSql(String tableName, Map<String, Object> data, String primaryKeyColumn) {
-        String setClauses = data.entrySet().stream()
-                .map(entry -> entry.getKey() + " = :" + entry.getKey())
-                .collect(Collectors.joining(", "));
-        return "UPDATE " + tableName + " SET " + setClauses + " WHERE " + primaryKeyColumn + " = :id";
+        return sqlSupport().buildUpdateSql(tableName, data, primaryKeyColumn);
     }
 
     String buildDeleteSql(String tableName, boolean logicDelete, String primaryKeyColumn) {
-        if (logicDelete) {
-            return "UPDATE " + tableName + " SET " + logicDeleteSetClause(tableName) + " WHERE "
-                    + primaryKeyColumn + " = :id";
-        }
-        return "DELETE FROM " + tableName + " WHERE " + primaryKeyColumn + " = :id";
+        return sqlSupport().buildDeleteSql(tableName, logicDelete, primaryKeyColumn, false);
     }
 
     String buildBatchDeleteSql(String tableName, boolean logicDelete, String primaryKeyColumn) {
-        if (logicDelete) {
-            return "UPDATE " + tableName + " SET " + logicDeleteSetClause(tableName) + " WHERE "
-                    + primaryKeyColumn + " IN (:ids)";
-        }
-        return "DELETE FROM " + tableName + " WHERE " + primaryKeyColumn + " IN (:ids)";
+        return sqlSupport().buildDeleteSql(tableName, logicDelete, primaryKeyColumn, true);
     }
 
     String logicDeleteSetClause(String tableName) {
@@ -1097,25 +950,15 @@ public class DynamicCrudRepository {
     }
 
     MapSqlParameterSource toSqlParams(Map<String, Object> data) {
-        MapSqlParameterSource params = new MapSqlParameterSource();
-        data.forEach(params::addValue);
-        return params;
+        return sqlSupport().toSqlParams(data);
     }
 
     MapSqlParameterSource toSqlParams(Map<String, Object> data, Object id) {
-        MapSqlParameterSource params = toSqlParams(data);
-        appendIdParam(params, id);
-        return params;
+        return sqlSupport().toSqlParams(data, id);
     }
 
     MapSqlParameterSource toIdParam(Object id) {
-        MapSqlParameterSource params = new MapSqlParameterSource();
-        appendIdParam(params, id);
-        return params;
-    }
-
-    private void appendIdParam(MapSqlParameterSource params, Object id) {
-        params.addValue("id", id);
+        return sqlSupport().toIdParam(id);
     }
 
     private void logDynamicSql(String scene, String sql, MapSqlParameterSource params) {
@@ -1127,32 +970,8 @@ public class DynamicCrudRepository {
         return writePolicy().prepareInsert(data, getTableColumns(tableName));
     }
 
-    private Map<String, Object> prepareUpdateData(String tableName, Map<String, Object> data) {
-        return prepareUpdateData(tableName, data, DEFAULT_PRIMARY_KEY);
-    }
-
     Map<String, Object> prepareUpdateData(String tableName, Map<String, Object> data, String primaryKeyColumn) {
         return writePolicy().prepareUpdate(data, getTableColumns(tableName), primaryKeyColumn);
-    }
-
-    private boolean tenantStrategyEnabled() {
-        return writePolicy().tenantStrategyEnabled();
-    }
-
-    private String tenantColumn() {
-        return writePolicy().tenantColumn();
-    }
-
-    private boolean logicDeleteEnabled() {
-        return writePolicy().logicDeleteEnabled();
-    }
-
-    private String logicDeleteColumn() {
-        return writePolicy().logicDeleteColumn();
-    }
-
-    private Object logicActiveValue() {
-        return writePolicy().logicActiveValue();
     }
 
     Object logicDeletedValue() {
@@ -1161,5 +980,9 @@ public class DynamicCrudRepository {
 
     DynamicCrudWritePolicy writePolicy() {
         return new DynamicCrudWritePolicy(this::validateIdentifier);
+    }
+
+    private DynamicCrudSqlSupport sqlSupport() {
+        return new DynamicCrudSqlSupport(this, dialectFactory);
     }
 }

@@ -72,5 +72,6 @@
 - [x] 提取动态写入 Policy/Strategy，集中租户、审计、逻辑删除字段和不可变字段处理，使 `DynamicCrudRepository` 降至 1456 行。
 - [x] 提取动态记录 Query Executor，集中详情、批量、行锁、按列、树节点和唯一性探测，使 `DynamicCrudRepository` 降至 1336 行。
 - [x] 提取动态变更 Command Executor，集中新增、更新、原子数值调整、单条/批量删除和审计执行模板，使 `DynamicCrudRepository` 降至 1165 行。
+- [x] 提取动态 SQL Support/Compiler，统一主键、分页方言、租户/逻辑删除谓词、Mutation SQL 和参数绑定，使 `DynamicCrudRepository` 降至 988 行并满足单类 1000 行目标。
 - [ ] 完成业务流程服务级联调和运行配置真实页面验收。
 - [ ] 分阶段拆分动态 CRUD、设计态、发布、Flowable 任务/模型及业务动作/触发器；每阶段独立验证。

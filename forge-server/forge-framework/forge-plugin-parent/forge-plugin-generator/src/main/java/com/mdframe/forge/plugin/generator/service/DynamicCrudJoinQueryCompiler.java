@@ -1,6 +1,8 @@
 package com.mdframe.forge.plugin.generator.service;
 
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.RuntimeDatabaseDialect;
+import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceContextHolder;
+import com.mdframe.forge.plugin.generator.service.lowcode.runtime.RuntimeDatabaseDialectFactory;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
 import org.apache.commons.lang3.StringUtils;
@@ -53,6 +55,20 @@ final class DynamicCrudJoinQueryCompiler {
         this.tenantEnabled = tenantEnabled;
         this.tenantColumnSupplier = tenantColumnSupplier;
         this.logicDeleteColumnSupplier = logicDeleteColumnSupplier;
+    }
+
+    static DynamicCrudJoinQueryCompiler create(DynamicCrudRepository repository,
+                                               RuntimeDatabaseDialectFactory dialectFactory) {
+        return new DynamicCrudJoinQueryCompiler(
+            repository::validateTableName,
+            repository::validateIdentifier,
+            repository::getTableColumns,
+            repository::hasDelFlag,
+            () -> dialectFactory.resolve(LowcodeRuntimeDataSourceContextHolder.get()),
+            () -> repository.writePolicy().tenantStrategyEnabled(),
+            () -> repository.writePolicy().tenantColumn(),
+            () -> repository.writePolicy().logicDeleteColumn()
+        );
     }
 
     void validate(String mainTableName,
