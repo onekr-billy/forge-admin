@@ -17,6 +17,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 @DisplayName("BusinessExtensionVersionService")
 class BusinessExtensionVersionServiceTest {
@@ -49,9 +51,10 @@ class BusinessExtensionVersionServiceTest {
             }
             return defaultValue(method);
         });
+        BusinessApplicationChangeTracker changeTracker = mock(BusinessApplicationChangeTracker.class);
         BusinessExtensionVersionService service = new BusinessExtensionVersionService(
                 extensionMapper, new PermissiveLockService(extensionMapper), new ObjectMapper(),
-                new BusinessExtensionStateMachine(), null);
+                new BusinessExtensionStateMachine(), changeTracker);
         setBaseMapper(service, versionMapper);
         BusinessExtensionVersionDTO dto = new BusinessExtensionVersionDTO();
         dto.setContent("return { changed: true }");
@@ -64,6 +67,7 @@ class BusinessExtensionVersionServiceTest {
         assertEquals(BusinessExtensionStatus.DRAFT.getCode(), nextStatus.get());
         assertEquals(3, extension.getEnabledVersion());
         assertEquals(4, inserted.get().getVersionNo());
+        verify(changeTracker).markApplicationChanged(extension.getApplicationId());
     }
 
     @Test
@@ -94,9 +98,10 @@ class BusinessExtensionVersionServiceTest {
             }
             return defaultValue(method);
         });
+        BusinessApplicationChangeTracker changeTracker = mock(BusinessApplicationChangeTracker.class);
         BusinessExtensionVersionService service = new BusinessExtensionVersionService(
                 extensionMapper, new PermissiveLockService(extensionMapper), new ObjectMapper(),
-                new BusinessExtensionStateMachine(), null);
+                new BusinessExtensionStateMachine(), changeTracker);
         setBaseMapper(service, versionMapper);
 
         Integer rollbackVersion = service.rollback(extension.getId(), 1, "lock-token");
@@ -106,6 +111,7 @@ class BusinessExtensionVersionServiceTest {
         assertEquals(4, inserted.get().getVersionNo());
         assertNotEquals(source.getId(), inserted.get().getId());
         assertEquals(source.getContent(), inserted.get().getContent());
+        verify(changeTracker).markApplicationChanged(extension.getApplicationId());
     }
 
     private AiBusinessExtension enabledExtension() {

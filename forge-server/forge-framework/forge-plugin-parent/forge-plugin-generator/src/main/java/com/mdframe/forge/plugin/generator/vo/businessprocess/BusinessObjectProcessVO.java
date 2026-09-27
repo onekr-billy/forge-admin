@@ -19,9 +19,4 @@ public class BusinessObjectProcessVO {
     private String designStatus;
 
     private String startNodeType;
-
-    /**
-     * 画布草稿 JSON（仅 Mapper 填充，Controller 层返回前由 Service 清理为 null）。
-     */
-    private String draftSchemaJson;
 }

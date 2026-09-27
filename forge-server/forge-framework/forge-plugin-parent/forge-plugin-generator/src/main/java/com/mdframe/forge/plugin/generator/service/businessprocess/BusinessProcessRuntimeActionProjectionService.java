@@ -11,7 +11,6 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessProcessMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessProcessVersionMapper;
-import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessObjectProcessVO;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
@@ -124,20 +123,15 @@ public class BusinessProcessRuntimeActionProjectionService {
     private List<Map<String, Object>> compileDrafts(String objectCode) {
         Long tenantId = resolveTenantId();
         List<Map<String, Object>> actions = new ArrayList<>();
-        for (BusinessObjectProcessVO summary : safeDrafts(processMapper.selectBySubjectObjectCode(tenantId, objectCode))) {
-            if (summary == null || !EnableStatus.ENABLED.matches(summary.getStatus()) || StringUtils.isBlank(summary.getDraftSchemaJson())) {
-                continue;
-            }
-            Long processId = parseId(summary.getId());
-            AiBusinessProcess process = processId == null ? null : processMapper.selectActiveById(tenantId, processId);
-            if (process == null || !EnableStatus.ENABLED.matches(process.getStatus())) {
+        for (AiBusinessProcess process : safeList(processMapper.selectActiveDraftsBySubjectObjectCode(tenantId, objectCode))) {
+            if (process == null || !EnableStatus.ENABLED.matches(process.getStatus()) || StringUtils.isBlank(process.getDraftSchemaJson())) {
                 continue;
             }
             String applicationCode = resolveApplicationCode(process.getApplicationId());
             if (StringUtils.isBlank(applicationCode)) {
                 continue;
             }
-            BusinessProcessSchema schema = readSchema(summary.getDraftSchemaJson());
+            BusinessProcessSchema schema = readSchema(process.getDraftSchemaJson());
             if (schema == null) {
                 continue;
             }
@@ -212,24 +206,8 @@ public class BusinessProcessRuntimeActionProjectionService {
         return application == null ? "" : StringUtils.trimToEmpty(application.getApplicationCode());
     }
 
-    private Long parseId(String value) {
-        if (StringUtils.isBlank(value)) {
-            return null;
-        }
-        try {
-            long parsed = Long.parseLong(value.trim());
-            return parsed > 0 ? parsed : null;
-        } catch (NumberFormatException ignored) {
-            return null;
-        }
-    }
-
-    private List<AiBusinessProcessVersion> safeList(List<AiBusinessProcessVersion> versions) {
-        return versions == null ? List.of() : versions;
-    }
-
-    private List<BusinessObjectProcessVO> safeDrafts(List<BusinessObjectProcessVO> drafts) {
-        return drafts == null ? List.of() : drafts;
+    private <T> List<T> safeList(List<T> values) {
+        return values == null ? List.of() : values;
     }
 
     private Long resolveTenantId() {

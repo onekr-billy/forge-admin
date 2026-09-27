@@ -258,6 +258,7 @@ public class FormulaExecutionEngine {
                     lookupConfig.getNotFoundValue(), traceId);
             handleResults.add(hr);
             context.put(fieldName, hr.fallbackValue);
+            resultBuilder.putFallback(fieldName, hr.fallbackValue);
             resultBuilder.putError(fieldName, hr.errorMessage);
             Map<String, Object> metadata = new LinkedHashMap<>(lookupResult.getMetadata());
             metadata.put("lookupMatched", false);
@@ -268,6 +269,7 @@ public class FormulaExecutionEngine {
                     lookupConfig.getNotFoundValue(), traceId);
             handleResults.add(hr);
             context.put(fieldName, hr.fallbackValue);
+            resultBuilder.putFallback(fieldName, hr.fallbackValue);
             resultBuilder.putError(fieldName, hr.errorMessage);
             return StepOutcome.failure(hr.fallbackValue, hr.errorMessage);
         }

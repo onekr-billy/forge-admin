@@ -143,6 +143,11 @@ class BusinessBindingApplicationTargetTest {
             application.setApplicationCode("crm_center");
             return application;
         }
+
+        @Override
+        public void markCompositionChanged(Long applicationId) {
+            // Target validation tests use a service stub without persistence collaborators.
+        }
     }
 
     private static class StubEntryService extends BusinessAppService {
