@@ -381,12 +381,6 @@ final class BusinessObjectDraftSchemaGateway {
         return StringUtils.left(tableName, 64);
     }
 
-    private FormDesignerSchemaDTO resolveFormDesignerSchema(
-            AiBusinessObject object,
-            LowcodeModelSchema modelSchema,
-            LowcodePageSchema pageSchema,
-            Map<String, Object> designerOptions) {
-
     private BusinessObjectLegacyPageSchemaAdapter legacyPageSchemaAdapter() {
         return new BusinessObjectLegacyPageSchemaAdapter(objectMapper, fieldSchemaService);
     }

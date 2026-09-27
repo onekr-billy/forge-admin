@@ -176,11 +176,8 @@ class BusinessObjectDesignerPageSchemaTest {
     @DisplayName("applies input number component alias defaults")
     void appliesInputNumberComponentAliasDefaults() throws Exception {
         BusinessFieldDTO field = new BusinessFieldDTO();
-        Method method = BusinessObjectDesignerService.class.getDeclaredMethod(
-                "applyComponentDefaults", BusinessFieldDTO.class, String.class);
-        method.setAccessible(true);
 
-        method.invoke(designerService(), field, "input-number");
+        fieldDesignPolicy().applyComponentDefaults(field, "input-number");
 
         assertEquals("NUMBER", field.getFieldType());
         assertEquals("int", field.getDataType());
@@ -195,11 +192,7 @@ class BusinessObjectDesignerPageSchemaTest {
         field.setDataType("decimal");
         field.setLength(18);
         field.setPrecision(2);
-        Method method = BusinessObjectDesignerService.class.getDeclaredMethod(
-                "applyComponentDefaults", BusinessFieldDTO.class, String.class);
-        method.setAccessible(true);
-
-        method.invoke(designerService(), field, "number");
+        fieldDesignPolicy().applyComponentDefaults(field, "number");
 
         assertEquals("MONEY", field.getFieldType());
         assertEquals("decimal", field.getDataType());
@@ -462,10 +455,13 @@ class BusinessObjectDesignerPageSchemaTest {
     }
 
     private LowcodeModelSchema rebuildModelFields(LowcodeModelSchema modelSchema, List<BusinessFieldDTO> fields) throws Exception {
+        return fieldDesignPolicy().rebuildModelFields(modelSchema, fields);
+    }
+
+    private BusinessObjectFieldDesignPolicy fieldDesignPolicy() {
         BusinessFieldSchemaService fieldSchemaService = new BusinessFieldSchemaService(
                 new LowcodeModelSchemaNormalizer(), new BusinessNamingService());
-        return new BusinessObjectFieldDesignPolicy(fieldSchemaService, new LowcodeModelSchemaNormalizer())
-                .rebuildModelFields(modelSchema, fields);
+        return new BusinessObjectFieldDesignPolicy(fieldSchemaService, new LowcodeModelSchemaNormalizer());
     }
 
     @SuppressWarnings("unchecked")

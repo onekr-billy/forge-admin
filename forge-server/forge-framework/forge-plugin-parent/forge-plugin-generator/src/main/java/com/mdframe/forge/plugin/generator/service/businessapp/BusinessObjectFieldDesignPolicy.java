@@ -20,6 +20,46 @@ import java.util.Set;
  */
 final class BusinessObjectFieldDesignPolicy {
 
+    private static final Map<String, ComponentFieldDefaults> COMPONENT_FIELD_DEFAULTS = Map.ofEntries(
+            Map.entry("input", new ComponentFieldDefaults("TEXT", "varchar", 128, 2, "like")),
+            Map.entry("barcodeScanner", new ComponentFieldDefaults("TEXT", "varchar", 2048, 2, "eq")),
+            Map.entry("textarea", new ComponentFieldDefaults("MULTILINE", "text", null, 2, "like")),
+            Map.entry("number", new ComponentFieldDefaults("NUMBER", "int", 11, 0, "eq")),
+            Map.entry("inputNumber", new ComponentFieldDefaults("NUMBER", "int", 11, 0, "eq")),
+            Map.entry("input-number", new ComponentFieldDefaults("NUMBER", "int", 11, 0, "eq")),
+            Map.entry("inputnumber", new ComponentFieldDefaults("NUMBER", "int", 11, 0, "eq")),
+            Map.entry("integer", new ComponentFieldDefaults("NUMBER", "int", 11, 0, "eq")),
+            Map.entry("money", new ComponentFieldDefaults("MONEY", "decimal", 18, 2, "eq")),
+            Map.entry("slider", new ComponentFieldDefaults("NUMBER", "int", 11, 0, "eq")),
+            Map.entry("rate", new ComponentFieldDefaults("NUMBER", "decimal", 4, 1, "eq")),
+            Map.entry("color", new ComponentFieldDefaults("TEXT", "varchar", 32, 2, "eq")),
+            Map.entry("date", new ComponentFieldDefaults("DATE", "date", null, null, "eq")),
+            Map.entry("datetime", new ComponentFieldDefaults("DATETIME", "datetime", null, null, "eq")),
+            Map.entry("daterange", new ComponentFieldDefaults("TEXT", "text", null, null, "eq")),
+            Map.entry("datetimerange", new ComponentFieldDefaults("TEXT", "text", null, null, "eq")),
+            Map.entry("month", new ComponentFieldDefaults("TEXT", "varchar", 7, null, "eq")),
+            Map.entry("year", new ComponentFieldDefaults("TEXT", "varchar", 4, null, "eq")),
+            Map.entry("switch", new ComponentFieldDefaults("SWITCH", "tinyint", 1, 0, "eq")),
+            Map.entry("select", new ComponentFieldDefaults("DICT", "varchar", 64, 2, "eq")),
+            Map.entry("dictSelect", new ComponentFieldDefaults("DICT", "varchar", 64, 2, "eq")),
+            Map.entry("radio", new ComponentFieldDefaults("RADIO", "varchar", 64, 2, "eq")),
+            Map.entry("radioButton", new ComponentFieldDefaults("RADIO", "varchar", 64, 2, "eq")),
+            Map.entry("checkbox", new ComponentFieldDefaults("CHECKBOX", "varchar", 255, 2, "in")),
+            Map.entry("transfer", new ComponentFieldDefaults("MULTI_SELECT", "text", null, null, "in")),
+            Map.entry("cascader", new ComponentFieldDefaults("DICT", "varchar", 128, 2, "eq")),
+            Map.entry("treeSelect", new ComponentFieldDefaults("SELECT", "bigint", null, null, "eq")),
+            Map.entry("customSelect", new ComponentFieldDefaults("SELECT", "varchar", 128, 2, "eq")),
+            Map.entry("regionTreeSelect", new ComponentFieldDefaults("REGION", "varchar", 32, 2, "eq")),
+            Map.entry("orgTreeSelect", new ComponentFieldDefaults("DEPT", "bigint", null, null, "eq")),
+            Map.entry("userSelect", new ComponentFieldDefaults("USER", "bigint", null, null, "eq")),
+            Map.entry("fileUpload", new ComponentFieldDefaults("FILE", "varchar", 512, 2, "eq")),
+            Map.entry("imageUpload", new ComponentFieldDefaults("IMAGE", "varchar", 512, 2, "eq")),
+            Map.entry("objectReference", new ComponentFieldDefaults("REFERENCE", "bigint", null, null, "eq")),
+            Map.entry("recordSelector", new ComponentFieldDefaults("RECORD_SELECTOR", "bigint", null, null, "eq")),
+            Map.entry("text", new ComponentFieldDefaults("TEXT", "varchar", 255, 2, "like")),
+            Map.entry("timerange", new ComponentFieldDefaults("TEXT", "text", null, null, "eq")),
+            Map.entry("time", new ComponentFieldDefaults("TEXT", "varchar", 32, null, "eq"))
+    );
     private static final Set<String> BUSINESS_COMPONENT_TYPES = Set.of(
             "select", "dictSelect", "radio", "checkbox", "cascader",
             "regionTreeSelect", "orgTreeSelect", "userSelect",
@@ -68,6 +108,29 @@ final class BusinessObjectFieldDesignPolicy {
         }
         target.setFields(newFields);
         return schemaNormalizer.normalizeModelFields(target, true);
+    }
+
+    void applyComponentDefaults(BusinessFieldDTO field, String componentType) {
+        if (field == null) {
+            return;
+        }
+        ComponentFieldDefaults defaults = COMPONENT_FIELD_DEFAULTS.get(componentType);
+        if (defaults == null) {
+            return;
+        }
+        if (StringUtils.isBlank(field.getFieldType())) {
+            field.setFieldType(defaults.fieldType());
+        }
+        field.setQueryType(defaults.queryType());
+        if (StringUtils.isBlank(field.getDataType())) {
+            field.setDataType(defaults.dataType());
+            if (field.getLength() == null) {
+                field.setLength(defaults.length());
+            }
+            if (field.getPrecision() == null) {
+                field.setPrecision(defaults.precision());
+            }
+        }
     }
 
     private void mergePreservedFieldPayload(LowcodeFieldSchema existing, BusinessFieldDTO dto) {
@@ -227,5 +290,8 @@ final class BusinessObjectFieldDesignPolicy {
     private String text(Object value) {
         return value == null ? null : String.valueOf(value);
     }
-}
 
+    private record ComponentFieldDefaults(String fieldType, String dataType, Integer length,
+                                          Integer precision, String queryType) {
+    }
+}

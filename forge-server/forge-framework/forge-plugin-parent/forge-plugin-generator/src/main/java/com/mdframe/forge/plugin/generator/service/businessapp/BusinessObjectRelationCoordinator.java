@@ -211,6 +211,20 @@ final class BusinessObjectRelationCoordinator {
                 .orElse(null);
     }
 
+    private boolean isEmbeddedRelation(AiBusinessObjectRelation relation) {
+        if (relation == null || EnableStatus.DISABLED.matches(relation.getStatus())) {
+            return false;
+        }
+        String relationType = StringUtils.defaultString(relation.getRelationType()).toUpperCase(Locale.ROOT);
+        if (!Set.of("CHILD_LIST", "DETAIL").contains(relationType)) {
+            return false;
+        }
+        Map<String, Object> config = readMap(relation.getRelationConfig());
+        return readBoolean(config.get("showInDetail"), true)
+                || readBoolean(config.get("inlineCreateEnabled"), true)
+                || readBoolean(config.get("inlineEditEnabled"), true);
+    }
+
     /**
      * 面板配置是唯一事实来源：标题、开关、展示模式、显示字段全量覆盖关系记录。
      *
@@ -292,6 +306,15 @@ final class BusinessObjectRelationCoordinator {
             config.put("recordSelector", defaultSelector);
         }
         return config;
+    }
+
+    private String defaultRelationKey(String value) {
+        return StringUtils.defaultString(value)
+                .replaceAll("([a-z0-9])([A-Z])", "$1_$2")
+                .replaceAll("[^A-Za-z0-9_]+", "_")
+                .replaceAll("_+", "_")
+                .replaceAll("^_+|_+$", "")
+                .toLowerCase(Locale.ROOT);
     }
 
     /**

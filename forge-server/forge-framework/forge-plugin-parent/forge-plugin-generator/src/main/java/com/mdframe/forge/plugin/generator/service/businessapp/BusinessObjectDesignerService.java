@@ -710,6 +710,11 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         return object.getLastPublishVersion() == null && config.getPublishedVersion() == null;
     }
 
+    private FormDesignerSchemaDTO resolveFormDesignerSchema(
+            AiBusinessObject object,
+            LowcodeModelSchema modelSchema,
+            LowcodePageSchema pageSchema,
+            Map<String, Object> designerOptions) {
         return formSchemaAssembler().resolveFormDesignerSchema(
                 object, modelSchema, pageSchema, designerOptions);
     }
