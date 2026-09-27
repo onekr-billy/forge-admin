@@ -373,3 +373,9 @@
 - 使用 Gateway + Cache-Aside 从 `DynamicCrudRepository` 迁出表存在性、列目录、字段映射、JDBC 列类型归一和数据源级缓存失效；Repository 保留原公开方法与延迟初始化兼容门面。
 - 首次定向回归发现字段映射直接访问 Gateway 会绕开存量 `getTableColumns` 替换边界，随即改为通过显式 Supplier 提供列目录；同时修复逻辑删除列缓存此前未被 DDL 清理键命中的问题。入口由 1759 行降至 1656 行，新 `DynamicCrudTableMetadataGateway` 171 行。
 - 执行 `DynamicCrudTableMetadataGatewayTest,DynamicCrudServiceChildListTest,DynamicCrudRepositoryBackgroundAuditTest` 共 3 类 11 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实外部数据源切换、DDL 后缓存刷新和多数据库元数据仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第七十个切口：动态写入字段策略
+
+- 使用 Policy + Strategy 从 `DynamicCrudRepository` 迁出租户字段、审计字段、逻辑删除列/值、不可变字段剔除、后台会话降级和逻辑删除更新时间规则；Repository 继续持有写命令、事务审计事件和数据权限条件。
+- 原子数值调整的审计值也复用同一 Policy，避免形成第二套更新时间/操作人规则。入口由 1656 行降至 1456 行，新 `DynamicCrudWritePolicy` 263 行。
+- generator Reactor 编译退出码 0；执行 `DynamicCrudWritePolicyTest,DynamicCrudRepositoryBackgroundAuditTest,DynamicCrudServiceChildListTest,DynamicCrudCommandRepositoryTest` 共 4 类 13 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实定制审计列、外部表 NONE 策略和并发后台写入仍需服务环境验收，无服务 PID 需停止。

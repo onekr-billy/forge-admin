@@ -69,5 +69,6 @@
 - [x] 提取动态 CRUD 查询条件 Compiler/Strategy，集中普通搜索、自定义条件、多值/区间运算和投影字段白名单，使 `DynamicCrudRepository` 降至 1884 行。
 - [x] 提取动态 CRUD Join Query Plan Compiler，并将子表文本聚合差异下沉到数据库方言 Strategy，使 `DynamicCrudRepository` 降至 1759 行。
 - [x] 提取动态表结构 Metadata Gateway，以 Cache-Aside 集中数据源级列、类型、字段映射和逻辑删除列缓存，使 `DynamicCrudRepository` 降至 1656 行。
+- [x] 提取动态写入 Policy/Strategy，集中租户、审计、逻辑删除字段和不可变字段处理，使 `DynamicCrudRepository` 降至 1456 行。
 - [ ] 完成业务流程服务级联调和运行配置真实页面验收。
 - [ ] 分阶段拆分动态 CRUD、设计态、发布、Flowable 任务/模型及业务动作/触发器；每阶段独立验证。

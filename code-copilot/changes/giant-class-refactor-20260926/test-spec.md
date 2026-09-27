@@ -545,3 +545,13 @@
 - 验证：重跑元数据缓存、子表 Join 和后台审计回归，执行 `git diff --check` 与类行数检查；不启动真实服务。
 
 验证结果：表存在性、列目录、字段映射、JDBC 类型归一和缓存失效已委托 `DynamicCrudTableMetadataGateway`；首次回归识别并恢复 `getTableColumns` 可替换边界。相关 3 个测试类共 11 项通过，0 失败、0 错误；`git diff --check` 通过。`DynamicCrudRepository` 1656 行，新 Gateway 171 行。
+
+## 2026-09-27 第七十轮增量验证：动态写入字段策略
+
+- P0：新增继续按列目录补齐租户、逻辑删除、创建/更新人、部门和时间，显式传入的审计值不得被覆盖。
+- P0：更新继续剔除主键与租户字段，后台线程只吞无 Web 上下文的 Sa-Token 异常，不伪造操作人，也不吞其它会话故障。
+- P0：逻辑删除继续按运行时策略列和值生成 SET，并在审计策略启用且表含更新时间列时写 `CURRENT_TIMESTAMP`。
+- P1：使用 Policy/Strategy 隔离运行数据源写入规则；Repository 保留事务与 JDBC 命令执行，新生产类少于 1000 行。
+- 验证：重跑写入策略、后台审计、原子命令和 Join 列表回归，执行 `git diff --check` 与类行数检查；不启动真实服务。
+
+验证结果：写入数据准备、租户/审计/逻辑删除策略和原子数值调整审计已委托 `DynamicCrudWritePolicy`；相关 4 个测试类共 13 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`DynamicCrudRepository` 1456 行，新 Policy 263 行。
