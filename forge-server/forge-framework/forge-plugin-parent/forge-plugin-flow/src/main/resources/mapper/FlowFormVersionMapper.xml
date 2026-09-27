@@ -17,6 +17,14 @@
         LIMIT 1
     </select>
 
+    <select id="selectByIdForRuntimeAndTenant" resultType="com.mdframe.forge.starter.flow.entity.FlowFormVersion">
+        SELECT v.*
+        FROM sys_flow_form_version v
+        WHERE v.id = #{id}
+          AND v.tenant_id = #{tenantId}
+        LIMIT 1
+    </select>
+
     <select id="selectVersionsByFormId" resultType="com.mdframe.forge.starter.flow.entity.FlowFormVersion">
         SELECT v.*
         FROM sys_flow_form_version v

@@ -18,6 +18,15 @@
         FOR UPDATE
     </select>
 
+    <select id="selectByIdForUpdateAndTenant" resultType="com.mdframe.forge.starter.flow.entity.FlowFillBatchItem">
+        SELECT i.*
+        FROM sys_flow_fill_batch_item i
+        WHERE i.tenant_id = #{tenantId}
+          AND i.deleted = 0
+          AND i.id = #{id}
+        FOR UPDATE
+    </select>
+
     <update id="deleteByProcessInstanceIdLogically">
         UPDATE sys_flow_fill_batch_item
         SET deleted = 1,

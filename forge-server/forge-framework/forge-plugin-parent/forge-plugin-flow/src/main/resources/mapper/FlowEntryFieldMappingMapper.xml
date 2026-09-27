@@ -5,7 +5,8 @@
     <select id="selectByEntryId" resultType="com.mdframe.forge.starter.flow.entity.FlowEntryFieldMapping">
         SELECT m.*
         FROM sys_flow_entry_field_mapping m
-        WHERE m.deleted = 0
+        WHERE m.tenant_id = #{tenantId}
+          AND m.deleted = 0
           AND m.entry_id = #{entryId}
         ORDER BY m.sort ASC, m.create_time ASC
     </select>
@@ -14,7 +15,8 @@
         UPDATE sys_flow_entry_field_mapping
         SET deleted = 1,
             update_time = NOW()
-        WHERE entry_id = #{entryId}
+        WHERE tenant_id = #{tenantId}
+          AND entry_id = #{entryId}
           AND deleted = 0
     </update>
 </mapper>

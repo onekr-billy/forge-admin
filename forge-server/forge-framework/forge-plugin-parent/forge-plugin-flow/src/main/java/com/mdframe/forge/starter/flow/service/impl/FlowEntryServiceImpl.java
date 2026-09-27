@@ -3,7 +3,6 @@ package com.mdframe.forge.starter.flow.service.impl;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.flow.dto.FlowEntryDTO;
 import com.mdframe.forge.starter.flow.dto.FlowEntryQueryDTO;
 import com.mdframe.forge.starter.flow.entity.FlowEntry;
@@ -14,6 +13,7 @@ import com.mdframe.forge.starter.flow.mapper.FlowEntryFieldMappingMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowEntryMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowFormVersionMapper;
 import com.mdframe.forge.starter.flow.service.FlowEntryService;
+import com.mdframe.forge.starter.flow.security.FlowRuntimeIdentity;
 import com.mdframe.forge.starter.flow.vo.FlowEntryRuntimeVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -30,22 +30,22 @@ import java.util.List;
 @RequiredArgsConstructor
 public class FlowEntryServiceImpl extends ServiceImpl<FlowEntryMapper, FlowEntry> implements FlowEntryService {
 
-    private static final Long DEFAULT_TENANT_ID = 1L;
-
     private final FlowEntryMapper flowEntryMapper;
     private final FlowEntryFieldMappingMapper mappingMapper;
     private final FlowFormVersionMapper formVersionMapper;
 
     @Override
     public IPage<FlowEntry> pageEntries(FlowEntryQueryDTO query, Integer pageNum, Integer pageSize) {
-        return flowEntryMapper.selectEntryPage(new Page<>(pageNum, pageSize), query);
+        return flowEntryMapper.selectEntryPage(
+                new Page<>(pageNum, pageSize), FlowRuntimeIdentity.requireTenantId(), query);
     }
 
     @Override
     public FlowEntry getEntryDetail(Long id) {
-        FlowEntry entry = getById(id);
+        Long tenantId = FlowRuntimeIdentity.requireTenantId();
+        FlowEntry entry = flowEntryMapper.selectByIdAndTenant(id, tenantId);
         if (entry != null) {
-            entry.setFieldMappings(mappingMapper.selectByEntryId(entry.getId()));
+            entry.setFieldMappings(mappingMapper.selectByEntryId(tenantId, entry.getId()));
         }
         return entry;
     }
@@ -55,20 +55,27 @@ public class FlowEntryServiceImpl extends ServiceImpl<FlowEntryMapper, FlowEntry
         if (!StringUtils.hasText(entryCode)) {
             return null;
         }
-        FlowEntry entry = flowEntryMapper.selectByEntryCode(entryCode);
+        Long tenantId = FlowRuntimeIdentity.requireTenantId();
+        return getByEntryCode(entryCode, tenantId);
+    }
+
+    private FlowEntry getByEntryCode(String entryCode, Long tenantId) {
+        FlowEntry entry = flowEntryMapper.selectByEntryCode(tenantId, entryCode);
         if (entry != null) {
-            entry.setFieldMappings(mappingMapper.selectByEntryId(entry.getId()));
+            entry.setFieldMappings(mappingMapper.selectByEntryId(tenantId, entry.getId()));
         }
         return entry;
     }
 
     @Override
     public FlowEntryRuntimeVO getRuntimeEntry(String entryCode) {
-        FlowEntry entry = getByEntryCode(entryCode);
+        Long tenantId = FlowRuntimeIdentity.requireTenantId();
+        FlowEntry entry = StringUtils.hasText(entryCode) ? getByEntryCode(entryCode, tenantId) : null;
         if (entry == null || !FlowEnableStatus.ENABLED.matches(entry.getStatus())) {
             throw new RuntimeException("流程入口不存在或未启用：" + entryCode);
         }
-        FlowFormVersion version = formVersionMapper.selectByIdForRuntime(entry.getFormVersionId());
+        FlowFormVersion version = formVersionMapper.selectByIdForRuntimeAndTenant(
+                entry.getFormVersionId(), tenantId);
         if (version == null) {
             throw new RuntimeException("入口绑定的表单版本不存在");
         }
@@ -86,11 +93,13 @@ public class FlowEntryServiceImpl extends ServiceImpl<FlowEntryMapper, FlowEntry
     @Transactional(rollbackFor = Exception.class)
     public void saveEntry(FlowEntryDTO dto) {
         validateEntry(dto);
-        Long duplicateCount = flowEntryMapper.countByEntryCode(dto.getEntryCode(), dto.getId());
+        Long tenantId = FlowRuntimeIdentity.requireTenantId();
+        Long duplicateCount = flowEntryMapper.countByEntryCode(tenantId, dto.getEntryCode(), dto.getId());
         if (duplicateCount != null && duplicateCount > 0) {
             throw new RuntimeException("入口编码已存在：" + dto.getEntryCode());
         }
-        FlowFormVersion version = formVersionMapper.selectByIdForRuntime(dto.getFormVersionId());
+        FlowFormVersion version = formVersionMapper.selectByIdForRuntimeAndTenant(
+                dto.getFormVersionId(), tenantId);
         if (version == null) {
             throw new RuntimeException("入口必须绑定已发布表单版本");
         }
@@ -108,23 +117,24 @@ public class FlowEntryServiceImpl extends ServiceImpl<FlowEntryMapper, FlowEntry
         if (entry.getSort() == null) {
             entry.setSort(0);
         }
-        if (entry.getTenantId() == null) {
-            entry.setTenantId(resolveTenantId());
-        }
+        entry.setTenantId(tenantId);
 
         if (entry.getId() == null) {
             save(entry);
         } else {
+            requireEntry(entry.getId(), tenantId);
             updateById(entry);
-            mappingMapper.deleteByEntryId(entry.getId());
+            mappingMapper.deleteByEntryId(tenantId, entry.getId());
         }
-        saveMappings(entry.getId(), dto.getFieldMappings());
+        saveMappings(entry.getId(), dto.getFieldMappings(), tenantId);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void deleteEntry(Long id) {
-        mappingMapper.deleteByEntryId(id);
+        Long tenantId = FlowRuntimeIdentity.requireTenantId();
+        requireEntry(id, tenantId);
+        mappingMapper.deleteByEntryId(tenantId, id);
         removeById(id);
     }
 
@@ -167,7 +177,7 @@ public class FlowEntryServiceImpl extends ServiceImpl<FlowEntryMapper, FlowEntry
         return entry;
     }
 
-    private void saveMappings(Long entryId, List<FlowEntryFieldMapping> mappings) {
+    private void saveMappings(Long entryId, List<FlowEntryFieldMapping> mappings, Long tenantId) {
         List<FlowEntryFieldMapping> safeMappings = mappings == null ? new ArrayList<>() : mappings;
         int sort = 0;
         for (FlowEntryFieldMapping mapping : safeMappings) {
@@ -176,7 +186,7 @@ public class FlowEntryServiceImpl extends ServiceImpl<FlowEntryMapper, FlowEntry
             }
             mapping.setId(null);
             mapping.setEntryId(entryId);
-            mapping.setTenantId(resolveTenantId());
+            mapping.setTenantId(tenantId);
             mapping.setSort(mapping.getSort() == null ? sort : mapping.getSort());
             mapping.setRequired(mapping.getRequired() == null ? 0 : mapping.getRequired());
             if (!StringUtils.hasText(mapping.getTargetType())) {
@@ -187,12 +197,11 @@ public class FlowEntryServiceImpl extends ServiceImpl<FlowEntryMapper, FlowEntry
         }
     }
 
-    private Long resolveTenantId() {
-        try {
-            Long tenantId = SessionHelper.getTenantId();
-            return tenantId == null ? DEFAULT_TENANT_ID : tenantId;
-        } catch (Exception e) {
-            return DEFAULT_TENANT_ID;
+    private FlowEntry requireEntry(Long id, Long tenantId) {
+        FlowEntry entry = flowEntryMapper.selectByIdAndTenant(id, tenantId);
+        if (entry == null) {
+            throw new RuntimeException("流程入口不存在");
         }
+        return entry;
     }
 }

@@ -1,5 +1,25 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：Flow 运行入口可信身份与显式租户 SQL
+
+### 实现
+
+- 新增 `FlowRuntimeIdentity`，将已登录会话的租户、用户、姓名和组织固化为运行时身份快照；显式线程租户与会话不一致时 fail-closed。
+- `FlowRuntimeServiceImpl` 在入口查询、字段映射和批次明细锁定前验证身份与入口租户；客户端 `startUserId/startDeptId` 改为一致性断言，流程表单快照和 Flowable 发起人只使用会话快照。
+- `FlowEntryServiceImpl` 去除默认租户 `1`，入口列表、详情、编码查询、写入、删除、字段映射和运行表单版本全部带显式租户条件。
+- `FlowBusinessObjectRuntimeAdapterImpl` 在动态记录落表和流程关联写入前要求可信租户/用户，并校验 `FlowEntry` 归属；关联表的租户和发起人来自同一身份快照。
+
+### 验证
+
+- `FlowRuntimeIdentitySecurityTest` 6/6，覆盖缺失租户/用户、伪造发起人、跨租户入口、显式 Mapper 租户参数和 XML 条件。
+- `FlowBusinessObjectRuntimeAdapterIdentityTest` 3/3，覆盖缺失身份、跨租户入口的动态写入前拒绝，以及关联表租户/发起人归属。
+- 四个 Mapper XML 均通过 `xmllint --noout`；Flow Server 主代码依赖反应堆 38/38 模块编译成功。
+- 完整回归已实际运行：`forge-plugin-flow` 185 个测试中 2 个与本批修改文件无关的基线失败（用户组源码契约、动态数组必填校验），`forge-flow-server` 46 个测试中 2 个与本批修改文件无关的基线失败（流程监控源码契约）；失败均不在本批修改文件中，因此不记为完整模块通过。
+
+### 未覆盖
+
+- 未启动 Flow Server 或连接真实 MySQL/Flowable 执行入口填报、业务对象落表和关联写入 HTTP 跨租户验收；`FlowFormServiceImpl`、`FlowFillBatchServiceImpl`、`FlowInstanceServiceImpl` 和 `FlowRecordParticipantServiceImpl` 的默认租户回退仍待下一批收口。
+
 ## 2026-09-28：低代码设计、生成与发布租户边界收口
 
 ### 实现

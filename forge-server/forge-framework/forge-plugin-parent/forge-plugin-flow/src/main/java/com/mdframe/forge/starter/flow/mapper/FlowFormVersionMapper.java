@@ -17,5 +17,8 @@ public interface FlowFormVersionMapper extends BaseMapper<FlowFormVersion> {
 
     FlowFormVersion selectByIdForRuntime(@Param("id") Long id);
 
+    FlowFormVersion selectByIdForRuntimeAndTenant(@Param("id") Long id,
+                                                  @Param("tenantId") Long tenantId);
+
     List<FlowFormVersion> selectVersionsByFormId(@Param("formId") Long formId);
 }

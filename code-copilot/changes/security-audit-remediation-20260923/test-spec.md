@@ -230,6 +230,15 @@
 - 实际结果：新增 `LowcodeMetadataIdentitySecurityTest` 8/8；Generator 完整依赖反应堆 33/33 模块成功，`forge-plugin-generator` 1322/1322，0 失败、0 错误、0 跳过。生成器低代码服务中本轮扫描模式命中的默认租户回退已清零。
 - 环境限制：未启动 Admin 或连接真实 MySQL/业务数据源执行领域、模型、代码生成和发布/回滚 HTTP 跨租户验收；Flow Server 业务对象运行适配器的默认租户回退保留为下一批修复。
 
+## 1.26 2026-09-28 Flow 运行入口可信身份与显式租户 SQL
+
+- 身份边界：流程运行入口和业务对象落表在元数据读取或业务写入前必须取得正数会话租户与用户；线程租户与会话租户同时存在时必须一致。
+- 防伪造：`startUserId` 和 `startDeptId` 只能作为对可信会话身份的一致性断言，不再作为缺失会话时的执行人回退；跨用户、跨组织或跨租户入口在查询和落表前拒绝。
+- 显式 SQL：流程入口、字段映射、表单版本和批次明细在 `@IgnoreTenant` Controller 调用链下使用显式 `tenant_id = #{tenantId}` 条件，不假设 MyBatis-Plus 自动租户拦截仍生效。
+- 实际结果：`FlowRuntimeIdentitySecurityTest` 6/6、`FlowBusinessObjectRuntimeAdapterIdentityTest` 3/3，四个 Mapper XML 结构校验通过；Flow Server 主代码依赖反应堆 38/38 模块编译成功。
+- 回归基线：`forge-plugin-flow` 完整运行 185 个测试，其中 2 个与本批修改文件无关的基线失败位于用户组源码契约与动态数组必填校验；`forge-flow-server` 完整运行 46 个测试，其中 2 个与本批修改文件无关的基线失败位于流程监控源码契约。四个失败均未命中本批修改类，不记为完整模块通过。
+- 后续范围：`FlowFormServiceImpl`、`FlowFillBatchServiceImpl`、`FlowInstanceServiceImpl` 和 `FlowRecordParticipantServiceImpl` 仍有默认租户 `1` 回退，应在下一批按表单管理、批次填报、流程实例与参与者路径分别收口。
+
 ## 2. P0 必跑验证
 
 ### 动态脚本与 HTML

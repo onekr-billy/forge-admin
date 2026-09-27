@@ -17,6 +17,9 @@ public interface FlowFillBatchItemMapper extends BaseMapper<FlowFillBatchItem> {
 
     FlowFillBatchItem selectByIdForUpdate(@Param("id") Long id);
 
+    FlowFillBatchItem selectByIdForUpdateAndTenant(@Param("id") Long id,
+                                                   @Param("tenantId") Long tenantId);
+
     int deleteByProcessInstanceIdLogically(@Param("processInstanceId") String processInstanceId,
                                            @Param("tenantId") Long tenantId);
 }
