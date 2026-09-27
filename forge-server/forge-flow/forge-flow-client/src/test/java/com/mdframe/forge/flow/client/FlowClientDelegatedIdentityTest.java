@@ -22,6 +22,31 @@ import static org.mockito.Mockito.when;
 class FlowClientDelegatedIdentityTest {
 
     @Test
+    void shouldSendStableWithdrawIdentityAndTrustedTenant() {
+        RestTemplate restTemplate = mock(RestTemplate.class);
+        when(restTemplate.exchange(
+                eq("http://flow/api/flow/task/withdraw"),
+                eq(HttpMethod.POST), any(HttpEntity.class), eq(String.class)))
+                .thenReturn(new ResponseEntity<>(
+                        "{\"code\":200,\"msg\":\"ok\",\"data\":null}",
+                        HttpStatus.OK));
+        FlowClient client = new FlowClient(restTemplate, "http://flow", "static-token");
+
+        FlowResult<Void> result = client.withdrawProcess(
+                "process-1", "101", "申请人撤回", 1L,
+                "flow:withdraw-key-1", "withdraw-digest-1");
+
+        assertThat(result.isSuccess()).isTrue();
+        ArgumentCaptor<HttpEntity<String>> entity = ArgumentCaptor.forClass(HttpEntity.class);
+        verify(restTemplate).exchange(any(String.class), eq(HttpMethod.POST), entity.capture(), eq(String.class));
+        assertThat(entity.getValue().getBody())
+                .contains("\"processInstanceId\":\"process-1\"")
+                .contains("\"tenantId\":1")
+                .contains("\"idempotencyKey\":\"flow:withdraw-key-1\"")
+                .contains("\"requestDigest\":\"withdraw-digest-1\"");
+    }
+
+    @Test
     void shouldSendStableReturnIdentityAndTrustedTenant() {
         RestTemplate restTemplate = mock(RestTemplate.class);
         when(restTemplate.exchange(

@@ -10,7 +10,6 @@ import com.mdframe.forge.starter.flow.dto.FlowApprovalPointResultDTO;
 import com.mdframe.forge.starter.flow.dto.ProcessDiagramInfo;
 import com.mdframe.forge.starter.flow.dto.TaskFormInfo;
 import com.mdframe.forge.starter.flow.entity.FlowBusiness;
-import com.mdframe.forge.starter.flow.entity.FlowErrorLog;
 import com.mdframe.forge.starter.flow.entity.FlowTask;
 import com.mdframe.forge.starter.flow.enums.FlowTaskStatus;
 import com.mdframe.forge.starter.flow.mapper.FlowBusinessMapper;
@@ -37,7 +36,6 @@ import org.flowable.engine.RepositoryService;
 import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
 import org.flowable.engine.repository.ProcessDefinition;
-import org.flowable.engine.runtime.ProcessInstance;
 import org.flowable.task.api.Task;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -448,73 +446,15 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void withdraw(String processInstanceId, String userId) {
-        try {
-            assertSubmitterWithdrawAllowed(processInstanceId, userId);
-            List<String> activeTaskIds = taskService.createTaskQuery()
-                    .processInstanceId(processInstanceId)
-                    .list()
-                    .stream()
-                    .map(Task::getId)
-                    .filter(Objects::nonNull)
-                    .toList();
-            runtimeService.deleteProcessInstance(processInstanceId, "用户撤回");
-
-            Long tenantId = SessionHelper.getTenantId();
-            if (tenantId == null || tenantId <= 0) {
-                throw new IllegalStateException("FLOW_TASK_TENANT_REQUIRED");
-            }
-            if (!activeTaskIds.isEmpty()) {
-                baseMapper.updateProcessTaskStatusByTaskIds(activeTaskIds, tenantId,
-                        FlowTaskStatus.WITHDRAWN.getCode(), LocalDateTime.now());
-            }
-
-            log.info("撤回流程：processInstanceId={}, userId={}", processInstanceId, userId);
-        } catch (Exception e) {
-            FlowErrorLog errorLog = new FlowErrorLog();
-            errorLog.setProcessInstanceId(processInstanceId);
-            errorLog.setErrorStage("TASK_WITHDRAW");
-            flowErrorLogService.recordError(errorLog, e);
-            throw e;
-        }
+        withdraw(processInstanceId, userId, null, SessionHelper.getTenantId(), null, null);
     }
 
-    private void assertSubmitterWithdrawAllowed(String processInstanceId, String userId) {
-        ProcessInstance instance = runtimeService.createProcessInstanceQuery()
-                .processInstanceId(processInstanceId)
-                .singleResult();
-        if (instance == null) {
-            throw new RuntimeException("流程实例不存在或已结束");
-        }
-
-        Boolean allowed = taskNodePolicy().readBooleanProcessAttribute(
-                instance.getProcessDefinitionId(), "allowSubmitterWithdraw");
-        if (Boolean.FALSE.equals(allowed)) {
-            throw new RuntimeException("当前流程不允许提交人撤回审批中的申请");
-        }
-
-        if (!isProcessSubmitter(processInstanceId, userId)) {
-            throw new RuntimeException("只有提交人可以撤回该申请");
-        }
-    }
-
-    private boolean isProcessSubmitter(String processInstanceId, String userId) {
-        if (isBlank(userId)) {
-            return false;
-        }
-        Long tenantId = SessionHelper.getTenantId();
-        FlowBusiness business = tenantId == null
-                ? null
-                : flowBusinessMapper.selectByProcessInstanceIdAndTenantId(processInstanceId, tenantId);
-        if (business != null && !isBlank(business.getApplyUserId())) {
-            return Objects.equals(String.valueOf(business.getApplyUserId()), String.valueOf(userId));
-        }
-        Object initiator = runtimeService.getVariable(processInstanceId, "initiator");
-        if (initiator != null && !isBlank(String.valueOf(initiator))) {
-            return Objects.equals(String.valueOf(initiator), String.valueOf(userId));
-        }
-        log.warn("撤回申请未找到可信提交人信息，拒绝操作：processInstanceId={}, userId={}",
-                processInstanceId, userId);
-        return false;
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void withdraw(String processInstanceId, String userId, String comment, Long tenantId,
+                         String idempotencyKey, String requestDigest) {
+        withdrawCoordinator().withdraw(
+                processInstanceId, userId, comment, tenantId, idempotencyKey, requestDigest);
     }
 
     @Override
@@ -679,6 +619,17 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
                 this::assertTaskTenantForAction,
                 this::validateReassignTarget,
                 this::isProcessStarterTask
+        );
+    }
+
+    private FlowTaskWithdrawCoordinator withdrawCoordinator() {
+        return new FlowTaskWithdrawCoordinator(
+                runtimeService,
+                taskService,
+                getBaseMapper(),
+                flowBusinessMapper,
+                flowErrorLogService,
+                taskNodePolicy()
         );
     }
 

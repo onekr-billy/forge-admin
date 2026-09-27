@@ -91,6 +91,14 @@ public interface FlowBusinessMapper extends BaseMapper<FlowBusiness> {
                                         @Param("status") String status,
                                         @Param("tenantId") Long tenantId);
 
+    int markWithdrawn(@Param("tenantId") Long tenantId,
+                      @Param("processInstanceId") String processInstanceId,
+                      @Param("status") String status,
+                      @Param("endTime") LocalDateTime endTime,
+                      @Param("idempotencyKey") String idempotencyKey,
+                      @Param("requestDigest") String requestDigest,
+                      @Param("actionType") String actionType);
+
     int applyProjection(@Param("tenantId") Long tenantId,
                         @Param("processInstanceId") String processInstanceId,
                         @Param("status") String status,

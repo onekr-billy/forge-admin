@@ -211,13 +211,18 @@ final class BusinessFlowTaskCommandCoordinator {
         validateTaskAccess(query, taskFormInfo);
         TaskFormRuntimeContext runtime = runtimeContextResolver.resolveTask(query, true, taskFormInfo);
         Map<String, Object> variables = dto.getVariables() == null ? Map.of() : dto.getVariables();
+        Long tenantId = tenantIdSupplier.get();
+        Long userId = userIdSupplier.get();
+        String comment = StringUtils.defaultIfBlank(dto.getComment(), "修改后重提");
+        BusinessFlowCommandIdentity.Credentials credentials = BusinessFlowCommandIdentity.forTaskAction(
+                "RESUBMIT", tenantId, userId, query.getTaskId(), comment, variables);
         FlowResult<Void> result = requireFlowClient("流程服务未配置，无法重提").approve(
-                query.getTaskId(), String.valueOf(userIdSupplier.get()),
-                StringUtils.defaultIfBlank(dto.getComment(), "修改后重提"), variables);
+                query.getTaskId(), String.valueOf(userId), comment, null, variables,
+                tenantId, credentials.idempotencyKey(), credentials.requestDigest());
         requireSuccess(result, "重提失败");
 
         AiBusinessFlowInstanceLink link = findRuntimeLink(
-                tenantIdSupplier.get(), query.getProcessInstanceId(), runtime.businessKey());
+                tenantId, query.getProcessInstanceId(), runtime.businessKey());
         if (link == null) {
             BusinessFlowRuntimeVO vo = new BusinessFlowRuntimeVO();
             vo.setObjectCode(runtime.objectCode());
@@ -264,9 +269,12 @@ final class BusinessFlowTaskCommandCoordinator {
         if (!userId.equals(link.getStartUserId())) {
             throw new BusinessException("只有流程发起人可以撤回");
         }
+        String comment = StringUtils.defaultIfBlank(dto.getComment(), "申请人撤回");
+        BusinessFlowCommandIdentity.Credentials credentials = BusinessFlowCommandIdentity.forProcessAction(
+                "WITHDRAW", tenantId, userId, link.getProcessInstanceId(), comment);
         FlowResult<Void> result = flowClient.withdrawProcess(
-                link.getProcessInstanceId(), String.valueOf(userId),
-                StringUtils.defaultIfBlank(dto.getComment(), "申请人撤回"));
+                link.getProcessInstanceId(), String.valueOf(userId), comment, tenantId,
+                credentials.idempotencyKey(), credentials.requestDigest());
         requireSuccess(result, "撤回失败");
 
         BusinessFlowCallbackDTO callback = new BusinessFlowCallbackDTO();

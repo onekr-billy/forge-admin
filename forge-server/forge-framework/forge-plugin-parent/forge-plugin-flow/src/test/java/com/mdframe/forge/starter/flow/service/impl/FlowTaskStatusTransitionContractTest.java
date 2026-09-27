@@ -14,8 +14,8 @@ class FlowTaskStatusTransitionContractTest {
     void processTerminationMustRepairAllDeletedActiveTasksToTerminated() throws IOException {
         String mapper = Files.readString(Path.of(
                 "src/main/resources/mapper/FlowTaskMapper.xml"));
-        String taskService = Files.readString(Path.of(
-                "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskServiceImpl.java"));
+        String withdrawCoordinator = Files.readString(Path.of(
+                "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskWithdrawCoordinator.java"));
         String actionCoordinator = Files.readString(Path.of(
                 "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskActionCoordinator.java"));
         String instanceService = Files.readString(Path.of(
@@ -27,7 +27,8 @@ class FlowTaskStatusTransitionContractTest {
         assertTrue(!mapper.contains("t.del_flag") && !mapper.contains("update_time = #{completeTime}"));
         assertTrue(actionCoordinator.contains("flowTaskMapper.updateProcessTaskStatusByTaskIds"));
         assertTrue(actionCoordinator.contains("FlowTaskStatus.TERMINATED.getCode()"));
-        assertTrue(taskService.contains("FlowTaskStatus.WITHDRAWN.getCode()"));
+        assertTrue(withdrawCoordinator.contains("taskMapper.updateProcessTaskStatusByTaskIds"));
+        assertTrue(withdrawCoordinator.contains("FlowTaskStatus.WITHDRAWN.getCode()"));
         assertTrue(instanceService.contains("flowTaskMapper.updateProcessTaskStatusByTaskIds"));
         assertTrue(instanceService.contains("FlowTaskStatus.TERMINATED.getCode()"));
     }

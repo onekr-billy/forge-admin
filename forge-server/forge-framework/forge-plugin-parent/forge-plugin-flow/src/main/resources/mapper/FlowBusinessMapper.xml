@@ -23,6 +23,9 @@
         <result column="update_time" property="updateTime"/>
         <result column="projection_event_id" property="projectionEventId"/>
         <result column="projection_sequence" property="projectionSequence"/>
+        <result column="action_idempotency_key" property="actionIdempotencyKey"/>
+        <result column="action_request_digest" property="actionRequestDigest"/>
+        <result column="action_type" property="actionType"/>
     </resultMap>
 
     <sql id="Base_Columns">
@@ -45,7 +48,10 @@
         create_time,
         update_time,
         projection_event_id,
-        projection_sequence
+        projection_sequence,
+        action_idempotency_key,
+        action_request_digest,
+        action_type
     </sql>
 
     <select id="selectByProcessInstanceId" resultMap="BaseResultMap">
@@ -282,6 +288,18 @@
             update_time = NOW()
         WHERE process_instance_id = #{processInstanceId}
           AND tenant_id = #{tenantId}
+    </update>
+
+    <update id="markWithdrawn">
+        UPDATE sys_flow_business
+        SET status = #{status},
+            end_time = #{endTime},
+            action_idempotency_key = #{idempotencyKey},
+            action_request_digest = #{requestDigest},
+            action_type = #{actionType},
+            update_time = NOW()
+        WHERE tenant_id = #{tenantId}
+          AND process_instance_id = #{processInstanceId}
     </update>
 
     <update id="applyProjection">

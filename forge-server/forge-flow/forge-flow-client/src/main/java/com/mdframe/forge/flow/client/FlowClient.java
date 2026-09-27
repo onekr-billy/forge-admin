@@ -187,11 +187,22 @@ public class FlowClient {
      * @param comment           撤回原因
      */
     public FlowResult<Void> withdrawProcess(String processInstanceId, String userId, String comment) {
+        return withdrawProcess(processInstanceId, userId, comment, null, null, null);
+    }
+
+    /**
+     * 带可信租户和稳定幂等凭证的流程撤回。
+     */
+    public FlowResult<Void> withdrawProcess(String processInstanceId, String userId, String comment,
+                                            Long tenantId, String idempotencyKey, String requestDigest) {
         String url = flowServiceUrl + "/api/flow/task/withdraw";
         Map<String, Object> params = new HashMap<>();
         params.put("processInstanceId", processInstanceId);
         params.put("userId", userId);
         params.put("comment", comment);
+        params.put("tenantId", tenantId);
+        params.put("idempotencyKey", idempotencyKey);
+        params.put("requestDigest", requestDigest);
         return post(url, params, new TypeReference<FlowResult<Void>>() {});
     }
 

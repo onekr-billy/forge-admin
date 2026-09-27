@@ -10,6 +10,7 @@
 import { computed, readonly, ref, watch } from 'vue'
 import flowApi from '@/api/flow'
 import { useUserStore } from '@/store'
+import { createFlowActionCredentials } from '@/utils/flow-action-idempotency'
 import { collectInitiatorSelectSelections } from '@/utils/initiatorSelect'
 
 /**
@@ -171,10 +172,14 @@ export function useFlow(processKey, businessKeyRef) {
       return
     submitting.value = true
     try {
+      const processInstanceId = statusData.value?.processInstanceId
+      const comment = reason || '申请人撤回'
+      const credentials = await createFlowActionCredentials('withdraw', processInstanceId, { comment })
       const res = await flowApi.withdrawProcess({
-        processInstanceId: statusData.value?.processInstanceId,
+        processInstanceId,
         userId: userStore.userId,
-        reason,
+        comment,
+        ...credentials,
       })
       if (res.code === 200) {
         await refreshStatus()

@@ -107,4 +107,13 @@ public class FlowBusiness {
 
     /** 最近成功应用的投影顺序号，用于拒绝迟到事件覆盖新状态。 */
     private Long projectionSequence;
+
+    /** 最近受控流程实例动作的稳定幂等键。 */
+    private String actionIdempotencyKey;
+
+    /** 最近受控流程实例动作的规范请求摘要。 */
+    private String actionRequestDigest;
+
+    /** 最近受控流程实例动作类型。 */
+    private String actionType;
 }

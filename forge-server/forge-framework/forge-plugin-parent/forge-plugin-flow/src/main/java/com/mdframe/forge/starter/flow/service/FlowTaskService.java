@@ -207,6 +207,10 @@ public interface FlowTaskService {
      */
     void withdraw(String processInstanceId, String userId);
 
+    /** 带可信租户与远程幂等凭证的流程撤回。 */
+    void withdraw(String processInstanceId, String userId, String comment, Long tenantId,
+                  String idempotencyKey, String requestDigest);
+
     /**
      * 获取任务详情
      */

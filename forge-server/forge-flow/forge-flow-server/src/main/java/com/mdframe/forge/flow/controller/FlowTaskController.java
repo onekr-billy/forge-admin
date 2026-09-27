@@ -324,7 +324,9 @@ public class FlowTaskController {
         }
 
         String userId = FlowSessionIdentity.requireUserId(dto.getUserId());
-        flowTaskService.withdraw(dto.getProcessInstanceId(), userId);
+        Long tenantId = resolveTrustedTenant(dto.getTenantId());
+        flowTaskService.withdraw(dto.getProcessInstanceId(), userId, optionalText(dto.getComment()),
+                tenantId, optionalText(dto.getIdempotencyKey()), optionalText(dto.getRequestDigest()));
         return RespInfo.success("撤回成功", null);
     }
 

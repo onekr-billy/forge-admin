@@ -407,7 +407,15 @@ async function openDrawer(row) {
 async function submitWithdraw() {
   withdrawLoading.value = true
   try {
-    const res = await flowApi.withdrawProcess({ processInstanceId: currentTask.value.processInstanceId, userId: userStore.userId, comment: withdrawComment.value || '申请人撤回' })
+    const processInstanceId = currentTask.value.processInstanceId
+    const comment = withdrawComment.value || '申请人撤回'
+    const credentials = await createFlowActionCredentials('withdraw', processInstanceId, { comment })
+    const res = await flowApi.withdrawProcess({
+      processInstanceId,
+      userId: userStore.userId,
+      comment,
+      ...credentials,
+    })
     if (res.code === 200) {
       window.$message.success('撤回成功')
       showDrawer.value = false
@@ -415,8 +423,8 @@ async function submitWithdraw() {
     }
     else { window.$message.error(res.message || '撤回失败') }
   }
-  catch {
-    window.$message.error('撤回失败')
+  catch (error) {
+    window.$message.error(error?.message || '撤回失败')
   }
   finally {
     withdrawLoading.value = false

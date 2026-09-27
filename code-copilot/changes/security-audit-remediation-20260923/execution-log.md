@@ -1,5 +1,29 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：T4.4 撤回最终结果回放与重提稳定身份
+
+### 实现
+
+- 新增服务端 `BusinessFlowCommandIdentity`，由可信租户、当前用户、动作、任务/流程实例和规范化载荷生成稳定 SHA-256 身份；业务撤回不再依赖客户端提供幂等凭证，重提也不再使用缺少稳定身份的旧审批调用。
+- `FlowClient -> FlowTaskController -> FlowTaskService` 撤回链路补齐可信租户、备注、`idempotencyKey` 和 `requestDigest`。Controller 用会话租户交叉校验请求租户，固定字段继续使用明确 DTO。
+- 新增 `FlowTaskWithdrawCoordinator`：在读取可能已经消失的 Flowable 运行实例前，先按租户锁定 `sys_flow_business`，校验流程发起人、最终状态和动作身份；同一 `CANCELED + WITHDRAW + key + digest` 请求直接回放成功，不同请求、跨租户、非发起人和终态冲突均失败关闭。
+- 首次撤回会记录活动任务备注、删除 Flowable 运行实例、修复活动任务镜像为 `WITHDRAWN`，并把业务镜像的 `CANCELED` 最终状态与动作身份原子写入。新增 V1.0.199，以 `information_schema` 防重复扩展三个动作字段和租户范围查询索引。
+- 两个直接调用 Flow 接口的前端入口现在生成稳定撤回凭证；`useFlow` 同时修复把撤回说明错误提交为 `reason`、而后端 DTO 只接收 `comment` 的字段错配。发起列表会展示服务端返回的具体失败信息。
+- 撤回职责从 `FlowTaskServiceImpl` 提取后，该类为 920 行；新协调器 156 行、命令身份类 63 行。本批提取仅服务于缺陷修复和测试边界，没有开展用户排除的巨型类/组件改造。
+
+### 验证
+
+- 稳定命令身份、重提/撤回透传、FlowClient 请求体、Controller 可信租户、撤回首次执行/最终结果回放及 Mapper/迁移契约相关定向测试 21/21 通过；抽取后的任务状态迁移契约 1/1 通过。
+- 38 模块完整 Maven 反应堆最终全部成功：FlowClient 17/17、Generator 1369/1369、AI 124/124、Flow 插件 232/232、Flow Server 49/49，均为 0 失败、0 错误、0 跳过。首次完整回归发现旧源码契约仍指向 `FlowTaskServiceImpl`，确认逻辑已迁移到协调器后同步修正契约并完整复跑转绿。
+- 前端稳定摘要测试 4/4，两个目标文件 ESLint 为 0 错误（3 条既有 JSDoc 警告），生产构建成功，9962 个模块完成转换。
+- `FlowBusinessMapper.xml` 通过 `xmllint --noout`；V1.0.199 静态扫描未发现 `${...}` 或 `tenant_id = 0`；`git diff --check` 通过。
+
+### 未覆盖
+
+- 未连接真实 MySQL 执行 V1.0.199，也未在真实 Flowable/HTTP 链路注入“撤回已成功但响应丢失”、数据库瞬断或并发重复撤回；当前结论来自事务边界、Mapper 契约和行为单测。
+- 本批为撤回提供 Flow 端最终结果回放，为重提提供服务端稳定凭证，但尚未建立 Generator 侧审批/退回/重提持久化命令 Outbox。重提在远端任务已迁移后仍可能先被业务入口的任务访问校验拒绝，不能把稳定凭证单独表述为完整恢复闭环。
+- 主动状态同步、Redis 入箱前消费 ACK、授权人工重放和真实多节点故障演练仍属于 T4.4 未完成项；T4.2/T4.3 巨型组件/巨型类改造继续按用户要求排除。
+
 ## 2026-09-28：AI Provider 空类型校验失败关闭
 
 ### 实现

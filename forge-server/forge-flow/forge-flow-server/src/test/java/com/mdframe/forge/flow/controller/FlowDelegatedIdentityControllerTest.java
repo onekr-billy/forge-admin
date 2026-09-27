@@ -5,6 +5,7 @@ import com.mdframe.forge.flow.dto.FlowInstanceTerminateDTO;
 import com.mdframe.forge.flow.dto.FlowTaskApproveDTO;
 import com.mdframe.forge.flow.dto.FlowTaskRejectDTO;
 import com.mdframe.forge.flow.dto.FlowTaskReturnDTO;
+import com.mdframe.forge.flow.dto.FlowTaskWithdrawDTO;
 import com.mdframe.forge.starter.auth.config.FlowDelegationSessionVerifier;
 import com.mdframe.forge.starter.core.context.ExecutionIdentity;
 import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
@@ -134,6 +135,28 @@ class FlowDelegatedIdentityControllerTest {
         verify(flowTaskService).returnTask(
                 "task-1", "101", "退回修改", null, "draft-node", 1L,
                 "flow:return-key-1", "sha256:return-digest");
+    }
+
+    @Test
+    void shouldPassTrustedWithdrawIdentityToTaskService() {
+        FlowTaskService flowTaskService = mock(FlowTaskService.class);
+        FlowTaskController controller = new FlowTaskController(
+                flowTaskService, mock(FlowOverdueReminderService.class));
+
+        try (var ignored = ExecutionIdentityContextHolder.open(identity())) {
+            FlowTaskWithdrawDTO request = new FlowTaskWithdrawDTO();
+            request.setProcessInstanceId("process-1");
+            request.setUserId("101");
+            request.setTenantId(1L);
+            request.setComment("申请人撤回");
+            request.setIdempotencyKey("flow:withdraw-key-1");
+            request.setRequestDigest("withdraw-digest-1");
+            controller.withdraw(request);
+        }
+
+        verify(flowTaskService).withdraw(
+                "process-1", "101", "申请人撤回", 1L,
+                "flow:withdraw-key-1", "withdraw-digest-1");
     }
 
     @Test
