@@ -97,3 +97,26 @@
 - 未连接真实 MySQL/Redis/对象存储/Flowable 服务，未执行 Flyway 实库迁移、Redis 故障切换、集群分片续传、真实跨租户接口矩阵或生产灰度。
 - 密码历史/过期策略、验证码失败次数锁定、流程事件 event-id/Outbox/租约 fencing、低代码 DDL 发布 Outbox、CI SCA/SAST/SBOM 和 Playwright 恶意输入仍是后续任务；`tasks.md` 中保持未完成状态。
 - T4.2/T4.3 巨型组件/巨型类改造按用户要求不处理，不作为本轮遗留缺陷。
+
+## 2026-09-27：A-20 业务流程运行租约与 fencing
+
+### 实现
+
+- `ai_business_process_run` 新增单调 `execution_token`、lease owner/expiry 和 heartbeat 字段，并以 `V1.0.187__add_business_process_run_lease.sql` 提供防重复迁移和恢复扫描索引。
+- `BusinessProcessOrchestrator` 只在创建/回调事务提交后认领 run；认领、续租、检查点推进、节点 attempt claim/complete 均校验租户、token、owner 和未过期租约。旧 worker 丢失租约后 fail-closed，不能覆盖接管者状态。
+- 增加 Lease Guard 协调器：90 秒租约、20 秒心跳、双 daemon 心跳 worker 和 4 线程/256 队列的限界提交后执行池；后台执行与续租显式建立并恢复可信租户上下文，线程生命周期清理继承上下文。
+- 节点副作用幂等键固定为 `runId:nodeId`，重试不再因 attemptNo 变化生成新副作用键；审批回调继续按明确 WAITING attemptId 原子完成。
+- MySQL 更新语句的 `SET` 左值不使用表别名，避免不同 MySQL 版本对 `SET alias.column` 的兼容问题。
+
+### 验证
+
+- `git diff --check`：通过。
+- 无 Mockito 定向测试：`BusinessProcessRunLeaseCoordinatorTest` 与 `BusinessProcessRunLeaseSqlContractTest` 共 3/3 通过。
+- 显式加载本地 Byte Buddy agent 后执行 `BusinessProcessOrchestratorTest`、租约协调器测试和 SQL 契约测试：19/19 通过；33 个 Generator 依赖反应堆模块全部成功。
+- `mvn -DskipTests -pl forge-admin-server -am compile`（JDK 17）：Admin 全依赖反应堆 46/46 成功。
+- 一次默认 Mockito inline 复跑因当前 macOS/JDK 无法 self-attach 导致 16 个构造期错误；同一源码在显式 agent 模式全部通过，该失败记录为运行环境问题而非代码通过证据。
+
+### 未覆盖
+
+- 未连接真实 MySQL/Flowable，未执行 Flyway 实库迁移、双 JVM 崩溃接管、网络分区或远程 FlowClient 补偿。A-20 的 Outbox、重试/补偿和人工恢复记录仍保留为后续任务。
+- T4.2/T4.3 巨型组件/巨型类改造继续按用户要求排除。

@@ -18,6 +18,20 @@
 - 数据 SQL/预览、外部接口权限、API fail-closed、幂等、验证码、文件访问、事件租户/条件和社会化登录均已执行对应模块定向测试，详见 `execution-log.md`。
 - `git diff --check` 通过；用户已有 `.DS_Store` 修改未触碰、未纳入本变更。
 
+## 1.2 2026-09-27 A-20 租约/fencing 增量验证计划
+
+- 范围：`ai_business_process_run` 租约字段、run claim/heartbeat/fencing CAS、节点 attempt 的租约约束、事务提交后执行和稳定副作用幂等键。
+- 先执行 `git diff --check`、Flyway 版本/占位符/防重复静态检查和 Mapper XML 契约测试。
+- 定向执行 `BusinessProcessOrchestratorTest` 与 `BusinessProcessRunLeaseSqlContractTest`，覆盖 run claim 失败、续租失败、节点 claim 失败和明确 attemptId 完成。
+- 使用 JDK 17 编译 `forge-plugin-generator` 及其依赖；共享流程运行实体、Mapper 或装配失败即阻断本阶段提交。
+- 本地未连接真实 MySQL/Flowable，不把 Flyway 实库执行、多节点故障切换和远程调用补偿记录为通过；Outbox 仍单独保留为后续任务。
+
+### 实际结果
+
+- `BusinessProcessOrchestratorTest` 16、`BusinessProcessRunLeaseCoordinatorTest` 2、`BusinessProcessRunLeaseSqlContractTest` 1：共 19 个通过；覆盖认领/续租失败关闭、明确 attemptId、提交后独立线程派发、心跳租户上下文恢复和 SQL fencing 条件。
+- 默认 Mockito inline 在一次复跑中因 Byte Buddy 无法 self-attach 环境阻断；使用本地同版本 `byte-buddy-agent` 显式加载后，19 个用例全部通过。另以无 Mockito 方式独立执行租约协调器与 SQL 契约测试，3/3 通过。
+- Generator 及 33 个依赖反应堆模块在上述测试命令中编译成功；Admin 全依赖 JDK 17 编译 46/46 成功。真实 MySQL 迁移、多 JVM 租约接管和 Flowable 远程补偿仍未执行，不据此宣称通过。
+
 ## 2. P0 必跑验证
 
 ### 动态脚本与 HTML

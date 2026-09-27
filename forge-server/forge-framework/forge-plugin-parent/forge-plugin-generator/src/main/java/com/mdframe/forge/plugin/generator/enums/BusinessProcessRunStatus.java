@@ -14,7 +14,8 @@ public enum BusinessProcessRunStatus {
     RUNNING("RUNNING", "执行中"),
     WAITING("WAITING", "等待中"),
     SUCCESS("SUCCESS", "成功"),
-    FAILED("FAILED", "失败");
+    FAILED("FAILED", "失败"),
+    CANCELED("CANCELED", "已取消");
 
     public static final Set<String> ACTIVE_CODES = Set.of(PENDING.code, RUNNING.code, WAITING.code);
 

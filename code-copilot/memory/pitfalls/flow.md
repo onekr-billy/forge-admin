@@ -1153,6 +1153,14 @@ CRUD 详情页的渲染逻辑是“主表 `AiForm` + 子表 `ChildTableEditor`�
 
 **补充（2026-09-25）**：上述修复只在「重新发布对象」时生效。保存流程时 `ensure` 只写对象草稿并建列，正式运行读已发布版本快照；应用发布对已发布对象只固定旧版本、不重建。另外有编辑权限的用户在门户走 `designPreview` 看草稿，所以同一应用有人有列有人没有。现在 `AiCrudConfigService.resolvePublishedRuntimeConfig` 在草稿已有托管 `flowStatus`、发布快照缺失时自愈补进 `modelSchema` 与 `columnsSchema`（表头、取值、回写共用）；流程保存时已绑定节点也会（有 DDL 权限时）重跑幂等 `ensure`。流程按钮仍以已发布流程版本为准。
 
+## 流程执行租约必须在事务提交后认领，心跳线程必须重建租户上下文
+
+**发现日期**：2026-09-27
+
+**问题描述**：在创建 run 的事务尚未提交时直接认领租约，独立心跳连接看不到该记录；若长节点在请求线程外续租，严格租户模式又会因线程池没有可信 tenantId 拒绝访问租户表。只做 `PENDING -> RUNNING` CAS 也无法阻止旧 worker 在租约过期、被新 worker 接管后继续提交节点结果。
+
+**解决方案**：事务内只登记 `afterCommit`，回调再派发到独立限界线程池，不能在仍绑定原事务资源的回调线程直接写库；认领时原子递增 `execution_token` 并写 owner/expiry，checkpoint、attempt claim/complete 全部校验 token、owner、未过期租约。提交后执行与心跳任务按 run 中的可信 tenantId 建立并恢复 `TenantContextHolder`，线程创建和退出时清理继承上下文；续租失败后本地守卫 fail-closed，不再提交状态。
+
 ## 带排序和行数限制的流程锁查询会被 JSqlParser 重排
 
 **发现日期**：2026-09-22
