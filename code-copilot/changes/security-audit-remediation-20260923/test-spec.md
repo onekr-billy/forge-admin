@@ -249,6 +249,14 @@
 - 回归基线：`forge-plugin-flow` 完整运行 196 个测试，剩余 2 个与本批修改文件无关的失败位于用户组运行时解析源码契约和动态数组新增行必填校验；`forge-flow-server` 完整运行 46 个测试，剩余 2 个与本批修改文件无关的失败位于流程监控源码契约。不记为完整模块通过。
 - 环境限制：未连接真实 MySQL/Flowable 或启动 Flow Server 执行表单、批次、实例与参与人路径的 HTTP 跨租户矩阵；四个回归基线失败留待后续批次修复。
 
+## 1.28 2026-09-28 Flow 动态数组必填与拆分职责契约回归
+
+- 动态数组必填：Schema 声明的必填字段是基础约束，字段权限只能追加必填要求，不能用缺省或显式 `required=false` 削弱 Schema；新增行缺少基础必填字段必须拒绝。
+- 用户组可见性：`FlowAccessGuard` 通过 `FlowCandidateMembershipResolver` 统一取得角色、组织和自定义用户组；契约测试同时验证 Guard 委托与 Resolver 调用 `FlowUserGroupService` 的完整链路，避免要求 Guard 重复实现解析逻辑。
+- 流程监控：实例分页继续委托 `FlowMonitorViewAssembler` 完成可选用户显示名解析和查询异常降级；源码契约跟随职责组件验证 `ObjectProvider` 可选桥接、稳定日志与插件隔离。
+- 实际结果：定向测试分别为插件 9/9、Flow Server 28/28；`forge-plugin-flow` 完整测试 196/196，`forge-flow-server` 完整测试 46/46，均为 0 失败、0 错误、0 跳过；此前四个回归基线失败全部清零。
+- 环境限制：本轮未连接真实 MySQL/Flowable 或启动 Flow Server 执行动态表单任务提交与监控分页 HTTP 验收；以校验器行为测试、委托链源码契约和两个模块完整测试作为自动化证据。
+
 ## 2. P0 必跑验证
 
 ### 动态脚本与 HTML

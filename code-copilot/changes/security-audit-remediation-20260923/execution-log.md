@@ -1,5 +1,23 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：Flow 动态数组必填与拆分职责契约回归
+
+### 实现
+
+- `DynamicFormArrayPermissionValidator` 将 Schema 必填和节点权限必填改为叠加约束，修复权限 JSON 缺省 `required` 时错误放宽 Schema 必填字段的问题；新增明细仍同时受可写字段白名单约束。
+- 用户组可见性契约改为验证 `FlowAccessGuard -> FlowCandidateMembershipResolver -> FlowUserGroupService` 委托链，保留角色、组织和自定义用户组的集中解析设计。
+- 流程监控契约改为同时检查 `FlowMonitorServiceImpl` 与已拆出的 `FlowMonitorViewAssembler`，确认服务委托、可选用户查询桥接、稳定降级日志和 System 插件隔离仍然成立。
+
+### 验证
+
+- `FlowUserGroupRuntimeResolutionContractTest` 与 `DynamicFormArrayPermissionValidatorTest` 定向回归 9/9 通过；`FlowControllerBoundaryContractTest` 28/28 通过。
+- `forge-plugin-flow` 完整测试 196/196 通过；`forge-flow-server` 完整测试 46/46 通过，均为 0 失败、0 错误、0 跳过；上一批记录的四个基线失败全部清零。
+- `git diff --check` 通过；用户已有 `.DS_Store` 修改未触碰、未纳入本批变更。
+
+### 未覆盖
+
+- 未启动 Flow Server 或连接真实 MySQL/Flowable 执行动态表单任务提交、候选用户组可见性和监控分页的 HTTP 集成验收。
+
 ## 2026-09-28：Flow 表单、填报、实例与参与人租户边界
 
 ### 实现
