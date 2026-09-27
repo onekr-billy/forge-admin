@@ -377,3 +377,12 @@
 - 验证：执行 generator Reactor 编译，重跑业务对象设计器/发布/数据库同步及运行布局相关测试，执行 `git diff --check` 和类行数检查；不启动真实服务。
 
 验证结果：运行时字段设置、布局树与编辑区属性已委托 `BusinessObjectRuntimeFormProjector`；相关 14 个测试类共 70 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`BusinessObjectDesignerService` 3471 行，新 Projector 623 行。
+
+## 2026-09-27 第五十二轮增量验证：业务对象视图 Schema 投影器
+
+- P0：搜索、列表、详情默认字段、排序、对齐、格式化和覆盖项保持不变。
+- P0：主表与子表字段引用清洗、列表网格 searchFieldRefs/searchFieldSettings 同步以及既有非模型 fieldSettings 保留规则保持不变。
+- P1：使用 Projector 统一视图 Schema 的默认组装、清洗与页面区域投影；Facade 仅保留编译时序和窄委托，新生产类少于 1000 行。
+- 验证：执行 generator Reactor 编译，重跑业务对象设计器/发布/数据库同步及运行布局相关测试，执行 `git diff --check` 和类行数检查；不启动真实服务。
+
+验证结果：视图 Schema 解析、默认组装、字段清洗和搜索/列表/详情区域投影已委托 `BusinessObjectViewSchemaProjector`；相关 14 个测试类共 70 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`BusinessObjectDesignerService` 3131 行，新 Projector 548 行。

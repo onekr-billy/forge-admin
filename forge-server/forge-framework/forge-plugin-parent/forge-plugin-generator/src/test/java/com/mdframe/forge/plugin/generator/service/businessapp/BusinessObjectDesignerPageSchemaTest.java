@@ -425,7 +425,6 @@ class BusinessObjectDesignerPageSchemaTest {
     @Test
     @DisplayName("keeps child list fields while compiling the view schema into page zones")
     void keepsChildListFieldsWhenApplyingViewSchema() throws Exception {
-        BusinessObjectDesignerService service = designerService();
         LowcodeModelSchema modelSchema = modelSchema();
         LowcodePageSchema pageSchema = new LowcodePageSchema();
         LowcodePageModelRef childRef = new LowcodePageModelRef();
@@ -447,15 +446,10 @@ class BusinessObjectDesignerPageSchemaTest {
                 Map.of("fieldCode", "pw_purchase_order_item__materialName", "label", "物料名称", "visible", true, "order", 1)
         ));
 
-        Method sanitize = BusinessObjectDesignerService.class.getDeclaredMethod(
-                "sanitizeViewSchemaFieldRefs", ViewSchemaDTO.class, LowcodeModelSchema.class, LowcodePageSchema.class);
-        sanitize.setAccessible(true);
-        ViewSchemaDTO sanitized = (ViewSchemaDTO) sanitize.invoke(service, viewSchema, modelSchema, pageSchema);
-
-        Method apply = BusinessObjectDesignerService.class.getDeclaredMethod(
-                "applyViewSchemaToPageZones", LowcodePageSchema.class, LowcodeModelSchema.class, ViewSchemaDTO.class);
-        apply.setAccessible(true);
-        apply.invoke(service, pageSchema, modelSchema, sanitized);
+        BusinessObjectViewSchemaProjector projector = new BusinessObjectViewSchemaProjector(
+                new ObjectMapper(), field -> "input");
+        ViewSchemaDTO sanitized = projector.sanitizeViewSchemaFieldRefs(viewSchema, modelSchema, pageSchema);
+        projector.applyViewSchemaToPageZones(pageSchema, modelSchema, sanitized);
 
         LowcodePageZone table = pageSchema.getZones().stream()
                 .filter(item -> "table".equals(item.getZoneKey()))

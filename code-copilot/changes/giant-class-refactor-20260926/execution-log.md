@@ -264,3 +264,9 @@
 - 使用 Projector 从 `BusinessObjectDesignerService` 迁出表单字段设置编译、嵌套布局树构建、动态可见性识别、form-create 样式元数据和编辑区弹窗/抽屉协议投影；删除已无调用的旧模型回写实现，模型字段事实源保持不变。
 - 入口由 3908 行降至 3471 行，新 `BusinessObjectRuntimeFormProjector` 623 行；动态选项识别仍通过窄策略回调复用现有规则。运行布局测试改为直接验证 Projector，未保留测试专用 Facade 方法。generator Reactor 编译退出码 0。
 - 执行 `BusinessObject*Test,BusinessApplicationDraftPreviewContractTest,RuntimeDesignerLayoutReaderTest` 共 14 类 70 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实复杂布局、动态显隐和多端表单渲染仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第五十二个切口：业务对象视图 Schema 投影器
+
+- 使用 Projector 从 `BusinessObjectDesignerService` 迁出搜索、列表、详情视图的默认组装、字段引用清洗、区域属性投影和列表网格查询字段同步。子表 `modelCode__field` 引用仍纳入页面字段目录，避免发布时被主模型清洗误删。
+- 入口由 3471 行降至 3131 行，新 `BusinessObjectViewSchemaProjector` 548 行；组件类型解析通过窄函数复用表单 Assembler。旧反射测试改为直接验证 Projector，未保留测试专用 Facade 方法。generator Reactor 编译退出码 0。
+- 执行 `BusinessObject*Test,BusinessApplicationDraftPreviewContractTest,RuntimeDesignerLayoutReaderTest` 共 14 类 70 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实多子表列表、复杂查询区和详情分组仍需服务环境验收，无服务 PID 需停止。
