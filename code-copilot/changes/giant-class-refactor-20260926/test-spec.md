@@ -508,6 +508,15 @@
 
 验证结果：字段重建与运行时元数据保护已委托 `BusinessObjectFieldDesignPolicy`；相关 14 个测试类共 70 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`BusinessObjectDesignerService` 1684 行，新 Policy 231 行。
 
+## 2026-09-27 第七十五轮增量验证：用户管理访问策略
+
+- P0：登录身份缺失、普通操作员权限通配符、系统/租户管理员豁免和无权限拒绝语义保持不变。
+- P0：写入租户、默认租户、多租户去重、租户启用校验、跨租户用户访问和自操作限制保持不变。
+- P1：使用 Access Policy + Specification 集中用户管理授权与租户边界；Service 保留事务入口和关系写入，新生产类少于 1000 行。
+- 验证：重跑访问策略、分配策略和用户 Mapper/导入安全契约测试，执行 `git diff --check` 与类行数检查；不启动真实服务。
+
+验证结果：用户管理授权、租户选择和目标用户边界已委托 `SysUserAccessPolicy`；相关 4 个测试类共 9 项通过，0 失败、0 错误。`git diff --check` 通过；`SysUserServiceImpl` 1384 行，新 Access Policy 287 行。
+
 ## 2026-09-27 第五十六轮增量验证：历史页面协议适配器
 
 - P0：旧 searchSchema/editSchema/columnsSchema 的字段引用、控件、字典、校验、列宽、排序、固定列和渲染配置迁移保持不变。

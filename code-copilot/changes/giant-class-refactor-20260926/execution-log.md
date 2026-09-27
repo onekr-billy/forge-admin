@@ -403,3 +403,9 @@
 - 按剩余大类扫描优先级转入当前最大类 `SysUserServiceImpl`，使用 Policy + Specification 迁出用户有效类型、角色租户/状态、组织/岗位租户归属、组织角色适用范围及用户类型×数据范围兼容规则。Service 继续持有公开事务、关系写入和会话同步。
 - 入口由 1755 行降至 1573 行，新 `SysUserAssignmentPolicy` 257 行；纯规则分支改为 Java 17 switch expression，数据库查询条件和失败文案保持原状。
 - system Reactor 编译退出码 0；执行 `SysUserAssignmentPolicyTest,SysUserMapperSqlContractTest,SysUserImportSecurityContractTest` 共 3 类 6 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin 服务、未连接真实数据库；真实多租户角色、组织范围和岗位绑定仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第七十五个切口：用户管理访问策略
+
+- 使用 Access Policy + Specification 从 `SysUserServiceImpl` 迁出登录身份、用户管理权限通配符、系统/租户管理员边界、写入租户选择、跨租户目标访问、用户类型写入和自操作保护；Service 继续持有公开事务和关系副作用。
+- 入口由 1573 行降至 1384 行，新 `SysUserAccessPolicy` 287 行；管理与只读目标校验复用统一访问模板，同时保留不同失败文案和当前用户只读例外。
+- system Reactor 执行 `SysUserAccessPolicyTest,SysUserAssignmentPolicyTest,SysUserMapperSqlContractTest,SysUserImportSecurityContractTest` 共 4 类 9 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin 服务、未连接真实数据库；真实跨租户授权、租户禁用和会话切换仍需服务环境验收，无服务 PID 需停止。

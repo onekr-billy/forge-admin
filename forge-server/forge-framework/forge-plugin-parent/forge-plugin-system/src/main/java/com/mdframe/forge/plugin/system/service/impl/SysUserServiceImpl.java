@@ -68,12 +68,6 @@ import com.mdframe.forge.starter.core.enums.EnableStatus;
 @RequiredArgsConstructor
 public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> implements ISysUserService {
 
-    private static final String[] USER_MANAGEMENT_PERMISSIONS = {
-            "system:user:list", "system:user:query", "system:user:add", "system:user:edit", "system:user:remove",
-            "system:org:list", "system:org:query",
-            "system:role:list", "system:role:query"
-    };
-
     private final SysUserMapper userMapper;
     private final SysUserRoleMapper userRoleMapper;
     private final SysUserOrgRoleMapper userOrgRoleMapper;
@@ -828,72 +822,31 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     }
 
     private void normalizeUserQueryTenant(SysUserQuery query) {
-        LoginUser loginUser = requireLoginUser();
-        assertUserManagementAllowed(loginUser);
-        query.setTenantId(resolveWriteTenantId(null));
+        accessPolicy().normalizeUserQueryTenant(query);
     }
 
     private LoginUser requireLoginUser() {
-        LoginUser loginUser = SessionHelper.getLoginUser();
-        if (loginUser == null) {
-            throw new RuntimeException("用户未登录");
-        }
-        return loginUser;
+        return accessPolicy().requireLoginUser();
     }
 
     private Long resolveWriteTenantId(Long requestedTenantId) {
-        LoginUser loginUser = requireLoginUser();
-        Long tenantId = loginUser.getTenantId();
-        validateTenantEnabled(tenantId);
-        return tenantId;
+        return accessPolicy().resolveWriteTenantId(requestedTenantId);
     }
 
     private Long resolveCurrentTenantIdForNonAdmin() {
-        LoginUser loginUser = requireLoginUser();
-        if (loginUser.getTenantId() == null) {
-            throw new RuntimeException("用户未登录");
-        }
-        return loginUser.getTenantId();
+        return accessPolicy().resolveCurrentTenantIdForNonAdmin();
     }
 
     private List<Long> resolveWriteTenantIds(List<Long> requestedTenantIds, Long defaultTenantId, LoginUser loginUser) {
-        if (loginUser == null) {
-            throw new RuntimeException("用户未登录");
-        }
-        if (!loginUser.isAdmin()) {
-            return List.of(resolveCurrentTenantIdForNonAdmin());
-        }
-        List<Long> tenantIds = normalizeTenantIdList(requestedTenantIds);
-        if (tenantIds.isEmpty()) {
-            tenantIds.add(defaultTenantId != null ? defaultTenantId : loginUser.getTenantId());
-        }
-        if (defaultTenantId != null && !tenantIds.contains(defaultTenantId)) {
-            throw new RuntimeException("默认租户必须包含在所属租户中");
-        }
-        tenantIds.forEach(this::validateTenantEnabled);
-        return tenantIds;
+        return accessPolicy().resolveWriteTenantIds(requestedTenantIds, defaultTenantId, loginUser);
     }
 
     private List<Long> normalizeTenantIdList(List<Long> tenantIds) {
-        if (tenantIds == null) {
-            return new ArrayList<>();
-        }
-        return new ArrayList<>(tenantIds.stream()
-                .filter(Objects::nonNull)
-                .collect(Collectors.toCollection(LinkedHashSet::new)));
+        return accessPolicy().normalizeTenantIdList(tenantIds);
     }
 
     private Long resolveDefaultTenantId(List<Long> tenantIds, Long requestedDefaultTenantId) {
-        if (tenantIds == null || tenantIds.isEmpty()) {
-            throw new RuntimeException("租户不能为空");
-        }
-        if (requestedDefaultTenantId != null) {
-            if (!tenantIds.contains(requestedDefaultTenantId)) {
-                throw new RuntimeException("默认租户必须包含在所属租户中");
-            }
-            return requestedDefaultTenantId;
-        }
-        return tenantIds.get(0);
+        return accessPolicy().resolveDefaultTenantId(tenantIds, requestedDefaultTenantId);
     }
 
     private Long resolveRoleBindTenantId(SysUser user) {
@@ -901,98 +854,27 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     }
 
     private Long resolveRoleBindTenantId(SysUser user, Long requestedTenantId) {
-        LoginUser loginUser = requireLoginUser();
-        if (loginUser.isAdmin()) {
-            Long tenantId = requestedTenantId != null
-                    ? requestedTenantId
-                    : (user.getTenantId() != null ? user.getTenantId() : loginUser.getTenantId());
-            validateTenantEnabled(tenantId);
-            return tenantId;
-        }
-        return resolveCurrentTenantIdForNonAdmin();
+        return accessPolicy().resolveRoleBindTenantId(user, requestedTenantId);
     }
 
     private void validateUserTypeForWrite(SysUserDTO dto) {
-        LoginUser loginUser = requireLoginUser();
-        Integer userType = dto.getUserType();
-        if (loginUser.isAdmin()) {
-            return;
-        }
-        if (userType != null && userType != 2) {
-            throw new RuntimeException("租户管理员只能维护普通用户");
-        }
+        accessPolicy().validateUserTypeForWrite(dto);
     }
 
     private Integer resolveWriteUserType(Integer requestedUserType) {
-        LoginUser loginUser = requireLoginUser();
-        if (loginUser.isAdmin()) {
-            return requestedUserType != null ? requestedUserType : 2;
-        }
-        return 2;
+        return accessPolicy().resolveWriteUserType(requestedUserType);
     }
 
     private void validateTenantEnabled(Long tenantId) {
-        if (tenantId == null) {
-            throw new RuntimeException("租户不能为空");
-        }
-        Long count = TenantContextHolder.executeIgnore(() ->
-                tenantMapper.selectCount(new LambdaQueryWrapper<com.mdframe.forge.plugin.system.entity.SysTenant>()
-                        .eq(com.mdframe.forge.plugin.system.entity.SysTenant::getId, tenantId)
-                        .eq(com.mdframe.forge.plugin.system.entity.SysTenant::getTenantStatus, 1)));
-        if (count == null || count == 0) {
-            throw new RuntimeException("租户不存在或已禁用");
-        }
+        accessPolicy().validateTenantEnabled(tenantId);
     }
 
     private void assertCanManageUser(Long userId) {
-        if (userId == null) {
-            throw new RuntimeException("用户ID不能为空");
-        }
-        LoginUser loginUser = requireLoginUser();
-        assertUserManagementAllowed(loginUser);
-        if (loginUser.isAdmin()) {
-            return;
-        }
-        SysUser user = TenantContextHolder.executeIgnore(() -> userMapper.selectById(userId));
-        if (user == null) {
-            throw new RuntimeException("用户不存在");
-        }
-        if (user.getUserType() != null && user.getUserType() == 0) {
-            throw new RuntimeException("无权操作超级管理员");
-        }
-        if (!isUserInTenant(userId, loginUser.getTenantId())) {
-            throw new RuntimeException("无权操作非本租户用户");
-        }
-        if (resolveEffectiveUserType(userId, loginUser.getTenantId()) != SystemConstants.UserType.NORMAL_USER) {
-            throw new RuntimeException("租户管理员只能维护普通用户");
-        }
+        accessPolicy().assertCanManageUser(userId);
     }
 
     private void assertCanReadUser(Long userId) {
-        if (userId == null) {
-            throw new RuntimeException("用户ID不能为空");
-        }
-        LoginUser loginUser = requireLoginUser();
-        assertUserManagementAllowed(loginUser);
-        if (loginUser.isAdmin()) {
-            return;
-        }
-        SysUser user = TenantContextHolder.executeIgnore(() -> userMapper.selectById(userId));
-        if (user == null) {
-            throw new RuntimeException("用户不存在");
-        }
-        if (user.getUserType() != null && user.getUserType() == 0) {
-            throw new RuntimeException("无权操作超级管理员");
-        }
-        if (!isUserInTenant(userId, loginUser.getTenantId())) {
-            throw new RuntimeException("无权操作非本租户用户");
-        }
-        if (isCurrentLoginUser(userId, loginUser)) {
-            return;
-        }
-        if (resolveEffectiveUserType(userId, loginUser.getTenantId()) != SystemConstants.UserType.NORMAL_USER) {
-            throw new RuntimeException("租户管理员只能查看普通用户");
-        }
+        accessPolicy().assertCanReadUser(userId);
     }
 
     private Long resolveTenantScopedOperationTenantId(Long userId) {
@@ -1000,11 +882,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     }
 
     private Long resolveTenantScopedOperationTenantId(Long userId, Long requestedTenantId) {
-        SysUser user = TenantContextHolder.executeIgnore(() -> userMapper.selectById(userId));
-        if (user == null) {
-            throw new RuntimeException("用户不存在");
-        }
-        return resolveTenantScopedOperationTenantId(user, requestedTenantId);
+        return accessPolicy().resolveTenantScopedOperationTenantId(userId, requestedTenantId);
     }
 
     private Long resolveTenantScopedOperationTenantId(SysUser user) {
@@ -1012,99 +890,32 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     }
 
     private Long resolveTenantScopedOperationTenantId(SysUser user, Long requestedTenantId) {
-        LoginUser loginUser = requireLoginUser();
-        if (loginUser.isAdmin()) {
-            Long tenantId = requestedTenantId != null
-                    ? requestedTenantId
-                    : (user.getTenantId() != null ? user.getTenantId() : loginUser.getTenantId());
-            validateTenantEnabled(tenantId);
-            return tenantId;
-        }
-        return resolveCurrentTenantIdForNonAdmin();
+        return accessPolicy().resolveTenantScopedOperationTenantId(user, requestedTenantId);
     }
 
     private boolean isUserInTenant(Long userId, Long tenantId) {
-        if (userId == null || tenantId == null) {
-            return false;
-        }
-        Long count = TenantContextHolder.executeIgnore(() ->
-                userTenantMapper.selectCount(new LambdaQueryWrapper<SysUserTenant>()
-                        .eq(SysUserTenant::getUserId, userId)
-                        .eq(SysUserTenant::getTenantId, tenantId)
-                        .eq(SysUserTenant::getStatus, 1)));
-        return count != null && count > 0;
+        return accessPolicy().isUserInTenant(userId, tenantId);
     }
 
     private boolean hasEnabledTenantMembership(Long userId) {
-        if (userId == null) {
-            return false;
-        }
-        Long count = TenantContextHolder.executeIgnore(() ->
-                userTenantMapper.selectCount(new LambdaQueryWrapper<SysUserTenant>()
-                        .eq(SysUserTenant::getUserId, userId)
-                        .eq(SysUserTenant::getStatus, 1)));
-        return count != null && count > 0;
+        return accessPolicy().hasEnabledTenantMembership(userId);
     }
 
     private void assertUserManagementAllowed() {
-        assertUserManagementAllowed(requireLoginUser());
-    }
-
-    private void assertUserManagementAllowed(LoginUser loginUser) {
-        if (loginUser == null) {
-            throw new RuntimeException("用户未登录");
-        }
-        if (loginUser.isAdmin() || loginUser.isTenantAdmin()) {
-            return;
-        }
-        if (!hasAnyPermission(loginUser, USER_MANAGEMENT_PERMISSIONS)) {
-            throw new RuntimeException("无权访问用户组织管理功能");
-        }
-    }
-
-    private boolean hasAnyPermission(LoginUser loginUser, String... permissions) {
-        Set<String> userPermissions = loginUser == null ? null : loginUser.getPermissions();
-        if (userPermissions == null || userPermissions.isEmpty() || permissions == null) {
-            return false;
-        }
-        if (userPermissions.contains("*") || userPermissions.contains("*:*:*")) {
-            return true;
-        }
-        for (String permission : permissions) {
-            if (hasPermission(userPermissions, permission)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean hasPermission(Set<String> userPermissions, String permission) {
-        if (permission == null || userPermissions.contains(permission)) {
-            return permission != null;
-        }
-        int splitIndex = permission.lastIndexOf(':');
-        while (splitIndex > 0) {
-            String wildcardPermission = permission.substring(0, splitIndex) + ":*";
-            if (userPermissions.contains(wildcardPermission)) {
-                return true;
-            }
-            splitIndex = permission.lastIndexOf(':', splitIndex - 1);
-        }
-        return false;
+        accessPolicy().assertUserManagementAllowed();
     }
 
     private void assertNotSelfManagementUnlessAdmin(Long userId) {
-        LoginUser loginUser = requireLoginUser();
-        if (loginUser.isAdmin()) {
-            return;
-        }
-        if (userId != null && Objects.equals(userId, loginUser.getUserId())) {
-            throw new RuntimeException("不能在用户管理中维护当前登录用户");
-        }
+        accessPolicy().assertNotSelfManagementUnlessAdmin(userId);
     }
 
     private boolean isCurrentLoginUser(Long userId, LoginUser loginUser) {
-        return userId != null && loginUser != null && Objects.equals(userId, loginUser.getUserId());
+        return accessPolicy().isCurrentLoginUser(userId, loginUser);
+    }
+
+    private SysUserAccessPolicy accessPolicy() {
+        return new SysUserAccessPolicy(
+                userMapper, userTenantMapper, tenantMapper, assignmentPolicy());
     }
 
     private void syncSessionUserProfile(SysUserDTO dto) {
