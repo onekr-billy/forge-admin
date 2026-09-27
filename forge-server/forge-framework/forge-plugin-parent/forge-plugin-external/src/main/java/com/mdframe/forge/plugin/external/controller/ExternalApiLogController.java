@@ -37,13 +37,13 @@ public class ExternalApiLogController {
     @GetMapping("/{id}")
     @SaCheckPermission(ExternalPermissions.LOG_QUERY)
     public RespInfo<ExternalApiLog> getById(@PathVariable Long id) {
-        return RespInfo.success(logService.getById(id));
+        return RespInfo.success(logService.getScopedById(id));
     }
 
     @DeleteMapping("/{id}")
     @SaCheckPermission(ExternalPermissions.LOG_REMOVE)
     public RespInfo<Void> remove(@PathVariable Long id) {
-        logService.removeById(id);
+        logService.removeScopedById(id);
         return RespInfo.success();
     }
 

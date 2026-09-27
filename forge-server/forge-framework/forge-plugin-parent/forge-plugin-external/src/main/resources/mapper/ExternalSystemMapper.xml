@@ -77,6 +77,13 @@
           AND system_status = 1
     </select>
 
+    <select id="selectSystemById" resultMap="BaseResultMap">
+        SELECT *
+        FROM sys_external_system
+        WHERE id = #{id}
+          AND tenant_id = #{tenantId}
+    </select>
+
     <select id="selectSystemList" resultMap="BaseResultMap">
         SELECT *
         FROM sys_external_system
@@ -84,5 +91,11 @@
           AND system_status = 1
         ORDER BY create_time DESC
     </select>
+
+    <delete id="deleteSystemById">
+        DELETE FROM sys_external_system
+        WHERE id = #{id}
+          AND tenant_id = #{tenantId}
+    </delete>
 
 </mapper>

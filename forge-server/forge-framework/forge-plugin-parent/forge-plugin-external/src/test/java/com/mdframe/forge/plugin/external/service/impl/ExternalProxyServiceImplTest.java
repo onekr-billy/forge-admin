@@ -75,7 +75,7 @@ class ExternalProxyServiceImplTest {
         api.setMockResponseJson("{\"memberId\":\"M000001\",\"memberName\":\"测试会员\"}");
         secure(api);
 
-        when(apiService.getById(1L)).thenReturn(api);
+        when(apiService.getRuntimeById(1L)).thenReturn(api);
 
         Object response;
         try (ExecutionIdentityContextHolder.Scope ignored = ExecutionIdentityContextHolder.open(identity())) {
@@ -102,7 +102,7 @@ class ExternalProxyServiceImplTest {
         api.setMockResponseJson("{\"productName\":\"测试商品\"}");
         secure(api);
 
-        when(apiService.getById(2L)).thenReturn(api);
+        when(apiService.getRuntimeById(2L)).thenReturn(api);
 
         ExternalApiDebugResult result;
         try (ExecutionIdentityContextHolder.Scope ignored = ExecutionIdentityContextHolder.open(identity())) {
@@ -124,7 +124,7 @@ class ExternalProxyServiceImplTest {
                 {"version":"FIELD_MAP_V1","sourcePath":"payload.items",
                  "fieldMapping":{"memberId":"id","memberName":"profile.name"},"targetPath":"records"}
                 """);
-        when(apiService.getById(3L)).thenReturn(api);
+        when(apiService.getRuntimeById(3L)).thenReturn(api);
         when(adapterFactory.getRequiredAdapter("JsonPath")).thenReturn(new JsonPathAdapter());
 
         Object response;
@@ -146,7 +146,7 @@ class ExternalProxyServiceImplTest {
         api.setMockResponseJson("{\"value\":1}");
         api.setResponseTransformEnabled(true);
         api.setResponseTransformScript("while (true) { response.value++; }");
-        when(apiService.getById(4L)).thenReturn(api);
+        when(apiService.getRuntimeById(4L)).thenReturn(api);
         when(adapterFactory.getRequiredAdapter("JsonPath")).thenReturn(new JsonPathAdapter());
         when(adapterFactory.getRequiredAdapter("Script")).thenReturn(new ScriptAdapter());
 

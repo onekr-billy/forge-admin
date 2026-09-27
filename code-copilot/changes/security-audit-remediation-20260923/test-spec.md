@@ -83,6 +83,15 @@
 - 实际结果：`ApiPermissionCoverageVerifierTest` 3/3，认证 Starter 依赖反应堆 16/16 模块成功且 `forge-starter-auth` 58/58 测试通过；首次沙箱内全量测试仅因 MockWebServer 无权绑定本机端口失败，沙箱外同命令复跑通过。Admin 聚合编译 46/46 成功。
 - 环境限制：未连接真实 MySQL 启动 Admin，尚未生成目标环境的实际缺失路由清单；默认门禁会在部署启动时阻止资源不完整或数据库查询失败的实例进入 ready。
 
+## 1.9 2026-09-28 外部连接器租户与权限矩阵
+
+- 租户边界：外部系统、外部 API、调用日志的详情和删除必须把可信 `tenantId` 传入 Mapper XML；按系统列 API、按编码取 API 和代理运行时读取同样不能只依赖隐式租户拦截器。
+- 写入边界：外部 API 新增/修改必须验证目标系统属于当前租户，并覆盖客户端提交的 `tenantId`；修改其他租户记录必须在读取阶段返回“不存在”，不得进入更新。
+- 权限矩阵：四个 Controller 的全部 20 个公开方法必须声明明确权限；普通用户只有携带目标调用权限才可执行，匿名/无上下文、缺少权限、缺少权限码或 `permissionCheckEnabled=false` 均 fail-closed。
+- 平台边界：`external:proxy:debug` 与 `external:log:clear` 的资源保持 `min_user_type=1`，不得进入既有普通菜单角色的自动授权集合；常规管理资源保持租户 1、`NOT EXISTS` 和 `min_user_type=2` 契约。
+- 实际结果：定向矩阵 16/16 通过；外部模块完整依赖反应堆 20/20 模块成功、`forge-plugin-external` 38/38 测试通过；Admin 聚合编译 46/46 成功。三个 Mapper XML 通过 `xmllint --noout`。
+- 环境限制：沙箱内完整测试因 MockWebServer 无权绑定临时端口失败，沙箱外同命令复跑通过；未启动真实 Admin 或连接 MySQL，因此不把浏览器/HTTP 多角色权限矩阵和实库租户隔离写成通过。
+
 ## 2. P0 必跑验证
 
 ### 动态脚本与 HTML

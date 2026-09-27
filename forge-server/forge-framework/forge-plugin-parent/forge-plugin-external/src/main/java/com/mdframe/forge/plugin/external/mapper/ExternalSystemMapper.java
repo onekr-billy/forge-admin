@@ -15,7 +15,11 @@ public interface ExternalSystemMapper extends BaseMapper<ExternalSystem> {
 
     IPage<ExternalSystem> selectSystemPage(Page<ExternalSystem> page, @Param("query") ExternalSystemQuery query);
 
+    ExternalSystem selectSystemById(@Param("id") Long id, @Param("tenantId") Long tenantId);
+
     List<ExternalSystem> selectSystemList(@Param("tenantId") Long tenantId);
     
     ExternalSystem selectSystemByCode(@Param("systemCode") String systemCode, @Param("tenantId") Long tenantId);
+
+    int deleteSystemById(@Param("id") Long id, @Param("tenantId") Long tenantId);
 }

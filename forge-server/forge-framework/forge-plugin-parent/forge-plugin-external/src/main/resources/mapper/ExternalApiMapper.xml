@@ -81,6 +81,7 @@
         SELECT *
         FROM sys_external_api
         WHERE system_id = #{systemId}
+          AND tenant_id = #{tenantId}
           AND api_status = 1
         ORDER BY sort_order ASC, create_time DESC
     </select>
@@ -90,8 +91,22 @@
         FROM sys_external_api
         WHERE api_code = #{apiCode}
           AND system_id = #{systemId}
+          AND tenant_id = #{tenantId}
           AND api_status = 1
     </select>
+
+    <select id="selectApiById" resultMap="BaseResultMap">
+        SELECT *
+        FROM sys_external_api
+        WHERE id = #{id}
+          AND tenant_id = #{tenantId}
+    </select>
+
+    <delete id="deleteApiById">
+        DELETE FROM sys_external_api
+        WHERE id = #{id}
+          AND tenant_id = #{tenantId}
+    </delete>
 
     <select id="selectApiListWithSystem" resultMap="ApiWithSystemResultMap">
         SELECT a.*, s.system_name, s.system_code

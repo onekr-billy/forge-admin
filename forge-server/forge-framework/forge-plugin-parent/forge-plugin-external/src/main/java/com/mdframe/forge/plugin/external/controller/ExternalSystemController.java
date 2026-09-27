@@ -63,7 +63,7 @@ public class ExternalSystemController {
     @DeleteMapping("/{id}")
     @SaCheckPermission(ExternalPermissions.SYSTEM_REMOVE)
     public RespInfo<Void> remove(@PathVariable Long id) {
-        systemService.removeById(id);
+        systemService.removeSystem(id);
         return RespInfo.success();
     }
 

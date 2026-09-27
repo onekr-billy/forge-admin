@@ -14,7 +14,11 @@ public interface ExternalApiLogMapper extends BaseMapper<ExternalApiLog> {
 
     IPage<ExternalApiLog> selectLogPage(Page<ExternalApiLog> page, @Param("query") ExternalApiLogQuery query);
 
+    ExternalApiLog selectLogById(@Param("id") Long id, @Param("tenantId") Long tenantId);
+
     ExternalApiLogSummary selectLogSummary(@Param("query") ExternalApiLogQuery query);
 
     int clearLogs(@Param("query") ExternalApiLogQuery query);
+
+    int deleteLogById(@Param("id") Long id, @Param("tenantId") Long tenantId);
 }

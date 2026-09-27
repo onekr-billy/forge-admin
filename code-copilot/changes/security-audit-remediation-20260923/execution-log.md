@@ -1,5 +1,26 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：T1.4 外部连接器租户边界与权限矩阵
+
+### 实现
+
+- 外部系统、外部 API 和调用日志的详情/删除改为显式 `id + tenantId` Mapper SQL；按系统列 API、按编码取 API 和代理运行时读取同步传入可信租户，不再只依赖 MyBatis 租户拦截器兜底。
+- 外部 API 新增/修改在事务内验证所属系统属于当前租户，忽略客户端租户值并写入当前租户；跨租户记录在修改前置读取阶段统一按不存在拒绝。
+- 管理 Controller 改为调用租户收口后的领域方法；系统/API/日志原有物理删除语义保持不变，仅增加显式租户条件，不扩大本轮到表结构或逻辑删除迁移。
+- 外部调用权限守卫在匿名或无 Sa-Token Web 上下文时稳定 fail-closed 为 403，不再向上泄漏 `SaTokenContextException`。
+- 权限契约覆盖四个 Controller 的全部公开端点，并验证高风险调试/日志清理资源仅限平台用户类型且不进入普通菜单角色自动授权集合。
+
+### 验证
+
+- 定向租户/权限/迁移/代理回归 16/16 通过；包含跨租户读写删除、匿名上下文、权限开关关闭、普通用户有/无权限、Controller 权限注解和 Flyway 授权边界。
+- 外部插件完整依赖反应堆在沙箱外复跑成功：20/20 模块成功，`forge-plugin-external` 38/38 测试通过。首次沙箱内运行仅因 `OkHttpSecureOutboundClientTest` 的 MockWebServer 无权绑定本机临时端口而失败，未记为代码失败。
+- `mvn -pl forge-admin-server -am -DskipTests compile`（JDK 17）：Admin 聚合反应堆 46/46 成功。
+- `ExternalApiMapper.xml`、`ExternalSystemMapper.xml`、`ExternalApiLogMapper.xml` 均通过 `xmllint --noout`，`git diff --check` 通过。
+
+### 未覆盖
+
+- 未启动真实 Admin、未连接 MySQL，也未使用普通用户/租户管理员/平台管理员账号发起 HTTP 请求；T1.4 最后一项继续保持未完成，待预发执行真实角色与跨租户矩阵后关闭。
+
 ## 2026-09-28：A-03 API 权限资源覆盖启动门禁
 
 ### 实现

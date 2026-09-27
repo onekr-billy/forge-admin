@@ -51,7 +51,7 @@ public class ExternalApiController {
     @GetMapping("/{id}")
     @SaCheckPermission(ExternalPermissions.API_QUERY)
     public RespInfo<ExternalApi> getById(@PathVariable Long id) {
-        return RespInfo.success(apiService.getById(id));
+        return RespInfo.success(apiService.getManagementById(id));
     }
 
     @PostMapping
@@ -61,7 +61,7 @@ public class ExternalApiController {
     public RespInfo<Void> add(@Validated @RequestBody ExternalApiDTO dto) {
         validateApi(dto);
         ExternalApi entity = convertDtoToEntity(dto);
-        apiService.save(entity);
+        apiService.saveApi(entity);
         auditResponseTransform("ADD", entity);
         return RespInfo.success();
     }
@@ -73,7 +73,7 @@ public class ExternalApiController {
     public RespInfo<Void> edit(@Validated @RequestBody ExternalApiDTO dto) {
         validateApi(dto);
         ExternalApi entity = convertDtoToEntity(dto);
-        apiService.updateById(entity);
+        apiService.updateApi(entity);
         auditResponseTransform("UPDATE", entity);
         return RespInfo.success();
     }
@@ -81,7 +81,7 @@ public class ExternalApiController {
     @DeleteMapping("/{id}")
     @SaCheckPermission(ExternalPermissions.API_REMOVE)
     public RespInfo<Void> remove(@PathVariable Long id) {
-        apiService.removeById(id);
+        apiService.removeApi(id);
         return RespInfo.success();
     }
 

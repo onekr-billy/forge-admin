@@ -30,6 +30,7 @@ class ExternalPermissionGuardTest {
         assertThrows(BusinessException.class, () -> guard.check(api));
 
         api.setRequiredPermission("external:member:query");
+        assertThrows(BusinessException.class, () -> guard.check(api));
         try (ExecutionIdentityContextHolder.Scope ignored = ExecutionIdentityContextHolder.open(identity(Set.of()))) {
             assertThrows(BusinessException.class, () -> guard.check(api));
         }

@@ -88,7 +88,7 @@ public class ExternalProxyServiceImpl implements ExternalProxyService {
         ExternalApiDebugResult result = new ExternalApiDebugResult();
 
         try {
-            api = apiService.getById(apiId);
+            api = apiService.getRuntimeById(apiId);
             if (api == null || api.getApiStatus() != 1) {
                 throw new BusinessException("接口不存在或已停用");
             }

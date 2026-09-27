@@ -50,7 +50,7 @@ class ExternalApiControllerTransformValidationTest {
         try (ExecutionIdentityContextHolder.Scope ignored = ExecutionIdentityContextHolder.open(identity())) {
             assertDoesNotThrow(() -> controller.add(dto));
         }
-        verify(apiService).save(any());
+        verify(apiService).saveApi(any());
     }
 
     private ExternalApiDTO validDto() {

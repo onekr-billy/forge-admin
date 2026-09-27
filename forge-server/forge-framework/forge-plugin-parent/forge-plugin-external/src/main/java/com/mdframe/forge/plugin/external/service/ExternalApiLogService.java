@@ -12,5 +12,9 @@ public interface ExternalApiLogService extends IService<ExternalApiLog> {
 
     ExternalApiLogSummary summary(ExternalApiLogQuery query);
 
+    ExternalApiLog getScopedById(Long id);
+
+    boolean removeScopedById(Long id);
+
     int clearLogs(ExternalApiLogQuery query);
 }
