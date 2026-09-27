@@ -422,3 +422,12 @@
 - 验证：执行 generator Reactor 编译，重跑业务对象设计器/发布/数据库同步及运行布局相关测试，执行 `git diff --check` 和类行数检查；不启动真实服务。
 
 验证结果：历史页面协议与区域归一已委托 `BusinessObjectLegacyPageSchemaAdapter`；相关 14 个测试类共 70 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`BusinessObjectDesignerService` 1160 行，新 Adapter 411 行。
+
+## 2026-09-27 第五十七轮增量验证：草稿 Schema 持久化网关
+
+- P0：对象关联模型/运行配置的查找优先级、默认模型 Schema、领域兜底、命名规范、审计策略与运行数据源快照保持不变。
+- P0：草稿校验、模型表与配置表写入字段、版本递增、发布状态、租户/审计/逻辑删除策略和表单 Schema 运行选项合并保持不变。
+- P1：使用 Gateway 隔离 Mapper、领域服务、数据源服务和配置持久化；Facade 只保留设计事务与编排，新生产类均少于 1000 行。
+- 验证：执行 generator Reactor 编译，重跑业务对象设计器/发布/数据库同步及运行布局相关测试，执行 `git diff --check` 和类行数检查；不启动真实服务。
+
+验证结果：模型/运行配置加载、Schema 补全、校验和持久化已委托 `BusinessObjectDraftSchemaGateway`；相关 14 个测试类共 70 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`BusinessObjectDesignerService` 904 行，新 Gateway 467 行。

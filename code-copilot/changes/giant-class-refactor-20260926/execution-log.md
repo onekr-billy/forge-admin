@@ -294,3 +294,9 @@
 - 使用 Adapter 从 `BusinessObjectDesignerService` 迁出旧 search/edit/columns Schema 到统一 Page Zone 的字段配置翻译、区域别名归一、重复区域合并、缺省区域补齐和 tree-panel 布局识别。
 - 清理前序 Assembler/Projector 已接管后残留的无调用布局、组件、字段排序和值归一工具链；入口由 1684 行降至 1160 行，新 `BusinessObjectLegacyPageSchemaAdapter` 411 行。旧协议显式值与新 Page Zone 已有值的优先级保持不变。
 - Page Schema 归一测试改为直接验证 Adapter，不保留测试专用 Facade 私有方法。generator Reactor 编译退出码 0；执行 `BusinessObject*Test,BusinessApplicationDraftPreviewContractTest,RuntimeDesignerLayoutReaderTest` 共 14 类 70 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实历史配置样本与 tree-crud 页面仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第五十七个切口：草稿 Schema 持久化网关
+
+- 使用 Gateway 从 `BusinessObjectDesignerService` 迁出模型与运行配置查找、默认模型构造、领域/对象/审计/数据源补全、草稿校验，以及 ai_lowcode_model/ai_crud_config 双表持久化。Facade 通过窄委托保留既有事务和保存时序。
+- 入口由 1160 行降至 904 行，新 `BusinessObjectDraftSchemaGateway` 467 行，至此设计器主类和本轮全部新增生产类均低于 1000 行；未改变 `BusinessObjectDesignerService` 的公开方法和 Spring 构造注入签名。
+- generator Reactor 编译退出码 0；执行 `BusinessObject*Test,BusinessApplicationDraftPreviewContractTest,RuntimeDesignerLayoutReaderTest` 共 14 类 70 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实多领域、外部数据源和发布版本双写仍需服务环境验收，无服务 PID 需停止。
