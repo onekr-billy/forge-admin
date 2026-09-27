@@ -1,5 +1,13 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：T0.2 安全契约测试过期路径修复
+
+### 实现与验证
+
+- `ClientCredentialSurfaceContractTest` 不再读取已删除的 `forge-admin-server/sql/初始化脚本.sql`，只校验仓库实际维护的 `forge-server/db/全量初始化SQL.sql`。
+- 使用显式 JDK 17 和本地 Byte Buddy agent 运行定向测试，`ClientCredentialSurfaceContractTest` 4/4 通过，26 个依赖反应堆模块全部成功。
+- 仓库级 Maven Toolchain 与 CI JDK 固定尚未落地，因此 T0.2 继续保持部分完成状态，不把本机显式 `JAVA_HOME` 误记为全局构建门禁。
+
 ## 2026-09-28：A-06 幂等 Token Redis 故障 fail-closed
 
 ### 实现

@@ -8,6 +8,7 @@
 - `forge-admin-ui` 与 `forge-report-ui` 生产构建通过。Admin 的 `pnpm --ignore-workspace build` 因 pnpm 非 TTY 依赖目录确认而中止，随后直接执行 package.json 中同一 Vite 构建命令通过；没有删除或重装现有依赖。
 - 本机 Mockito inline/Byte Buddy 在部分测试中无法 self-attach；这类结果按环境阻断记录，不视为代码通过，也不覆盖此前同测试已通过的证据。
 - `pnpm audit --json` 曾因工具异常 `reference.startsWith is not a function` 未完成，不能作为安全结论。
+- `ClientCredentialSurfaceContractTest` 的历史失效 SQL 路径已改为仓库实际初始化脚本，显式 JDK 17 下 4/4 通过；仓库级 Maven Toolchain/CI 固定仍未完成。
 
 ## 1.1 2026-09-27 本轮实际证据
 

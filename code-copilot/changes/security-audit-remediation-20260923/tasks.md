@@ -17,7 +17,7 @@
 
 ### T0.2 固化测试运行环境
 
-- [ ] 使用 JDK 17 Maven Toolchain，修复定向测试对 `forge-admin-server/sql/初始化脚本.sql` 的过期引用，改为仓库实际初始化脚本路径或测试专用夹具。（本轮已固定使用 JDK 17；历史过期测试路径未纳入本轮修改）
+- [ ] 使用 JDK 17 Maven Toolchain，修复定向测试对 `forge-admin-server/sql/初始化脚本.sql` 的过期引用，改为仓库实际初始化脚本路径或测试专用夹具。（过期引用已改为唯一实际路径 `forge-server/db/全量初始化SQL.sql`，JDK 17 下定向测试 4/4 通过；仓库级 Maven Toolchain/CI 固定尚未完成）
 - [ ] 在 CI 固定 Node 20 和 `pnpm --ignore-workspace`，保留既有前端构建命令。
 - [ ] 在测试记录中保留本机 Mockito/Byte Buddy 限制，不得将环境失败记录为代码通过。
 
