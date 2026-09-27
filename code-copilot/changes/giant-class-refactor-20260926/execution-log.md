@@ -276,3 +276,9 @@
 - 使用 Policy + Translator 从 `BusinessObjectDesignerService` 迁出旧 linkageSchema 解析、表单治理规则桥接、统一联动快照构造，以及字典/远程/组织/对象引用规则到字段 cascade 元数据的翻译。
 - 入口由 3131 行降至 2979 行，新 `BusinessObjectLinkagePolicy` 232 行；旧反射测试改为直接验证 Policy。首次编译发现保存入口仍使用联动存在性判断，补为 Facade 窄委托后编译通过。
 - 执行 `BusinessObject*Test,BusinessApplicationDraftPreviewContractTest,RuntimeDesignerLayoutReaderTest` 共 14 类 70 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实多级字典、远程接口和对象引用联动仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第五十四个切口：业务对象关系协调与运行时投影
+
+- 使用 Coordinator 从 `BusinessObjectDesignerService` 迁出关系保存/缺失删除、表单子表关系同步、子对象外键补齐和关系快照恢复；使用 Projector 迁出关系模型、主子 page modelRefs、关系属性与编辑区字段引用投影。Facade 继续持有公开事务入口和设计上下文装载，两个协作者通过窄回调复用草稿保存。
+- 入口由 2979 行降至 2151 行；新增 `BusinessObjectRelationCoordinator` 553 行、`BusinessObjectRelationProjector` 592 行，均低于 1000 行。首次整体迁移形成 1024 行 Coordinator，随即按读写职责二次拆成投影策略，未以压缩格式规避行数约束。
+- 主子表发现和 modelRef 合并测试改为直接验证新协作者，不保留测试专用 Facade 私有方法。generator Reactor 编译退出码 0；执行 `BusinessObject*Test,BusinessApplicationDraftPreviewContractTest,RuntimeDesignerLayoutReaderTest` 共 14 类 70 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实关系迁移、自动外键 DDL 与复杂多子表发布仍需服务环境验收，无服务 PID 需停止。

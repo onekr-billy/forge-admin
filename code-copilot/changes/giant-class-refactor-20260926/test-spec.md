@@ -395,3 +395,12 @@
 - 验证：执行 generator Reactor 编译，重跑业务对象设计器/发布/数据库同步及运行布局相关测试，执行 `git diff --check` 和类行数检查；不启动真实服务。
 
 验证结果：联动配置解析、治理规则合并和字段 cascade 翻译已委托 `BusinessObjectLinkagePolicy`；相关 14 个测试类共 70 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`BusinessObjectDesignerService` 2979 行，新 Policy 232 行。
+
+## 2026-09-27 第五十四轮增量验证：业务对象关系协调与运行时投影
+
+- P0：关系保存/删除、关系类型与状态、目标对象显示字段、主子表外键自动补齐和关系快照恢复语义保持不变。
+- P0：运行时模型 relations、主/子 page modelRefs、既有中文页签、表单子表顺序、编辑区字段引用和 master-detail 布局切换保持不变。
+- P1：使用 Coordinator 管理关系写入生命周期，使用 Projector 隔离持久化关系到运行时模型/页面协议的投影策略；Facade 仅保留事务入口和窄委托，新生产类均少于 1000 行。
+- 验证：执行 generator Reactor 编译，重跑业务对象设计器/发布/数据库同步及运行布局相关测试，执行 `git diff --check` 和类行数检查；不启动真实服务。
+
+验证结果：关系持久化、自动主子表关系与快照恢复已委托 `BusinessObjectRelationCoordinator`，运行时 relations/modelRefs 投影已委托 `BusinessObjectRelationProjector`；相关 14 个测试类共 70 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`BusinessObjectDesignerService` 2151 行，Coordinator 553 行，Projector 592 行。

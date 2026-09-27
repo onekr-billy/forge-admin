@@ -272,11 +272,8 @@ class BusinessObjectDesignerPageSchemaTest {
                 Map.of("id", "card", "componentKey", "card", "children", List.of(nestedSubTable)),
                 Map.of("formKey", "detail", "schema", Map.of("components", List.of(multiFormSubTable))));
 
-        Method method = BusinessObjectDesignerService.class.getDeclaredMethod(
-                "collectSubTableComponents", List.class, List.class);
-        method.setAccessible(true);
         List<Map<String, Object>> result = new ArrayList<>();
-        method.invoke(designerService(), nodes, result);
+        relationCoordinator().collectSubTableComponents(nodes, result);
 
         assertEquals(List.of("root_child", "nested_child", "multi_child"),
                 result.stream().map(item -> String.valueOf(item.get("id"))).toList());
@@ -385,11 +382,6 @@ class BusinessObjectDesignerPageSchemaTest {
     @Test
     @DisplayName("keeps existing chinese child tab titles when merging refs")
     void keepsExistingChineseChildTabTitlesWhenMergingRefs() throws Exception {
-        BusinessObjectDesignerService service = designerService();
-        Method method = BusinessObjectDesignerService.class.getDeclaredMethod(
-                "mergeExistingPageModelRef", LowcodePageModelRef.class, LowcodePageModelRef.class);
-        method.setAccessible(true);
-
         LowcodePageModelRef target = new LowcodePageModelRef();
         target.setModelCode("ps_presale_order_item");
         target.setModelName("预售商品明细");
@@ -408,7 +400,7 @@ class BusinessObjectDesignerPageSchemaTest {
                 "relationName", "预售商品"
         )));
 
-        method.invoke(service, target, existing);
+        relationProjector().mergeExistingPageModelRef(target, existing);
 
         assertEquals("预售商品", target.getModelName());
         assertEquals("预售商品", target.getProps().get("tabTitle"));
@@ -541,6 +533,16 @@ class BusinessObjectDesignerPageSchemaTest {
                 null,
                 null
         );
+    }
+
+    private BusinessObjectRelationCoordinator relationCoordinator() {
+        return new BusinessObjectRelationCoordinator(
+                new ObjectMapper(), null, null, () -> 1L, ignored -> null, (context, status) -> { });
+    }
+
+    private BusinessObjectRelationProjector relationProjector() {
+        return new BusinessObjectRelationProjector(
+                new ObjectMapper(), null, null, () -> 1L, ignored -> null);
     }
 
     private LowcodePageZone zone(String zoneKey, List<String> fieldRefs) {
