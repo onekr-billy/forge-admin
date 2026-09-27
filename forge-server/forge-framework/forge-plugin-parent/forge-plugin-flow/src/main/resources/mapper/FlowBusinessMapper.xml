@@ -21,6 +21,8 @@
         <result column="duration" property="duration"/>
         <result column="create_time" property="createTime"/>
         <result column="update_time" property="updateTime"/>
+        <result column="projection_event_id" property="projectionEventId"/>
+        <result column="projection_sequence" property="projectionSequence"/>
     </resultMap>
 
     <sql id="Base_Columns">
@@ -41,7 +43,9 @@
         end_time,
         duration,
         create_time,
-        update_time
+        update_time,
+        projection_event_id,
+        projection_sequence
     </sql>
 
     <select id="selectByProcessInstanceId" resultMap="BaseResultMap">
@@ -278,6 +282,19 @@
             update_time = NOW()
         WHERE process_instance_id = #{processInstanceId}
           AND tenant_id = #{tenantId}
+    </update>
+
+    <update id="applyProjection">
+        UPDATE sys_flow_business
+        SET status = #{status},
+            end_time = #{endTime},
+            duration = #{duration},
+            projection_event_id = #{eventId},
+            projection_sequence = #{eventSequence},
+            update_time = NOW()
+        WHERE tenant_id = #{tenantId}
+          AND process_instance_id = #{processInstanceId}
+          AND COALESCE(projection_sequence, 0) &lt; #{eventSequence}
     </update>
 
     <delete id="deleteByProcessInstanceIdPhysically">

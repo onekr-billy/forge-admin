@@ -91,6 +91,14 @@ public interface FlowBusinessMapper extends BaseMapper<FlowBusiness> {
                                         @Param("status") String status,
                                         @Param("tenantId") Long tenantId);
 
+    int applyProjection(@Param("tenantId") Long tenantId,
+                        @Param("processInstanceId") String processInstanceId,
+                        @Param("status") String status,
+                        @Param("endTime") LocalDateTime endTime,
+                        @Param("duration") Long duration,
+                        @Param("eventId") String eventId,
+                        @Param("eventSequence") Long eventSequence);
+
     int deleteByProcessInstanceIdPhysically(@Param("processInstanceId") String processInstanceId,
                                             @Param("tenantId") Long tenantId);
 

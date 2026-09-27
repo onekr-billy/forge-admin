@@ -2,24 +2,26 @@ package com.mdframe.forge.starter.flow.listener;
 
 import com.mdframe.forge.starter.flow.entity.FlowBusiness;
 import com.mdframe.forge.starter.flow.entity.FlowErrorLog;
+import com.mdframe.forge.starter.flow.entity.FlowProjectionOutbox;
 import com.mdframe.forge.starter.flow.entity.FlowTask;
 import com.mdframe.forge.starter.flow.enums.FlowBusinessStatus;
 import com.mdframe.forge.starter.flow.enums.FlowFormInstanceStatus;
+import com.mdframe.forge.starter.flow.enums.FlowProjectionType;
 import com.mdframe.forge.starter.flow.enums.FlowTaskStatus;
 import com.mdframe.forge.starter.core.domain.FlowEventMessage;
 import com.mdframe.forge.starter.flow.event.FlowNotifyOutboxPersistenceException;
+import com.mdframe.forge.starter.flow.event.FlowProjectionEvent;
+import com.mdframe.forge.starter.flow.event.FlowProjectionOutboxPersistenceException;
 import com.mdframe.forge.starter.flow.event.FlowTaskNotifyEvent;
 import com.mdframe.forge.starter.flow.mapper.FlowBusinessMapper;
-import com.mdframe.forge.starter.flow.mapper.FlowFormInstanceMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowTaskMapper;
-import com.mdframe.forge.starter.flow.mapper.FlowTaskCandidateMapper;
-import com.mdframe.forge.starter.flow.entity.FlowTaskCandidate;
-import com.mdframe.forge.starter.flow.enums.FlowTaskCandidateStatus;
 import com.mdframe.forge.starter.flow.entity.FlowRecordParticipant;
 import com.mdframe.forge.starter.flow.service.FlowErrorLogService;
 import com.mdframe.forge.starter.flow.service.FlowOrgIntegrationService;
 import com.mdframe.forge.starter.flow.service.FlowRecordParticipantService;
 import com.mdframe.forge.starter.flow.service.FlowNodeConfigService;
+import com.mdframe.forge.starter.flow.service.FlowProjectionHandler;
+import com.mdframe.forge.starter.flow.service.FlowProjectionOutboxService;
 import com.mdframe.forge.starter.flow.entity.FlowNodeConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.flowable.common.engine.api.delegate.event.FlowableEngineEvent;
@@ -71,10 +73,6 @@ public class FlowTaskEventListener implements FlowableEventListener {
     @Lazy
     private FlowTaskMapper flowTaskMapper;
 
-    @Autowired(required = false)
-    @Lazy
-    private FlowTaskCandidateMapper flowTaskCandidateMapper;
-
     @Autowired
     @Lazy
     private FlowBusinessMapper flowBusinessMapper;
@@ -109,15 +107,19 @@ public class FlowTaskEventListener implements FlowableEventListener {
 
     @Autowired(required = false)
     @Lazy
-    private FlowFormInstanceMapper flowFormInstanceMapper;
-
-    @Autowired(required = false)
-    @Lazy
     private FlowRecordParticipantService flowRecordParticipantService;
 
     @Autowired(required = false)
     @Lazy
     private FlowNodeConfigService flowNodeConfigService;
+
+    @Autowired
+    @Lazy
+    private FlowProjectionOutboxService flowProjectionOutboxService;
+
+    @Autowired
+    @Lazy
+    private FlowProjectionHandler flowProjectionHandler;
 
     @Override
     public void onEvent(FlowableEvent event) {
@@ -263,8 +265,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
                         task.getProcessInstanceId(), flowTask.getTitle());
             }
             
-            flowTaskMapper.insert(flowTask);
-            syncCandidateRelations(flowTask);
+            FlowProjectionOutbox projection = applyTaskProjection(FlowProjectionType.TASK_CREATED, flowTask);
             log.info("创建待办任务成功：taskId={}, title={}, assignee={}, status={}, candidateUsers={}, candidateGroups={}",
                     task.getId(), flowTask.getTitle(), flowTask.getAssignee(), flowTask.getStatus(),
                     flowTask.getCandidateUsers(), flowTask.getCandidateGroups());
@@ -290,6 +291,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
                 fillTenantId(msg, business);
                 publishEvent(msg, flowTask.getProcessDefKey());
             }
+            markProjectionApplied(projection);
             
         } catch (Exception e) {
             rethrowNotifyOutboxFailure(e);
@@ -309,33 +311,20 @@ public class FlowTaskEventListener implements FlowableEventListener {
             // 业务信息只查一次，后续补全任务字段和发布事件复用
             FlowBusiness completedBusiness = getFlowBusiness(task.getProcessInstanceId());
 
-            // 更新任务状态
+            // 构建任务完成后的权威镜像快照
             FlowTask flowTask = flowTaskMapper.selectByTaskId(task.getId());
             if (flowTask != null) {
                 flowTask.setStatus(FlowTaskStatus.APPROVED.getCode());
                 flowTask.setCompleteTime(LocalDateTime.now());
-                flowTaskMapper.updateById(flowTask);
-                log.info("更新任务状态为已完成：taskId={}", task.getId());
             } else {
-                // 任务不存在，创建已完成的记录
                 flowTask = buildFlowTask(task);
                 flowTask.setStatus(FlowTaskStatus.APPROVED.getCode());
                 flowTask.setCompleteTime(LocalDateTime.now());
-                
-                if (completedBusiness != null) {
-                    flowTask.setTenantId(completedBusiness.getTenantId());
-                    flowTask.setTitle(completedBusiness.getTitle());
-                    flowTask.setBusinessKey(completedBusiness.getBusinessKey());
-                    flowTask.setBusinessType(completedBusiness.getBusinessType());
-                    flowTask.setStartUserId(completedBusiness.getApplyUserId());
-                    flowTask.setStartUserName(FlowTaskIdentityResolver.resolveUserDisplayName(
-                            flowOrgIntegrationService,
-                            completedBusiness.getApplyUserId(), completedBusiness.getApplyUserName()));
-                }
-                
-                flowTaskMapper.insert(flowTask);
-                log.info("创建已完成任务记录：taskId={}", task.getId());
+                enrichTaskFromBusiness(flowTask, completedBusiness);
             }
+            ensureTaskTitle(flowTask, task);
+            FlowProjectionOutbox projection = applyTaskProjection(FlowProjectionType.TASK_COMPLETED, flowTask);
+            log.info("更新任务状态为已完成：taskId={}", task.getId());
             // 发布 TASK_COMPLETED 事件，业务侧可监听具体节点完成情况（如：更新业务表审批节点状态等）
             eventPublisher.publishEvent(FlowTaskNotifyEvent.todoRead(task.getId(), completedBusiness));
             if (completedBusiness != null) {
@@ -368,6 +357,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
                 publishEvent(msg, flowTask.getProcessDefKey());
                 recordAssignee(completedBusiness, task, flowTask);
             }
+            markProjectionApplied(projection);
             
         } catch (Exception e) {
             rethrowNotifyOutboxFailure(e);
@@ -384,61 +374,62 @@ public class FlowTaskEventListener implements FlowableEventListener {
             TaskEntity task = (TaskEntity) ((FlowableEntityEvent) event).getEntity();
             log.info("任务分配事件：taskId={}, assignee={}, owner={}", 
                     task.getId(), task.getAssignee(), task.getOwner());
-            
-            FlowTask flowTask = flowTaskMapper.selectByTaskId(task.getId());
-            if (flowTask != null) {
-                String assignee = FlowTaskIdentityResolver.normalizeUserId(
-                        flowOrgIntegrationService, task.getAssignee(), task.getId(), "assignee");
-                String owner = FlowTaskIdentityResolver.normalizeUserId(
-                        flowOrgIntegrationService, task.getOwner(), task.getId(), "owner");
-                flowTask.setAssignee(assignee);
-                flowTask.setAssigneeName(FlowTaskIdentityResolver.resolveUserDisplayName(
-                        flowOrgIntegrationService, assignee, flowTask.getAssigneeName()));
-                flowTask.setOwner(owner);
-                
-                if (assignee != null) {
-                    if (owner != null && !owner.equals(assignee)) {
-                        log.info("转派任务（owner存在且不同于assignee），保持待办状态：taskId={}, owner={}, assignee={}", 
-                                task.getId(), owner, assignee);
-                        flowTask.setStatus(FlowTaskStatus.PENDING.getCode());
-                    } else {
-                        log.info("任务签收（无owner或owner=assignee），设为已签收状态：taskId={}, assignee={}", 
-                                task.getId(), assignee);
-                        flowTask.setStatus(FlowTaskStatus.CLAIMED.getCode());
-                        flowTask.setClaimTime(LocalDateTime.now());
-                    }
-                }
-                flowTaskMapper.updateById(flowTask);
-                log.info("更新任务处理人：taskId={}, assignee={}, status={}", 
-                        task.getId(), assignee, flowTask.getStatus());
-            }
 
-            if (flowTask != null && flowTask.getAssignee() != null) {
-                FlowBusiness assignedBusiness = getFlowBusiness(task.getProcessInstanceId());
-                if (assignedBusiness != null) {
-                    if (flowTask.getTenantId() == null && assignedBusiness.getTenantId() != null) {
-                        flowTask.setTenantId(assignedBusiness.getTenantId());
-                    }
-                    eventPublisher.publishEvent(FlowTaskNotifyEvent.todo(flowTask, assignedBusiness, readTaskVariables(task)));
-                    FlowEventMessage msg = FlowEventMessage.ofTask(
-                            FlowEventMessage.TASK_ASSIGNED,
-                            task.getProcessInstanceId(),
-                            flowTask.getProcessDefKey(),
-                            assignedBusiness.getBusinessKey(),
-                            assignedBusiness.getTitle(),
-                            assignedBusiness.getApplyUserId(),
-                            assignedBusiness.getApplyUserName(),
-                            task.getId(),
-                            task.getTaskDefinitionKey(),
-                            task.getName(),
-                            flowTask.getAssignee(),
-                            null,
-                            null);
-                    fillTenantId(msg, assignedBusiness);
-                    publishEvent(msg, flowTask.getProcessDefKey());
+            FlowBusiness assignedBusiness = getFlowBusiness(task.getProcessInstanceId());
+            FlowTask flowTask = flowTaskMapper.selectByTaskId(task.getId());
+            if (flowTask == null) {
+                flowTask = buildFlowTask(task);
+                enrichTaskFromBusiness(flowTask, assignedBusiness);
+            } else if (flowTask.getTenantId() == null) {
+                enrichTaskFromBusiness(flowTask, assignedBusiness);
+            }
+            ensureTaskTitle(flowTask, task);
+            String assignee = FlowTaskIdentityResolver.normalizeUserId(
+                    flowOrgIntegrationService, task.getAssignee(), task.getId(), "assignee");
+            String owner = FlowTaskIdentityResolver.normalizeUserId(
+                    flowOrgIntegrationService, task.getOwner(), task.getId(), "owner");
+            flowTask.setAssignee(assignee);
+            flowTask.setAssigneeName(FlowTaskIdentityResolver.resolveUserDisplayName(
+                    flowOrgIntegrationService, assignee, flowTask.getAssigneeName()));
+            flowTask.setOwner(owner);
+
+            if (assignee != null) {
+                if (owner != null && !owner.equals(assignee)) {
+                    log.info("转派任务（owner存在且不同于assignee），保持待办状态：taskId={}, owner={}, assignee={}",
+                            task.getId(), owner, assignee);
+                    flowTask.setStatus(FlowTaskStatus.PENDING.getCode());
+                } else {
+                    log.info("任务签收（无owner或owner=assignee），设为已签收状态：taskId={}, assignee={}",
+                            task.getId(), assignee);
+                    flowTask.setStatus(FlowTaskStatus.CLAIMED.getCode());
+                    flowTask.setClaimTime(LocalDateTime.now());
                 }
             }
-            
+            FlowProjectionOutbox projection = applyTaskProjection(FlowProjectionType.TASK_ASSIGNED, flowTask);
+            log.info("更新任务处理人：taskId={}, assignee={}, status={}",
+                    task.getId(), assignee, flowTask.getStatus());
+
+            if (flowTask.getAssignee() != null && assignedBusiness != null) {
+                eventPublisher.publishEvent(FlowTaskNotifyEvent.todo(flowTask, assignedBusiness, readTaskVariables(task)));
+                FlowEventMessage msg = FlowEventMessage.ofTask(
+                        FlowEventMessage.TASK_ASSIGNED,
+                        task.getProcessInstanceId(),
+                        flowTask.getProcessDefKey(),
+                        assignedBusiness.getBusinessKey(),
+                        assignedBusiness.getTitle(),
+                        assignedBusiness.getApplyUserId(),
+                        assignedBusiness.getApplyUserName(),
+                        task.getId(),
+                        task.getTaskDefinitionKey(),
+                        task.getName(),
+                        flowTask.getAssignee(),
+                        null,
+                        null);
+                fillTenantId(msg, assignedBusiness);
+                publishEvent(msg, flowTask.getProcessDefKey());
+            }
+            markProjectionApplied(projection);
+
         } catch (Exception e) {
             rethrowNotifyOutboxFailure(e);
             log.error("处理任务分配事件失败", e);
@@ -457,17 +448,21 @@ public class FlowTaskEventListener implements FlowableEventListener {
             if (entity instanceof TaskEntity) {
                 TaskEntity task = (TaskEntity) entity;
                 log.info("任务删除事件：taskId={}, name={}", task.getId(), task.getName());
-                
-                // 更新任务状态为已取消
+
+                FlowBusiness business = getFlowBusiness(task.getProcessInstanceId());
                 FlowTask flowTask = flowTaskMapper.selectByTaskId(task.getId());
-                if (flowTask != null) {
-                    flowTask.setStatus(FlowTaskStatus.CANCELED.getCode());
-                    flowTask.setCompleteTime(LocalDateTime.now());
-                    flowTaskMapper.updateById(flowTask);
-                    log.info("更新任务状态为已取消：taskId={}", task.getId());
+                if (flowTask == null) {
+                    flowTask = buildFlowTask(task);
+                    enrichTaskFromBusiness(flowTask, business);
+                    ensureTaskTitle(flowTask, task);
                 }
+                flowTask.setStatus(FlowTaskStatus.CANCELED.getCode());
+                flowTask.setCompleteTime(LocalDateTime.now());
+                FlowProjectionOutbox projection = applyTaskProjection(FlowProjectionType.TASK_CANCELED, flowTask);
+                log.info("更新任务状态为已取消：taskId={}", task.getId());
                 eventPublisher.publishEvent(
-                        FlowTaskNotifyEvent.todoRead(task.getId(), getFlowBusiness(task.getProcessInstanceId())));
+                        FlowTaskNotifyEvent.todoRead(task.getId(), business));
+                markProjectionApplied(projection);
             }
             
         } catch (Exception e) {
@@ -524,13 +519,13 @@ public class FlowTaskEventListener implements FlowableEventListener {
                         ).toMillis();
                         business.setDuration(duration);
                     }
-                    flowBusinessMapper.updateById(business);
-                    updateFormInstanceStatus(
-                            processInstanceId,
-                            rejected
-                                    ? FlowFormInstanceStatus.REJECTED.getCode()
-                                    : FlowFormInstanceStatus.APPROVED.getCode(),
-                            business.getTenantId());
+                    String formStatus = rejected
+                            ? FlowFormInstanceStatus.REJECTED.getCode()
+                            : FlowFormInstanceStatus.APPROVED.getCode();
+                    FlowProjectionOutbox projection = applyProcessProjection(
+                            rejected ? FlowProjectionType.PROCESS_REJECTED
+                                    : FlowProjectionType.PROCESS_COMPLETED,
+                            business, formStatus);
                     log.info("更新流程业务状态为{}：processInstanceId={}",
                             rejected ? "已驳回" : "已通过", processInstanceId);
 
@@ -555,6 +550,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
                     if (!rejected) {
                         eventPublisher.publishEvent(FlowTaskNotifyEvent.processCc(business, processVariables));
                     }
+                    markProjectionApplied(projection);
                 } else {
                     log.warn("未找到流程业务记录：processInstanceId={}", processInstanceId);
                 }
@@ -643,9 +639,9 @@ public class FlowTaskEventListener implements FlowableEventListener {
                         ).toMillis();
                         business.setDuration(duration);
                     }
-                    flowBusinessMapper.updateById(business);
-                    updateFormInstanceStatus(
-                            processInstanceId, FlowFormInstanceStatus.CANCELED.getCode(), business.getTenantId());
+                    FlowProjectionOutbox projection = applyProcessProjection(
+                            FlowProjectionType.PROCESS_CANCELED,
+                            business, FlowFormInstanceStatus.CANCELED.getCode());
                     log.info("更新流程业务状态为已取消：processInstanceId={}", processInstanceId);
 
                     // 发布事件
@@ -660,6 +656,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
                             business.getApplyUserName());
                     fillTenantId(msg, business);
                     publishEvent(msg, business.getProcessDefKey());
+                    markProjectionApplied(projection);
                 } else {
                     log.warn("未找到流程业务记录：processInstanceId={}", processInstanceId);
                 }
@@ -728,6 +725,7 @@ public class FlowTaskEventListener implements FlowableEventListener {
      */
     private FlowTask buildFlowTask(TaskEntity task) {
         FlowTask flowTask = new FlowTask();
+        flowTask.setTenantId(parsePositiveTenantId(task.getTenantId()));
         flowTask.setTaskId(task.getId());
         flowTask.setTaskName(task.getName());
         flowTask.setTaskDefKey(task.getTaskDefinitionKey());
@@ -782,41 +780,69 @@ public class FlowTaskEventListener implements FlowableEventListener {
         return flowTask;
     }
 
-    /** 将 Flowable 候选身份同步到规范化关系表，逗号字段继续保留兼容读取。 */
-    private void syncCandidateRelations(FlowTask flowTask) {
-        if (flowTaskCandidateMapper == null || flowTask == null
-                || flowTask.getTenantId() == null || flowTask.getTaskId() == null) {
+    private void enrichTaskFromBusiness(FlowTask task, FlowBusiness business) {
+        if (task == null || business == null) {
             return;
         }
-        syncCandidateValues(flowTask, flowTask.getCandidateUsers(), FlowTaskCandidate.TYPE_USER);
-        syncCandidateValues(flowTask, flowTask.getCandidateGroups(), FlowTaskCandidate.TYPE_GROUP);
+        task.setTenantId(business.getTenantId());
+        if (business.getProcessDefKey() != null && !business.getProcessDefKey().isBlank()) {
+            task.setProcessDefKey(business.getProcessDefKey());
+        }
+        task.setTitle(business.getTitle());
+        task.setBusinessKey(business.getBusinessKey());
+        task.setBusinessType(business.getBusinessType());
+        task.setStartUserId(business.getApplyUserId());
+        task.setStartUserName(FlowTaskIdentityResolver.resolveUserDisplayName(
+                flowOrgIntegrationService, business.getApplyUserId(), business.getApplyUserName()));
+        task.setStartDeptId(business.getApplyDeptId());
+        task.setStartDeptName(business.getApplyDeptName());
     }
 
-    private void syncCandidateValues(FlowTask flowTask, String values, String candidateType) {
-        if (values == null || values.isBlank()) {
+    private void ensureTaskTitle(FlowTask flowTask, TaskEntity task) {
+        if (flowTask.getTitle() != null && !flowTask.getTitle().isBlank()) {
             return;
         }
-        for (String raw : values.split("[,;，；、]")) {
-            String value = raw == null ? null : raw.trim();
-            if (value == null || value.isEmpty()) {
-                continue;
-            }
-            FlowTaskCandidate candidate = new FlowTaskCandidate();
-            candidate.setTenantId(flowTask.getTenantId());
-            candidate.setTaskId(flowTask.getTaskId());
-            candidate.setProcessInstanceId(flowTask.getProcessInstanceId());
-            candidate.setCandidateType(candidateType);
-            candidate.setCandidateValue(value);
-            candidate.setSource(FlowTaskCandidate.SOURCE_FLOWABLE);
-            candidate.setStatus(FlowTaskCandidateStatus.ACTIVE.getCode());
-            candidate.setCreateTime(flowTask.getCreateTime());
-            candidate.setUpdateTime(LocalDateTime.now());
-            try {
-                flowTaskCandidateMapper.insertIgnore(candidate);
-            } catch (Exception e) {
-                log.warn("同步流程任务候选关系失败，不阻断任务创建：taskId={}, type={}",
-                        flowTask.getTaskId(), candidateType, e);
-            }
+        String processKey = task.getProcessDefinitionId() == null
+                ? "unknown" : task.getProcessDefinitionId().split(":")[0];
+        flowTask.setTitle((task.getName() == null ? task.getId() : task.getName()) + " - " + processKey);
+    }
+
+    private Long parsePositiveTenantId(String tenantId) {
+        if (tenantId == null || tenantId.isBlank()) {
+            return null;
+        }
+        try {
+            long value = Long.parseLong(tenantId.trim());
+            return value > 0 ? value : null;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private FlowProjectionOutbox applyTaskProjection(FlowProjectionType type, FlowTask task) {
+        return applyProjection(FlowProjectionEvent.task(type, task));
+    }
+
+    private FlowProjectionOutbox applyProcessProjection(FlowProjectionType type, FlowBusiness business,
+                                                        String formStatus) {
+        return applyProjection(FlowProjectionEvent.process(type, business, formStatus));
+    }
+
+    private FlowProjectionOutbox applyProjection(FlowProjectionEvent event) {
+        FlowProjectionOutbox outbox;
+        try {
+            outbox = flowProjectionOutboxService.append(event);
+        } catch (RuntimeException failure) {
+            throw new FlowProjectionOutboxPersistenceException(failure);
+        }
+        flowProjectionHandler.apply(outbox, flowProjectionOutboxService.deserialize(outbox));
+        return outbox;
+    }
+
+    private void markProjectionApplied(FlowProjectionOutbox outbox) {
+        if (!flowProjectionOutboxService.markAppliedImmediately(outbox, LocalDateTime.now())) {
+            log.warn("流程镜像投影即时完成状态更新失败，交由补偿任务重试: eventId={}, outboxId={}",
+                    outbox == null ? null : outbox.getEventId(), outbox == null ? null : outbox.getId());
         }
     }
 
@@ -852,18 +878,6 @@ public class FlowTaskEventListener implements FlowableEventListener {
             taskService.setDueDate(task.getId(), dueDate);
         } catch (Exception e) {
             log.warn("写入任务截止时间失败，保留超时扫描兜底: taskId={}", task.getId(), e);
-        }
-    }
-
-    private void updateFormInstanceStatus(String processInstanceId, String status, Long tenantId) {
-        if (flowFormInstanceMapper == null || processInstanceId == null || processInstanceId.isBlank()
-                || tenantId == null || tenantId <= 0) {
-            return;
-        }
-        try {
-            flowFormInstanceMapper.updateStatusByProcessInstanceId(processInstanceId, status, tenantId);
-        } catch (Exception e) {
-            log.warn("更新流程表单实例状态失败: processInstanceId={}, status={}", processInstanceId, status, e);
         }
     }
 
@@ -952,11 +966,14 @@ public class FlowTaskEventListener implements FlowableEventListener {
         if (failure instanceof FlowNotifyOutboxPersistenceException) {
             throw (FlowNotifyOutboxPersistenceException) failure;
         }
+        if (failure instanceof FlowProjectionOutboxPersistenceException) {
+            throw (FlowProjectionOutboxPersistenceException) failure;
+        }
     }
 
     @Override
     public boolean isFailOnException() {
-        // 普通镜像异常仍在各处理器内降级；只有通知 Outbox 持久化失败会逃逸并回滚引擎事务。
+        // 镜像投影/通知 Outbox 持久化失败会逃逸并回滚；已落 Outbox 的投影执行失败由补偿任务接管。
         return true;
     }
 
