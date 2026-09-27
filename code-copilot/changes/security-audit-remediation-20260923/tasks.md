@@ -285,9 +285,9 @@
 - [x] 所有 `FlowMonitorServiceImpl` 方法统一绑定 tenant context 和资源权限，删除/废弃未绑定租户的旧接口；流程变量按白名单和敏感级别脱敏并记录读取审计。
 - [x] 将 `FlowModelServiceImpl` 的 BPMN process key、sequenceFlow、结构和替换逻辑迁移到安全 DOM/StAX 解析器，复用关闭 DTD/外部实体的 `BpmnXmlUtils`。
 - [x] 将 `validateNoProcessData()` 从 Service 层 `LambdaQueryWrapper` 迁移到 Mapper XML，显式加入租户和逻辑删除条件。
-- [ ] 为 Flowable 镜像、候选人、业务状态和通知事件增加唯一 event id、顺序/版本、幂等写入和补偿任务；避免 `fallbackExecution=true` 在无事务上下文直接发送不可回收通知。（通知事件已完成唯一 ID、协议版本、数据库顺序号、载荷摘要、事务 Outbox、租户 CAS、聚合顺序、指数退避、死信与定时补偿；Flowable 镜像、候选人和业务状态同步的事件 ID/幂等写入/补偿，以及死信人工重放仍未完成）
+- [ ] 为 Flowable 镜像、候选人、业务状态和通知事件增加唯一 event id、顺序/版本、幂等写入和补偿任务；避免 `fallbackExecution=true` 在无事务上下文直接发送不可回收通知。（通知事件已完成唯一 ID、协议版本、数据库顺序号、载荷摘要、事务 Outbox、租户 CAS、聚合顺序、指数退避、死信、定时补偿，以及按租户隔离的死信列表和带操作者/原因/时间审计的人工重放；Flowable 镜像、候选人和业务状态同步的事件 ID、幂等写入与补偿仍未完成）
 - [x] 禁止日志输出原始 BPMN、流程变量和完整通知 URL；Webhook 继续使用出站场景 allowlist/private-network policy。（原始 BPMN/流程变量日志已移除；Webhook 日志仅保留 scheme/host/port 和异常类型，站内信/H5/协同卡片完整 URL 也已移除，请求仍统一走 `FLOW_API` 受控出站场景）
-- [ ] 增加 XXE/DOCTYPE、CDATA、单引号、命名空间、属性重排、多 process、嵌套节点、非法引用和事件乱序测试。（BPMN 解析矩阵已覆盖；通知 Outbox 已增加同聚合前序阻断、稳定事件信封和认领契约测试；Flowable 镜像、候选人、业务状态同步的真实乱序与多节点故障测试仍未完成）
+- [ ] 增加 XXE/DOCTYPE、CDATA、单引号、命名空间、属性重排、多 process、嵌套节点、非法引用和事件乱序测试。（BPMN 解析矩阵已覆盖；通知 Outbox 已增加同聚合前序阻断、稳定事件信封、认领和 DEAD-only 人工重放契约测试；Flowable 镜像、候选人、业务状态同步的真实乱序与多节点故障测试仍未完成）
 
 ## Phase 5：收尾和上线门禁
 

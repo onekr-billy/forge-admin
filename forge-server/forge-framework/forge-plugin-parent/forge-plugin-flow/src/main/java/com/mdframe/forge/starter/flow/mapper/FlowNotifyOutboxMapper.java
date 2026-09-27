@@ -1,6 +1,7 @@
 package com.mdframe.forge.starter.flow.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.starter.flow.entity.FlowNotifyOutbox;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -17,6 +18,9 @@ public interface FlowNotifyOutboxMapper extends BaseMapper<FlowNotifyOutbox> {
 
     FlowNotifyOutbox selectByOutboxId(@Param("tenantId") Long tenantId,
                                       @Param("id") Long id);
+
+    Page<FlowNotifyOutbox> selectDeadLetterPage(Page<FlowNotifyOutbox> page,
+                                                @Param("tenantId") Long tenantId);
 
     List<FlowNotifyOutbox> selectDispatchCandidates(@Param("now") LocalDateTime now,
                                                     @Param("staleBefore") LocalDateTime staleBefore,
@@ -42,4 +46,10 @@ public interface FlowNotifyOutboxMapper extends BaseMapper<FlowNotifyOutbox> {
                    @Param("nextRetryTime") LocalDateTime nextRetryTime,
                    @Param("lastError") String lastError,
                    @Param("now") LocalDateTime now);
+
+    int requeueDeadLetter(@Param("tenantId") Long tenantId,
+                          @Param("id") Long id,
+                          @Param("replayedBy") String replayedBy,
+                          @Param("replayReason") String replayReason,
+                          @Param("now") LocalDateTime now);
 }

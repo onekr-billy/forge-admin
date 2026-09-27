@@ -33,4 +33,8 @@ public class FlowNotifyOutbox extends TenantEntity {
     private LocalDateTime lockTime;
     private LocalDateTime deliveredTime;
     private String lastError;
+    private Integer replayCount;
+    private String replayedBy;
+    private LocalDateTime replayedTime;
+    private String replayReason;
 }

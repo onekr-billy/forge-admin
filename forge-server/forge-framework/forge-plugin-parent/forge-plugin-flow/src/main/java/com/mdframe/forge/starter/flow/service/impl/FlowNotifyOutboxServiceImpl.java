@@ -2,6 +2,9 @@ package com.mdframe.forge.starter.flow.service.impl;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.flow.entity.FlowNotifyOutbox;
 import com.mdframe.forge.starter.flow.enums.FlowNotifyOutboxStatus;
 import com.mdframe.forge.starter.flow.event.FlowNotifyOutboxPayload;
@@ -133,6 +136,36 @@ public class FlowNotifyOutboxServiceImpl implements FlowNotifyOutboxService {
                 nextRetryTime, failureType, now)) == 1;
     }
 
+    @Override
+    public Page<FlowNotifyOutbox> pageDeadLetters(Page<FlowNotifyOutbox> page) {
+        Page<FlowNotifyOutbox> safePage = page == null ? new Page<>(1, 10) : page;
+        return outboxMapper.selectDeadLetterPage(safePage, requireCurrentTenantId());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public FlowNotifyOutbox requeueDeadLetter(Long outboxId, String replayedBy, String replayReason) {
+        if (outboxId == null) {
+            throw new BusinessException(400, "通知死信ID不能为空");
+        }
+        String operator = normalizeRequired(replayedBy, 64, "无法确定重放操作人");
+        String reason = normalizeRequired(replayReason, 500, "人工重放原因不能为空");
+        Long tenantId = requireCurrentTenantId();
+        LocalDateTime now = LocalDateTime.now();
+        int updated = TenantContextHolder.executeIgnore(() -> outboxMapper.requeueDeadLetter(
+                tenantId, outboxId, operator, reason, now));
+        if (updated != 1) {
+            FlowNotifyOutbox existing = TenantContextHolder.executeIgnore(
+                    () -> outboxMapper.selectByOutboxId(tenantId, outboxId));
+            if (existing == null) {
+                throw new BusinessException(404, "通知死信不存在或不属于当前租户");
+            }
+            throw new BusinessException(409, "仅允许重放死信状态的通知事件");
+        }
+        return TenantContextHolder.executeIgnore(
+                () -> outboxMapper.selectByOutboxId(tenantId, outboxId));
+    }
+
     private FlowNotifyOutbox claim(FlowNotifyOutbox outbox, String lockOwner, LocalDateTime now,
                                    LocalDateTime staleBefore, int maxRetryCount) {
         if (outbox == null || lockOwner == null || lockOwner.isBlank()) {
@@ -236,6 +269,22 @@ public class FlowNotifyOutboxServiceImpl implements FlowNotifyOutboxService {
         }
         String simpleName = failure.getClass().getSimpleName();
         return simpleName == null || simpleName.isBlank() ? "UnknownFailure" : simpleName;
+    }
+
+    private Long requireCurrentTenantId() {
+        Long tenantId = SessionHelper.getTenantId();
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException(403, "无法确定当前租户，禁止访问流程通知死信");
+        }
+        return tenantId;
+    }
+
+    private String normalizeRequired(String value, int maxLength, String message) {
+        if (value == null || value.isBlank()) {
+            throw new BusinessException(400, message);
+        }
+        String normalized = value.trim();
+        return normalized.length() <= maxLength ? normalized : normalized.substring(0, maxLength);
     }
 
     private boolean hasText(String value) {

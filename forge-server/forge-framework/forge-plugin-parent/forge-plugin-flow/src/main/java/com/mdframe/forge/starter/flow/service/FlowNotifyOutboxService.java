@@ -1,5 +1,6 @@
 package com.mdframe.forge.starter.flow.service;
 
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.starter.flow.entity.FlowNotifyOutbox;
 import com.mdframe.forge.starter.flow.event.FlowTaskNotifyEvent;
 
@@ -27,4 +28,8 @@ public interface FlowNotifyOutboxService {
 
     boolean markFailed(FlowNotifyOutbox outbox, String lockOwner, Throwable failure,
                        LocalDateTime now, int maxRetryCount, Duration retryBaseDelay);
+
+    Page<FlowNotifyOutbox> pageDeadLetters(Page<FlowNotifyOutbox> page);
+
+    FlowNotifyOutbox requeueDeadLetter(Long outboxId, String replayedBy, String replayReason);
 }

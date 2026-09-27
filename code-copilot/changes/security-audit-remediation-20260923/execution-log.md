@@ -1,5 +1,26 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：Flow 通知死信可见性与审计重放
+
+### 实现
+
+- 新增流程监控死信分页与人工重放接口：查看使用 `flow:monitor:view`，重放使用独立 `flow:monitor:manage` 权限；重放原因通过明确 DTO 校验，操作者来自可信登录会话。
+- 死信列表由 Mapper XML 显式绑定当前租户和 DEAD 状态，只返回事件标识、业务键、失败摘要、重试与审计信息，不暴露通知载荷或载荷摘要；跨租户记录和不存在记录保持相同 404 语义。
+- 重放通过 `tenant_id + id + DEAD` 单条 CAS 把事件恢复为 PENDING，原子清理重试、锁和错误状态，并记录重放次数、操作者、原因与时间；非 DEAD 状态拒绝为 409。
+- 重放不直接执行通知副作用，继续由既有租户租约派发器按聚合顺序认领，确保前序死信恢复送达前后续事件不能越序。
+- 新增 `V1.0.194__add_flow_notify_dead_letter_replay_audit.sql`，以 `information_schema` 防重复增加重放审计字段；补齐的 AI Adapter 测试夹具仅适配既有 `createEmbeddingModel` 接口，不修改生产逻辑。
+
+### 验证
+
+- Flow 插件定向测试 13/13，完整测试 215/215；覆盖租户死信分页、跨租户隐藏、DEAD-only CAS、审计字段、Mapper 与迁移契约，以及既有认领/派发回归。
+- Flow Server 控制器与边界定向测试 29/29，完整测试 47/47；覆盖权限注解、明确 DTO、分页边界和脱敏 VO。AI 测试夹具 `AiProviderAdapterRegistryTest` 4/4 通过。
+- JDK 17 Admin 全依赖聚合编译 46/46 模块成功；`FlowNotifyOutboxMapper.xml` 通过 `xmllint --noout`，迁移静态扫描未发现 `${...}` 或 `tenant_id = 0`。
+
+### 未覆盖
+
+- 未连接真实 MySQL 执行 V1.0.194/Flyway，未启动 Flow Server 执行普通用户/监控管理员/跨租户用户的真实 HTTP 权限矩阵，也未对真实失败 Webhook、短信或站内信执行人工重放。
+- Flowable 任务镜像、候选人与业务状态同步仍缺少统一事件 ID、幂等写入和补偿闭环；T4.6 保持未完成。T4.2/T4.3 巨型组件/巨型类改造继续按用户要求排除。
+
 ## 2026-09-28：T4.4 业务触发器租约恢复与危险副作用隔离
 
 ### 实现

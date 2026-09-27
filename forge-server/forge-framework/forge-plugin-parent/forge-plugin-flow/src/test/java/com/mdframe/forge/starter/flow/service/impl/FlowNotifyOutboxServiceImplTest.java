@@ -2,7 +2,10 @@ package com.mdframe.forge.starter.flow.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.starter.core.domain.FlowEventMessage;
+import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.flow.entity.FlowBusiness;
 import com.mdframe.forge.starter.flow.entity.FlowNotifyOutbox;
 import com.mdframe.forge.starter.flow.enums.FlowNotifyOutboxStatus;
@@ -10,6 +13,7 @@ import com.mdframe.forge.starter.flow.event.FlowTaskNotifyEvent;
 import com.mdframe.forge.starter.flow.mapper.FlowNotifyOutboxMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.MockedStatic;
 import org.springframework.dao.DuplicateKeyException;
 
 import java.time.Duration;
@@ -19,12 +23,14 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -120,6 +126,58 @@ class FlowNotifyOutboxServiceImplTest {
         assertNotNull(outbox.getId());
         verify(mapper).markFailed(3L, 11L, "worker", FlowNotifyOutboxStatus.DEAD.getCode(),
                 null, "IllegalArgumentException", now);
+    }
+
+    @Test
+    void deadLetterPageIsAlwaysScopedToCurrentTenant() {
+        FlowNotifyOutboxMapper mapper = mock(FlowNotifyOutboxMapper.class);
+        FlowNotifyOutboxServiceImpl service = service(mapper);
+        Page<FlowNotifyOutbox> page = new Page<>(2, 20);
+        when(mapper.selectDeadLetterPage(page, 8L)).thenReturn(page);
+
+        try (MockedStatic<SessionHelper> session = mockStatic(SessionHelper.class)) {
+            session.when(SessionHelper::getTenantId).thenReturn(8L);
+
+            assertSame(page, service.pageDeadLetters(page));
+        }
+
+        verify(mapper).selectDeadLetterPage(page, 8L);
+    }
+
+    @Test
+    void manualReplayUsesTenantCasAndPersistsAuditIdentity() {
+        FlowNotifyOutboxMapper mapper = mock(FlowNotifyOutboxMapper.class);
+        FlowNotifyOutboxServiceImpl service = service(mapper);
+        FlowNotifyOutbox replayed = new FlowNotifyOutbox();
+        replayed.setId(19L);
+        replayed.setTenantId(6L);
+        when(mapper.requeueDeadLetter(eq(6L), eq(19L), eq("42"), eq("已核对下游未发送"), any()))
+                .thenReturn(1);
+        when(mapper.selectByOutboxId(6L, 19L)).thenReturn(replayed);
+
+        try (MockedStatic<SessionHelper> session = mockStatic(SessionHelper.class)) {
+            session.when(SessionHelper::getTenantId).thenReturn(6L);
+
+            assertSame(replayed, service.requeueDeadLetter(19L, "42", " 已核对下游未发送 "));
+        }
+
+        verify(mapper).requeueDeadLetter(eq(6L), eq(19L), eq("42"), eq("已核对下游未发送"), any());
+    }
+
+    @Test
+    void manualReplayDoesNotRevealCrossTenantOrNonDeadRows() {
+        FlowNotifyOutboxMapper mapper = mock(FlowNotifyOutboxMapper.class);
+        FlowNotifyOutboxServiceImpl service = service(mapper);
+        when(mapper.requeueDeadLetter(eq(3L), eq(88L), any(), any(), any())).thenReturn(0);
+        when(mapper.selectByOutboxId(3L, 88L)).thenReturn(null);
+
+        try (MockedStatic<SessionHelper> session = mockStatic(SessionHelper.class)) {
+            session.when(SessionHelper::getTenantId).thenReturn(3L);
+
+            BusinessException failure = assertThrows(BusinessException.class,
+                    () -> service.requeueDeadLetter(88L, "7", "人工确认"));
+            assertEquals("通知死信不存在或不属于当前租户", failure.getMessage());
+        }
     }
 
     private FlowNotifyOutboxServiceImpl service(FlowNotifyOutboxMapper mapper) {
