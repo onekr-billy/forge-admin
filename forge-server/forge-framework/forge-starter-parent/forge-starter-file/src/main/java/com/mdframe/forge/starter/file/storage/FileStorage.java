@@ -89,6 +89,15 @@ public interface FileStorage {
      * @return 文件元数据
      */
     FileMetadata completeMultipartUpload(String uploadId, java.util.List<String> partETags);
+
+    /**
+     * 终止分片上传并清理存储端临时数据。
+     *
+     * <p>实现若不支持分片上传或无需清理，可以保留默认空实现。</p>
+     */
+    default void abortMultipartUpload(String uploadId) {
+        // Optional capability.
+    }
     
     /**
      * 下载文件

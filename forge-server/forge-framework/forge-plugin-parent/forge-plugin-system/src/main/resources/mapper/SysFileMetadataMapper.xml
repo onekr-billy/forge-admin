@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mdframe.forge.plugin.system.mapper.SysFileMetadataMapper">
+
+    <sql id="activeFileColumns">
+        id, tenant_id, file_id, original_name, storage_name, file_path, file_size,
+        mime_type, extension, md5, storage_type, bucket, access_url, thumbnail_url,
+        business_type, business_id, group_id, uploader_id, upload_time, expire_time,
+        is_private, download_count, status, create_by, create_time, create_dept,
+        update_by, update_time
+    </sql>
+
+    <select id="selectActivePage" resultType="com.mdframe.forge.plugin.system.entity.SysFileMetadata">
+        SELECT <include refid="activeFileColumns"/>
+        FROM sys_file_metadata
+        WHERE status = 1
+        <if test="condition != null and condition.originalName != null and condition.originalName != ''">
+            AND original_name LIKE CONCAT('%', #{condition.originalName}, '%')
+        </if>
+        <if test="condition != null and condition.storageType != null and condition.storageType != ''">
+            AND storage_type = #{condition.storageType}
+        </if>
+        <if test="condition != null and condition.businessType != null and condition.businessType != ''">
+            AND business_type = #{condition.businessType}
+        </if>
+        <if test="condition != null and condition.businessId != null and condition.businessId != ''">
+            AND business_id = #{condition.businessId}
+        </if>
+        <if test="condition != null and condition.uploaderId != null">
+            AND uploader_id = #{condition.uploaderId}
+        </if>
+        <if test="condition != null and condition.groupId != null">
+            AND group_id = #{condition.groupId}
+        </if>
+        <if test="condition != null and condition.mimeType != null and condition.mimeType != ''">
+            AND mime_type LIKE CONCAT(#{condition.mimeType}, '%')
+        </if>
+        <if test="condition != null and condition.isPrivate != null">
+            AND is_private = #{condition.isPrivate}
+        </if>
+        <if test="!admin">
+            AND (is_private = 0 OR uploader_id = #{currentUserId})
+        </if>
+        ORDER BY upload_time DESC
+    </select>
+
+    <select id="selectActiveByBusiness" resultType="com.mdframe.forge.plugin.system.entity.SysFileMetadata">
+        SELECT <include refid="activeFileColumns"/>
+        FROM sys_file_metadata
+        WHERE status = 1
+          AND business_type = #{businessType}
+          AND business_id = #{businessId}
+        <if test="!admin">
+            AND (is_private = 0 OR uploader_id = #{currentUserId})
+        </if>
+        ORDER BY upload_time DESC
+    </select>
+
+    <select id="selectActiveByFileId" resultType="com.mdframe.forge.plugin.system.entity.SysFileMetadata">
+        SELECT <include refid="activeFileColumns"/>
+        FROM sys_file_metadata
+        WHERE file_id = #{fileId}
+          AND status = 1
+        LIMIT 1
+    </select>
+
+    <select id="selectActiveByMd5" resultType="com.mdframe.forge.plugin.system.entity.SysFileMetadata">
+        SELECT <include refid="activeFileColumns"/>
+        FROM sys_file_metadata
+        WHERE md5 = #{md5}
+          AND status = 1
+        ORDER BY upload_time DESC
+        LIMIT 1
+    </select>
+
+    <update id="incrementDownloadCount">
+        UPDATE sys_file_metadata
+        SET download_count = download_count + 1
+        WHERE file_id = #{fileId}
+          AND status = 1
+    </update>
+
+    <update id="softDeleteByFileId">
+        UPDATE sys_file_metadata
+        SET status = 0,
+            update_time = CURRENT_TIMESTAMP
+        WHERE file_id = #{fileId}
+          AND status = 1
+    </update>
+
+    <update id="renameActiveFile">
+        UPDATE sys_file_metadata
+        SET original_name = #{originalName},
+            update_time = CURRENT_TIMESTAMP
+        WHERE file_id = #{fileId}
+          AND status = 1
+    </update>
+
+</mapper>

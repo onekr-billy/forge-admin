@@ -25,7 +25,7 @@ class FileControllerPermissionContractTest {
         assertIgnored("getAccessUrl", String.class, Integer.class, HttpServletResponse.class);
         assertIgnored("delete", String.class);
         assertIgnored("initMultipartUpload", String.class, String.class, String.class, String.class,
-                Long.class, Integer.class, Boolean.class);
+                Long.class, Integer.class, Boolean.class, String.class);
         assertIgnored("uploadPart", String.class, Integer.class, MultipartFile.class, String.class);
         assertIgnored("completeMultipartUpload", String.class, List.class, String.class);
     }

@@ -69,8 +69,11 @@
 ### 文件
 
 - uploadId 跨用户、跨租户、过期、超分片、超大小和错误存储类型均拒绝。
+- 对外 uploadId 不包含对象存储 bucket/key/provider uploadId；Redis 会话和逐片状态允许另一节点续传，本地存储在共享挂载目录下可恢复磁盘会话。
+- 完成请求必须与服务端记录的连续分片、ETag、逐片大小、总大小、MIME 和扩展名一致；过期或合并异常会终止存储端上传并清理会话。
 - 分片完成保留私有属性；私有文件的 download/url/Base64/bytes/导出均要求授权。
 - 批量删除按字符串 fileId 生效，不能删除其他租户或其他上传者文件。
+- `sys_file_metadata.status` 固定为 `1=正常/0=已删除`，实体 `@TableLogic`、自定义 Mapper SQL 和 Flyway 迁移保持一致。
 
 ## 4. P2 正确性验证
 

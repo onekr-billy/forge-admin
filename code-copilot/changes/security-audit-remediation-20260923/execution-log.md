@@ -65,7 +65,7 @@
 - 数据集分页改为 offset/limit 并执行独立 count；元数据查询改为参数绑定；SQL 预览改用 AST 单 SELECT 校验，标识符严格白名单。
 - 登录不再修改 Sa-Token 全局配置；改密、找回和管理员重置后吊销旧会话。注册/改密/找回/管理员重置/第三方建用户统一使用 `PasswordPolicyService`，注册租户不再信任客户端 tenantId。
 - 幂等 Token 使用 Redis Lua 原子消费并仅记录摘要；验证码原子消费，发送间隔原子占位且发送失败回滚；短信/邮件增加目标、来源 IP、设备和租户四维自然日配额、跨挑战失败窗口与短时锁定，Redis 异常时不调用发送器或继续校验。
-- 分片上传补充绑定主体、数量/大小/TTL 上限，完成后默认私有并继承私有属性；下载/URL/Base64/bytes 统一授权；`removeBatch` 按字符串 fileId 删除。
+- 分片上传补充绑定主体、数量/大小/TTL 上限；共享缓存保存会话和逐片状态，对外 uploadId 不暴露对象存储信息，完成阶段核对连续分片、ETag、总大小、MIME/扩展名；完成后默认私有并继承私有属性。下载/URL/Base64/bytes/字典转换统一走授权入口；`removeBatch` 按字符串 fileId 删除。
 - 低代码事件缺少可信租户时 fail-closed，未知操作符/格式错误条件不再命中。
 - 业务流程节点执行改为携带创建时的明确 attemptId；claim 失败时禁止进入节点副作用，完成阶段只允许原子更新同一个 RUNNING attempt，不再查询并误写“最新 attempt”。
 - Flow 监控服务统一 tenant filter 和业务实例归属检查；变量返回使用 fail-closed 白名单并只审计字段名。
@@ -85,7 +85,7 @@
 - `CaptchaServiceImplTest`：25 个通过，包含原子消费、发送间隔、日配额、失败阈值短锁和 Redis fail-closed 用例；`RedissonCacheServiceImplTest` 2 个通过，覆盖计数与首建 TTL 的单次 Lua 执行。
 - `SystemAuthServiceImplClientCredentialTest` 7、`PasswordPolicyServiceTest` 1：共 8 个通过。
 - 社会化登录相关定向测试：29 个通过；依赖树验证通过。
-- 文件权限/分片相关定向测试：27 个通过。
+- 文件权限/分片相关定向测试：新增阶段测试 35 个通过；历史文件测试基线保持通过。
 - 数据 SQL/预览相关定向测试：17 个通过。
 - `forge-report-ui` 生产构建：通过；保留既有 Rollup 循环 chunk、CSS `:deep()` 和第三方 `lottie-web` eval 警告。
 - `forge-admin-ui` 直接执行 package.json 对应 Vite 生产构建：通过；保留既有 Vite 配置、CSS 注释和动态导入提示。
@@ -168,3 +168,25 @@
 ### 未覆盖
 
 - 未连接真实 MySQL/Redis，未执行 Flyway 实库迁移、两个真实应用实例间的旧 Token 回放或数据库故障注入；本轮以数据库权威版本设计、SQL 契约和服务级自动化测试作为证据。
+
+## 2026-09-27：A-08 分片上传会话、校验与文件状态
+
+### 实现
+
+- 分片初始化现在强制签发总大小、总分片数、存储类型、MIME、用户、租户、业务主体、私有属性和 30 分钟 TTL；客户端只获得随机会话号，对象存储 provider uploadId、bucket 与 key 留在服务端。
+- 新增 `MultipartUploadSessionStore` 策略：Admin 存在 Redis/Redisson 时使用共享缓存、独立分片键和分布式锁，缓存异常 fail-closed；无缓存的独立部署保留单节点兜底。RustFS/COS 支持主动 abort，本地存储将上下文持久化到临时目录，在共享挂载下可跨节点恢复。
+- 每片上传校验序号、服务端收到的大小、累计总量和内容类型，并保存服务端返回的 ETag；完成时逐号核对连续性、客户端 ETag、逐片总大小、存储端最终大小、MIME 和扩展名。超时定时清理，合并异常终止 provider 上传并删除会话状态。
+- 分片完成回填初始化时的文件名、业务主体、上传者和私有属性；字典文件 URL/名称转换改走 `FileManager` 授权入口，不再直接读取元数据表绕过私有文件权限。
+- `sys_file_metadata.status` 明确为 `1=正常/0=已删除`：实体增加 `@TableLogic(value="1", delval="0")`，自定义查询/计数/重命名/软删除迁移到 Mapper XML 并显式过滤活动状态，新增 `V1.0.189__normalize_file_metadata_status.sql` 将空值/异常值 fail-closed 为已删除并固定非空默认值。
+
+### 验证
+
+- `FileManagerTest`、`LocalFileStorageTest`、`FileControllerPermissionContractTest`、`RedisMultipartUploadSessionStoreTest`：29/29 通过，覆盖主体绑定、服务端 ETag、缺片、累计配额、MIME 变化、过期 abort、共享会话跨节点续传、共享目录本地续传、Redis TTL/分布式锁及缓存异常 fail-closed。
+- `SysFileMetadataStatusContractTest`：3/3 通过，验证实体逻辑删除注解、Mapper 活动态过滤/软删除和 Flyway 非空迁移。
+- `SytemDictValueProviderTest`、`SytemDictValueProviderLegacyCacheTest`：3/3 通过，其中新增用例确认文件 URL/名称通过授权文件管理入口读取。
+- `mvn -pl forge-framework/forge-plugin-parent/forge-plugin-system -am -DskipTests compile`：26/26 反应堆模块成功；`mvn -pl forge-admin-server -am -DskipTests compile`：46/46 反应堆模块成功。
+- `FileManager` 862 行、`LocalFileStorage` 633 行，均未超过 Java 单类 1000 行规范。
+
+### 未覆盖
+
+- 未连接真实 Redis、RustFS、腾讯 COS 或 MySQL，未执行真实双 JVM 节点切换、对象存储 abort、Flyway 实库迁移及网络分区注入；本轮以共享 Store/共享目录双实例行为测试、Mapper/Flyway 契约和聚合编译作为自动化证据。
