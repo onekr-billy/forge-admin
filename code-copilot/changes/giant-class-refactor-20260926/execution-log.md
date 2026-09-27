@@ -367,3 +367,9 @@
 - 使用 Query Plan Compiler 从 `DynamicCrudRepository` 迁出 Join 字段投影、连接描述校验、原始 LEFT JOIN、子表按外键预聚合及主表去重决策；Repository 继续掌握 JDBC 执行、参数、数据源路由和分页边界。
 - 扩展 `RuntimeDatabaseDialect.stringAggregate` 策略方法，由 MySQL 默认实现、PostgreSQL 与 Oracle 覆盖各自文本聚合语法，删除 Repository 内对具体方言类的 `instanceof` 分支。入口由 1884 行降至 1759 行，新 `DynamicCrudJoinQueryCompiler` 213 行。
 - generator Reactor 编译退出码 0；执行 `DynamicCrudJoinQueryCompilerTest,DynamicCrudServiceChildListTest` 共 2 类 9 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实跨库 Join、超大子表聚合和执行计划仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第六十九个切口：动态表结构元数据网关
+
+- 使用 Gateway + Cache-Aside 从 `DynamicCrudRepository` 迁出表存在性、列目录、字段映射、JDBC 列类型归一和数据源级缓存失效；Repository 保留原公开方法与延迟初始化兼容门面。
+- 首次定向回归发现字段映射直接访问 Gateway 会绕开存量 `getTableColumns` 替换边界，随即改为通过显式 Supplier 提供列目录；同时修复逻辑删除列缓存此前未被 DDL 清理键命中的问题。入口由 1759 行降至 1656 行，新 `DynamicCrudTableMetadataGateway` 171 行。
+- 执行 `DynamicCrudTableMetadataGatewayTest,DynamicCrudServiceChildListTest,DynamicCrudRepositoryBackgroundAuditTest` 共 3 类 11 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实外部数据源切换、DDL 后缓存刷新和多数据库元数据仍需服务环境验收，无服务 PID 需停止。

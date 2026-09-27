@@ -5,14 +5,12 @@ import com.mdframe.forge.plugin.generator.enums.DataAuditSourceType;
 import com.mdframe.forge.plugin.generator.service.audit.DataAuditRecordIds;
 import com.mdframe.forge.plugin.generator.service.audit.DataAuditTenantSupport;
 import com.mdframe.forge.plugin.generator.service.audit.DataAuditTransactionHolder;
-import com.mdframe.forge.plugin.generator.util.DynamicQueryGenerator;
 import com.mdframe.forge.plugin.generator.dto.CustomQueryConditionDTO;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeAuditStrategy;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeLogicDeleteStrategy;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeTenantStrategy;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceContext;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceContextHolder;
-import com.mdframe.forge.plugin.generator.service.lowcode.runtime.RuntimeDatabaseDialect;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.RuntimeDatabaseDialectFactory;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.RuntimeJdbcTemplateProvider;
 import com.mdframe.forge.starter.core.exception.BusinessException;
@@ -22,19 +20,14 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
-import java.sql.DatabaseMetaData;
-import java.sql.ResultSet;
-import java.sql.Types;
 import java.math.BigDecimal;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -66,17 +59,7 @@ public class DynamicCrudRepository {
     public record SqlCondition(String sql, Map<String, Object> params) {
     }
 
-    // 缓存：表名 -> 是否有del_flag列
-    private final ConcurrentHashMap<String, Boolean> delFlagCache = new ConcurrentHashMap<>();
-
-    // 缓存：表名 -> 列名集合
-    private final ConcurrentHashMap<String, Set<String>> tableColumnsCache = new ConcurrentHashMap<>();
-
-    // 缓存：表名 -> {column -> JDBC type} 映射
-    private final ConcurrentHashMap<String, Map<String, Integer>> columnTypesCache = new ConcurrentHashMap<>();
-
-    // 缓存：表名 -> {camelCase -> snake_case} 映射
-    private final ConcurrentHashMap<String, Map<String, String>> columnMappingCache = new ConcurrentHashMap<>();
+    private volatile DynamicCrudTableMetadataGateway tableMetadataGateway;
 
     private NamedParameterJdbcTemplate jdbc() {
         LowcodeRuntimeDataSourceContext context = LowcodeRuntimeDataSourceContextHolder.get();
@@ -1114,105 +1097,33 @@ public class DynamicCrudRepository {
      * 检查表是否存在
      */
     public boolean tableExists(String tableName) {
-        try {
-            LowcodeRuntimeDataSourceContext context = LowcodeRuntimeDataSourceContextHolder.get();
-            RuntimeDatabaseDialect dialect = dialectFactory.resolve(context);
-            Integer count = jdbcTemplateProvider.jdbcTemplate(context)
-                    .queryForObject(dialect.tableExistsSql(), Integer.class, tableName);
-            return count != null && count > 0;
-        } catch (Exception e) {
-            log.warn("[DynamicCrudRepository] 检查表是否存在失败, tableName={}", tableName, e);
-            return false;
-        }
+        return tableMetadataGateway().tableExists(tableName);
     }
 
     /**
      * 检查表是否有del_flag列（带缓存）
      */
     public boolean hasDelFlag(String tableName) {
-        String cacheKey = metadataCacheKey(tableName) + ":logic:" + logicDeleteColumn() + ":" + logicDeleteEnabled();
-        return delFlagCache.computeIfAbsent(cacheKey, key -> {
-            try {
-                return logicDeleteEnabled() && getTableColumns(tableName).contains(logicDeleteColumn());
-            } catch (Exception e) {
-                log.warn("[DynamicCrudRepository] 检查del_flag失败, tableName={}", tableName, e);
-                return false;
-            }
-        });
+        return tableMetadataGateway().hasLogicDeleteColumn(
+                tableName, logicDeleteColumn(), logicDeleteEnabled(), () -> getTableColumns(tableName));
     }
 
     /**
      * 获取表的所有列名（带缓存）
      */
     public Set<String> getTableColumns(String tableName) {
-        String cacheKey = metadataCacheKey(tableName);
-        return tableColumnsCache.computeIfAbsent(cacheKey, key -> {
-            try {
-                LowcodeRuntimeDataSourceContext context = LowcodeRuntimeDataSourceContextHolder.get();
-                RuntimeDatabaseDialect dialect = dialectFactory.resolve(context);
-                List<String> columns = jdbcTemplateProvider.jdbcTemplate(context)
-                        .queryForList(dialect.listColumnsSql(), String.class, tableName);
-                return columns.stream()
-                        .map(column -> StringUtils.defaultString(column).toLowerCase(Locale.ROOT))
-                        .collect(Collectors.toCollection(HashSet::new));
-            } catch (Exception e) {
-                log.warn("[DynamicCrudRepository] 获取表列名失败, tableName={}", tableName, e);
-                return Collections.emptySet();
-            }
-        });
+        return tableMetadataGateway().columns(tableName);
     }
 
     /**
      * 获取表的字段映射（camelCase -> snake_case）
      */
     public Map<String, String> getColumnMapping(String tableName) {
-        String cacheKey = metadataCacheKey(tableName);
-        return columnMappingCache.computeIfAbsent(cacheKey, key -> {
-            Map<String, String> mapping = new HashMap<>();
-            Set<String> columns = getTableColumns(tableName);
-            for (String column : columns) {
-                String camelName = DynamicQueryGenerator.snakeToCamel(column);
-                mapping.put(camelName, column);
-                mapping.put(column, column);
-            }
-            return mapping;
-        });
+        return tableMetadataGateway().columnMapping(tableName, () -> getTableColumns(tableName));
     }
 
     private Object normalizeColumnQueryValue(String tableName, String columnName, Object value) {
-        if (value == null) {
-            return null;
-        }
-        Integer jdbcType = getColumnJdbcTypes(tableName).get(StringUtils.defaultString(columnName).toLowerCase(Locale.ROOT));
-        if (jdbcType != null && isCharacterJdbcType(jdbcType)) {
-            return String.valueOf(value);
-        }
-        return value;
-    }
-
-    private Map<String, Integer> getColumnJdbcTypes(String tableName) {
-        String cacheKey = metadataCacheKey(tableName);
-        return columnTypesCache.computeIfAbsent(cacheKey, key -> {
-            try {
-                LowcodeRuntimeDataSourceContext context = LowcodeRuntimeDataSourceContextHolder.get();
-                return jdbcTemplateProvider.jdbcTemplate(context).execute((ConnectionCallback<Map<String, Integer>>) connection -> {
-                    Map<String, Integer> types = new HashMap<>();
-                    DatabaseMetaData metadata = connection.getMetaData();
-                    try (ResultSet columns = metadata.getColumns(connection.getCatalog(), null, tableName, null)) {
-                        while (columns.next()) {
-                            String columnName = columns.getString("COLUMN_NAME");
-                            if (StringUtils.isNotBlank(columnName)) {
-                                types.put(columnName.toLowerCase(Locale.ROOT), columns.getInt("DATA_TYPE"));
-                            }
-                        }
-                    }
-                    return types;
-                });
-            } catch (Exception e) {
-                log.warn("[DynamicCrudRepository] 获取表字段类型失败, tableName={}", tableName, e);
-                return Collections.emptyMap();
-            }
-        });
+        return tableMetadataGateway().normalizeQueryValue(tableName, columnName, value);
     }
 
     private void captureColumnDelete(String tableName, String columnName, Object value) {
@@ -1235,32 +1146,29 @@ public class DynamicCrudRepository {
         }
     }
 
-    private boolean isCharacterJdbcType(int jdbcType) {
-        return jdbcType == Types.CHAR
-                || jdbcType == Types.VARCHAR
-                || jdbcType == Types.LONGVARCHAR
-                || jdbcType == Types.NCHAR
-                || jdbcType == Types.NVARCHAR
-                || jdbcType == Types.LONGNVARCHAR;
-    }
-
     /**
      * DDL 执行后清理动态表结构缓存，避免追加字段后运行时继续使用旧列集合。
      */
     public void clearTableMetadataCache(String tableName) {
-        String suffix = ":" + tableName;
-        delFlagCache.keySet().removeIf(key -> key.endsWith(suffix));
-        tableColumnsCache.keySet().removeIf(key -> key.endsWith(suffix));
-        columnTypesCache.keySet().removeIf(key -> key.endsWith(suffix));
-        columnMappingCache.keySet().removeIf(key -> key.endsWith(suffix));
+        tableMetadataGateway().clear(tableName);
     }
 
     public void clearTableMetadataCache(LowcodeRuntimeDataSourceContext context, String tableName) {
-        String cacheKey = metadataCacheKey(context, tableName);
-        delFlagCache.remove(cacheKey);
-        tableColumnsCache.remove(cacheKey);
-        columnTypesCache.remove(cacheKey);
-        columnMappingCache.remove(cacheKey);
+        tableMetadataGateway().clear(context, tableName);
+    }
+
+    private DynamicCrudTableMetadataGateway tableMetadataGateway() {
+        DynamicCrudTableMetadataGateway gateway = tableMetadataGateway;
+        if (gateway == null) {
+            synchronized (this) {
+                gateway = tableMetadataGateway;
+                if (gateway == null) {
+                    gateway = new DynamicCrudTableMetadataGateway(jdbcTemplateProvider, dialectFactory);
+                    tableMetadataGateway = gateway;
+                }
+            }
+        }
+        return gateway;
     }
 
     /**
@@ -1509,17 +1417,6 @@ public class DynamicCrudRepository {
 
     private void appendIdParam(MapSqlParameterSource params, Object id) {
         params.addValue("id", id);
-    }
-
-    private String metadataCacheKey(String tableName) {
-        return metadataCacheKey(LowcodeRuntimeDataSourceContextHolder.get(), tableName);
-    }
-
-    private String metadataCacheKey(LowcodeRuntimeDataSourceContext context, String tableName) {
-        String datasourceKey = context == null || context.isMaster()
-                ? "master"
-                : String.valueOf(context.getDatasourceId());
-        return datasourceKey + ":" + tableName;
     }
 
     private void logDynamicSql(String scene, String sql, MapSqlParameterSource params) {

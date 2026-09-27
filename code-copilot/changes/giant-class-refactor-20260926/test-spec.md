@@ -535,3 +535,13 @@
 - 验证：执行 generator Reactor 编译，重跑 Join 编译器与主子表列表定向测试；执行 `git diff --check` 和类行数检查，不启动真实服务。
 
 验证结果：Join 字段投影、原始 LEFT JOIN、子表预聚合和查询计划已委托 `DynamicCrudJoinQueryCompiler`，文本聚合语法下沉 `RuntimeDatabaseDialect`；新增 4 项测试覆盖聚合计划、非聚合计划、非法别名和三种方言。定向 2 个测试类共 9 项通过，0 失败、0 错误；generator Reactor 编译与 `git diff --check` 通过。`DynamicCrudRepository` 1759 行，新 Compiler 213 行。
+
+## 2026-09-27 第六十九轮增量验证：动态表结构元数据网关
+
+- P0：主数据源与外部数据源的表存在性、列名小写归一、camelCase 映射和 JDBC 字符类型查询值归一保持不变。
+- P0：逻辑删除列判定继续受运行时策略控制，并在 DDL 后与列、类型、字段映射缓存一并失效。
+- P0：Repository 的公开元数据方法保持不变，列目录仍允许由现有测试替身和扩展边界覆盖。
+- P1：使用 Gateway + Cache-Aside 隔离元数据读取与缓存生命周期；Repository 只保留兼容 Facade，新生产类少于 1000 行。
+- 验证：重跑元数据缓存、子表 Join 和后台审计回归，执行 `git diff --check` 与类行数检查；不启动真实服务。
+
+验证结果：表存在性、列目录、字段映射、JDBC 类型归一和缓存失效已委托 `DynamicCrudTableMetadataGateway`；首次回归识别并恢复 `getTableColumns` 可替换边界。相关 3 个测试类共 11 项通过，0 失败、0 错误；`git diff --check` 通过。`DynamicCrudRepository` 1656 行，新 Gateway 171 行。
