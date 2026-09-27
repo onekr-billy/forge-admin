@@ -157,6 +157,27 @@ public class BusinessFlowService {
                                ApplicationEventPublisher applicationEventPublisher,
                                ObjectProvider<RedissonClient> redissonClientProvider,
                                ObjectProvider<BusinessActionExecutionService> actionExecutionServiceProvider) {
+        this(bindingMapper, flowInstanceLinkMapper, crudConfigMapper, businessObjectMapper,
+                documentConfigService, documentRuntimeService, dynamicCrudService,
+                businessFieldDesignService, variableResolver, codeFormProviderRegistry,
+                applicationEventPublisher, redissonClientProvider, actionExecutionServiceProvider, null);
+    }
+
+    @Autowired
+    public BusinessFlowService(BusinessBindingMapper bindingMapper,
+                               BusinessFlowInstanceLinkMapper flowInstanceLinkMapper,
+                               AiCrudConfigMapper crudConfigMapper,
+                               BusinessObjectMapper businessObjectMapper,
+                               BusinessDocumentConfigService documentConfigService,
+                               BusinessDocumentRuntimeService documentRuntimeService,
+                               DynamicCrudService dynamicCrudService,
+                               BusinessFieldDesignService businessFieldDesignService,
+                               BusinessFlowVariableResolver variableResolver,
+                               BusinessCodeFormProviderRegistry codeFormProviderRegistry,
+                               ApplicationEventPublisher applicationEventPublisher,
+                               ObjectProvider<RedissonClient> redissonClientProvider,
+                               ObjectProvider<BusinessActionExecutionService> actionExecutionServiceProvider,
+                               BusinessFlowRemoteCommandService remoteCommandService) {
         this.bindingMapper = bindingMapper;
         this.flowInstanceLinkMapper = flowInstanceLinkMapper;
         this.crudConfigMapper = crudConfigMapper;
@@ -276,7 +297,8 @@ public class BusinessFlowService {
                 redissonClientProvider,
                 this::resolveUserId,
                 this::resolveActiveOrgId,
-                this::resolveUsername);
+                this::resolveUsername,
+                remoteCommandService);
         this.taskEventCoordinator = new BusinessFlowTaskEventCoordinator(
                 () -> flowClient,
                 flowInstanceLinkMapper,
@@ -706,6 +728,17 @@ public class BusinessFlowService {
         Long tenantId = resolveTenantId();
         return TenantContextHolder.executeWithTenant(tenantId,
                 () -> startCoordinator.start(dto, true, null, null, tenantId, true, false));
+    }
+
+    /** 由恢复扫描器按持久化命令快照补齐远端启动和本地流程关联。 */
+    @Transactional(rollbackFor = Exception.class)
+    public BusinessFlowRuntimeVO recoverRemoteStartCommand(Long tenantId, Long commandId) {
+        Long effectiveTenantId = requireTenantId(tenantId);
+        if (commandId == null) {
+            throw new BusinessException("流程远程命令ID不能为空");
+        }
+        return TenantContextHolder.executeWithTenant(effectiveTenantId,
+                () -> startCoordinator.recover(effectiveTenantId, commandId));
     }
 
     /**
