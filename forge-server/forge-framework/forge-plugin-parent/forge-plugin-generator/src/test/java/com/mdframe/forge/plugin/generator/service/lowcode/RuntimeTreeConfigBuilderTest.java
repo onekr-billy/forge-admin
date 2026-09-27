@@ -6,6 +6,7 @@ import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageModelRef;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageZone;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeRelationSchema;
+import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeTreeConfig;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -68,6 +69,31 @@ class RuntimeTreeConfigBuilderTest {
         assertEquals(true, config.get("enabled"));
         assertEquals(true, config.get("includeChildren"));
         assertEquals("org-runtime", RuntimeTreeConfigBuilder.resolveTreeApiConfigKey("order-runtime", page));
+    }
+
+    @Test
+    void embeddedTreeListForcesEnabledWhenModelIsTreeEvenIfFlagMissing() {
+        LowcodeModelSchema model = new LowcodeModelSchema();
+        model.setAppType("TREE");
+        model.setBusinessName("分类");
+        LowcodeTreeConfig tree = new LowcodeTreeConfig();
+        tree.setParentField("parentId");
+        tree.setLabelField("name");
+        // 历史数据常只有 appType=TREE，enabled 为空
+        model.setTreeConfig(tree);
+
+        LowcodePageSchema page = new LowcodePageSchema();
+        page.setLayoutType("list-form");
+        LowcodePageZone table = new LowcodePageZone();
+        table.setZoneKey("table");
+        table.setProps(Map.of("treeConfig", tree));
+        page.setZones(List.of(table));
+
+        Map<String, Object> config = RuntimeTreeConfigBuilder.buildTreeConfig(
+                model, page, RuntimeTreeConfigBuilder.extractTreeConfigOverrides(page));
+        assertEquals(true, config.get("enabled"));
+        assertEquals("parentId", config.get("parentField"));
+        assertEquals("name", config.get("labelField"));
     }
 
     @Test

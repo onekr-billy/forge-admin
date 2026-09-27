@@ -46,15 +46,23 @@ final class BusinessApplicationTreePageProjector {
                 : currentPageSchema;
         if (treeTable) {
             pageSchema.setLayoutType("tree-crud");
-        } else if (StringUtils.isBlank(pageSchema.getLayoutType())
-                || "simple-crud".equals(pageSchema.getLayoutType())) {
-            pageSchema.setLayoutType("list-form");
+        } else {
+            // tree-list：纠正 appType 误写入的 layoutType（SINGLE/TREE 等）
+            String currentLayout = StringUtils.defaultIfBlank(pageSchema.getLayoutType(), "");
+            if (!"list-form".equals(currentLayout)
+                    && !"simple-crud".equals(currentLayout)
+                    && !"tree-crud".equals(currentLayout)) {
+                pageSchema.setLayoutType("list-form");
+            } else if (StringUtils.isBlank(currentLayout) || "simple-crud".equals(currentLayout)) {
+                pageSchema.setLayoutType("list-form");
+            }
         }
         LowcodePageZone tableZone = ensureTableZone(pageSchema);
         Map<String, Object> props = tableZone.getProps() == null
                 ? new LinkedHashMap<>()
                 : new LinkedHashMap<>(tableZone.getProps());
-        props.put("treeConfig", treeConfig);
+        // zone props 统一落 Map，避免运行配置抽取时 instanceof Map 失败丢 enabled
+        props.put("treeConfig", toTreeConfigMap(treeConfig));
         props.put("enableTreeAddChild", !treeTable);
         if (treeTable) {
             props.put("layoutType", "tree-crud");
@@ -172,6 +180,34 @@ final class BusinessApplicationTreePageProjector {
         if (StringUtils.isBlank(treeConfig.getTreeTitle())) {
             String title = StringUtils.trimToEmpty(objectName);
             treeConfig.setTreeTitle(title.isEmpty() ? "分类树" : title + "树");
+        }
+    }
+
+    private Map<String, Object> toTreeConfigMap(LowcodeTreeConfig treeConfig) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        if (treeConfig == null) {
+            map.put("enabled", Boolean.TRUE);
+            return map;
+        }
+        map.put("enabled", Boolean.TRUE.equals(treeConfig.getEnabled()));
+        putIfNotBlank(map, "sourceModelCode", treeConfig.getSourceModelCode());
+        putIfNotBlank(map, "sourceModelName", treeConfig.getSourceModelName());
+        putIfNotBlank(map, "sourceTableName", treeConfig.getSourceTableName());
+        putIfNotBlank(map, "sourceConfigKey", treeConfig.getSourceConfigKey());
+        putIfNotBlank(map, "keyField", treeConfig.getKeyField());
+        putIfNotBlank(map, "parentField", treeConfig.getParentField());
+        putIfNotBlank(map, "labelField", treeConfig.getLabelField());
+        putIfNotBlank(map, "filterField", treeConfig.getFilterField());
+        putIfNotBlank(map, "targetField", treeConfig.getTargetField());
+        putIfNotBlank(map, "childrenField", treeConfig.getChildrenField());
+        putIfNotBlank(map, "treeTitle", treeConfig.getTreeTitle());
+        putIfNotBlank(map, "loadMode", treeConfig.getLoadMode());
+        return map;
+    }
+
+    private void putIfNotBlank(Map<String, Object> target, String key, String value) {
+        if (StringUtils.isNotBlank(value)) {
+            target.put(key, value);
         }
     }
 

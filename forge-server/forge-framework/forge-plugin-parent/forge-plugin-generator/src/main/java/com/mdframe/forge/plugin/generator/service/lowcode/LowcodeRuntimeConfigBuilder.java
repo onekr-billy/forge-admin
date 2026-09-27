@@ -322,6 +322,10 @@ public class LowcodeRuntimeConfigBuilder {
         }
         if (isTreeRuntime(modelSchema, pageSchema)) {
             options.put("treeConfig", buildTreeConfig(modelSchema, pageSchema, extractTreeConfigOverrides(pageSchema)));
+            // 嵌入式树表全量拉取，分页必须关掉（区块默认 true 不能盖掉）
+            if (isEmbeddedTreeTableRuntime(modelSchema, pageSchema)) {
+                options.put("showPagination", Boolean.FALSE);
+            }
         }
         return options;
     }

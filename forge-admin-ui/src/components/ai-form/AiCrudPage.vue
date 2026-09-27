@@ -220,7 +220,7 @@
           :resizable="resolvedResizable"
           :empty-title="resolvedEmptyTitle"
           :empty-description="resolvedEmptyDescription"
-          v-bind="tableProps"
+          v-bind="effectiveTableProps"
           @page-change="handlePageChange"
           @page-size-change="handlePageSizeChange"
           @refresh="handleRefresh"
@@ -2946,6 +2946,48 @@ const formContext = computed(() => {
 const normalizedExpandConfig = computed(() => normalizeExpandConfig(props.expandConfig, props.childrenConfig))
 const hasExpandConfig = computed(() => normalizedExpandConfig.value.enabled && normalizedExpandConfig.value.panels.length > 0)
 const resolvedResizable = computed(() => props.tableProps?.resizable ?? props.resizable)
+
+/** 嵌入式树表：列表内父子展开（非左树右表）。 */
+const isEmbeddedTreeTable = computed(() => {
+  const treeConfig = resolveEmbeddedTreeConfig()
+  if (!treeConfig)
+    return false
+  if (treeConfig.enabled === false || treeConfig.enabled === 0 || treeConfig.enabled === '0' || treeConfig.enabled === 'false')
+    return false
+  const layoutType = String(props.layoutType || props.options?.layoutType || 'simple-crud')
+  return layoutType !== 'tree-crud'
+})
+
+function resolveEmbeddedTreeConfig() {
+  const direct = props.treeConfig
+  if (direct && typeof direct === 'object' && Object.keys(direct).length)
+    return direct
+  const fromOptions = props.options?.treeConfig
+  if (fromOptions && typeof fromOptions === 'object' && Object.keys(fromOptions).length)
+    return fromOptions
+  // 运行配置已把 list 改写成 /tree，或显式带了 tree 接口时，仍按树表处理
+  if (props.apiConfig?.tree || String(props.apiConfig?.list || '').includes('/tree'))
+    return { enabled: true, childrenField: 'children', keyField: typeof props.rowKey === 'string' ? props.rowKey : 'id' }
+  return null
+}
+
+const embeddedTreeChildrenField = computed(() => resolveEmbeddedTreeConfig()?.childrenField || 'children')
+
+const effectiveShowPagination = computed(() => (isEmbeddedTreeTable.value ? false : props.showPagination !== false))
+
+const effectiveTableProps = computed(() => {
+  const base = props.tableProps && typeof props.tableProps === 'object' ? { ...props.tableProps } : {}
+  if (!isEmbeddedTreeTable.value)
+    return base
+  const loadMode = resolveEmbeddedTreeConfig()?.loadMode === 'lazy' ? 'lazy' : 'full'
+  return {
+    ...base,
+    childrenKey: embeddedTreeChildrenField.value,
+    defaultExpandAll: loadMode !== 'lazy' && base.defaultExpandAll !== false,
+    ...(typeof base.onLoad === 'function' ? { onLoad: base.onLoad } : {}),
+  }
+})
+
 const inlineSwitchUpdatingMap = ref({})
 
 /**
@@ -3322,7 +3364,7 @@ function splitTableCellValues(value) {
  * 分页配置
  */
 const paginationConfig = computed(() => {
-  if (!props.showPagination) {
+  if (!effectiveShowPagination.value) {
     return false
   }
 
@@ -4206,11 +4248,28 @@ function extractListTotal(payload, totalField, fallbackTotal = 0, depth = 0) {
   return fallbackTotal
 }
 
+function collectEmbeddedTreeExpandKeys(nodes = [], acc = []) {
+  const childrenField = embeddedTreeChildrenField.value
+  const keyField = resolveEmbeddedTreeConfig()?.keyField || (typeof props.rowKey === 'string' ? props.rowKey : 'id')
+  ;(Array.isArray(nodes) ? nodes : []).forEach((node) => {
+    if (!node || typeof node !== 'object')
+      return
+    const children = node[childrenField]
+    if (!Array.isArray(children) || !children.length)
+      return
+    const key = node[keyField] ?? node.key ?? node.id
+    if (key !== undefined && key !== null && key !== '')
+      acc.push(key)
+    collectEmbeddedTreeExpandKeys(children, acc)
+  })
+  return acc
+}
+
 /**
  * 加载列表数据
  */
 async function loadList() {
-  if (!customQueryPayload.value && !props.api && !props.apiConfig.list) {
+  if (!customQueryPayload.value && !props.api && !props.apiConfig.list && !props.apiConfig.tree) {
     console.warn('未配置 API 地址')
     return
   }
@@ -4224,8 +4283,8 @@ async function loadList() {
       ...props.publicParams,
     })
 
-    // 分页参数
-    if (props.showPagination) {
+    // 分页参数（嵌入式树表走全量 /tree，不能带 page 参数）
+    if (effectiveShowPagination.value) {
       if (props.listMethod === 'get') {
         params = {
           ...params,
@@ -4256,8 +4315,9 @@ async function loadList() {
       })
     }
     else {
-      // 解析 API
-      const { method, url } = parseApiConfig('list', props.api, props.listMethod)
+      // 嵌入式树表优先打 /tree，避免上游 props 未改写 list 时落到平铺 /page
+      const listApiKey = isEmbeddedTreeTable.value && props.apiConfig?.tree ? 'tree' : 'list'
+      const { method, url } = parseApiConfig(listApiKey, props.api, props.listMethod)
 
       // 确定使用哪种请求方法
       let requestMethod = method
@@ -4312,6 +4372,9 @@ async function loadList() {
     // 更新数据
     dataSource.value = list
     pagination.value.itemCount = total
+    if (isEmbeddedTreeTable.value && effectiveTableProps.value?.defaultExpandAll !== false) {
+      expandedRowKeys.value = collectEmbeddedTreeExpandKeys(list)
+    }
 
     emit('load-list-success', { list, total })
   }

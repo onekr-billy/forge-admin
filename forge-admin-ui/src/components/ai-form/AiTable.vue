@@ -65,6 +65,9 @@
       :scroll-x="scrollX"
       :checked-row-keys="innerCheckedRowKeys"
       :expanded-row-keys="expandedRowKeys"
+      :children-key="childrenKey"
+      :default-expand-all="defaultExpandAll"
+      :on-load="onLoad"
       v-bind="$attrs"
       :row-class-name="resolveRowClassName"
       @update:checked-row-keys="handleUpdateCheckedKeys"
@@ -279,7 +282,22 @@ const props = defineProps({
   },
   expandedRowKeys: {
     type: Array,
-    default: () => [],
+    default: undefined,
+  },
+  // 树形表格：子节点字段名（Naive UI children-key）
+  childrenKey: {
+    type: String,
+    default: undefined,
+  },
+  // 树形表格：默认展开全部（异步数据需配合父组件回填 expandedRowKeys）
+  defaultExpandAll: {
+    type: Boolean,
+    default: undefined,
+  },
+  // 树形懒加载回调
+  onLoad: {
+    type: Function,
+    default: undefined,
   },
   resizable: {
     type: Boolean,

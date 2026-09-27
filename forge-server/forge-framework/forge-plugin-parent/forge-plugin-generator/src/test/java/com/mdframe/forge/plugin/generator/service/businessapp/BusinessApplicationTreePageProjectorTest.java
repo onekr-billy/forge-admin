@@ -48,6 +48,10 @@ class BusinessApplicationTreePageProjectorTest {
         assertEquals("list-form", designer.getPageSchema().getLayoutType());
         assertEquals(Boolean.TRUE, designer.getPageSchema().getZones().get(0)
                 .getProps().get("enableTreeAddChild"));
+        Map<?, ?> zoneTree = (Map<?, ?>) designer.getPageSchema().getZones().get(0)
+                .getProps().get("treeConfig");
+        assertEquals(Boolean.TRUE, zoneTree.get("enabled"));
+        assertEquals("parentBusinessId", zoneTree.get("parentField"));
     }
 
     @Test
@@ -73,6 +77,21 @@ class BusinessApplicationTreePageProjectorTest {
         Map<String, Object> options = map(props.get("options"));
         assertEquals("tree-crud", options.get("layoutType"));
         assertEquals(Boolean.FALSE, options.get("enableTreeAddChild"));
+    }
+
+    @Test
+    void treeListCorrectsAppTypeLeakedAsLayoutType() {
+        BusinessObjectDesignerDTO designer = new BusinessObjectDesignerDTO();
+        LowcodePageSchema pageSchema = new LowcodePageSchema();
+        pageSchema.setLayoutType("SINGLE");
+
+        projector.applyDesignerPreset(
+                designer, null, pageSchema, "tree-list", "分类", builder(Map.of()), "page-1");
+
+        assertEquals("list-form", designer.getPageSchema().getLayoutType());
+        Map<?, ?> zoneTree = (Map<?, ?>) designer.getPageSchema().getZones().get(0)
+                .getProps().get("treeConfig");
+        assertEquals(Boolean.TRUE, zoneTree.get("enabled"));
     }
 
     @Test

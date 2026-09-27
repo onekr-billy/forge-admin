@@ -6,10 +6,12 @@ import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageModelRef;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageZone;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeRelationSchema;
+import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeTreeConfig;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import static com.mdframe.forge.plugin.generator.service.lowcode.RuntimePageRelationResolver.resolvePrimaryRef;
@@ -25,6 +27,7 @@ final class RuntimeTreeConfigBuilder {
     static Map<String, Object> buildTreeConfig(LowcodeModelSchema modelSchema,
                                                 LowcodePageSchema pageSchema,
                                                 Object overrides) {
+        Map<?, ?> overrideMap = asTreeOverrideMap(overrides);
         Map<String, Object> treeConfig = new LinkedHashMap<>();
         if (modelSchema != null && modelSchema.getTreeConfig() != null) {
             putIfNotBlank(treeConfig, "sourceModelCode", modelSchema.getTreeConfig().getSourceModelCode());
@@ -43,26 +46,27 @@ final class RuntimeTreeConfigBuilder {
                 treeConfig.put("enabled", modelSchema.getTreeConfig().getEnabled());
             }
         }
-        if (overrides instanceof Map<?, ?> map) {
-            putIfNotBlank(treeConfig, "sourceModelCode", text(map.get("sourceModelCode")));
-            putIfNotBlank(treeConfig, "sourceModelName", text(map.get("sourceModelName")));
-            putIfNotBlank(treeConfig, "sourceTableName", text(map.get("sourceTableName")));
-            putIfNotBlank(treeConfig, "sourceConfigKey", text(map.get("sourceConfigKey")));
-            putIfNotBlank(treeConfig, "keyField", firstMapText(map, "keyField", "nodeKeyField"));
-            putIfNotBlank(treeConfig, "parentField", firstMapText(map, "parentField", "parentIdField"));
-            putIfNotBlank(treeConfig, "labelField", firstMapText(map, "labelField", "displayField", "nameField"));
-            putIfNotBlank(treeConfig, "filterField", firstMapText(map, "filterField", "rightFilterField", "listFilterField"));
-            putIfNotBlank(treeConfig, "targetField", firstMapText(map, "targetField", "nodeValueField", "valueField"));
-            putIfNotBlank(treeConfig, "childrenField", text(map.get("childrenField")));
-            putIfNotBlank(treeConfig, "treeTitle", firstMapText(map, "treeTitle", "title"));
-            putIfNotBlank(treeConfig, "loadMode", text(map.get("loadMode")));
+        if (overrideMap != null) {
+            putIfNotBlank(treeConfig, "sourceModelCode", text(overrideMap.get("sourceModelCode")));
+            putIfNotBlank(treeConfig, "sourceModelName", text(overrideMap.get("sourceModelName")));
+            putIfNotBlank(treeConfig, "sourceTableName", text(overrideMap.get("sourceTableName")));
+            putIfNotBlank(treeConfig, "sourceConfigKey", text(overrideMap.get("sourceConfigKey")));
+            putIfNotBlank(treeConfig, "keyField", firstMapText(overrideMap, "keyField", "nodeKeyField"));
+            putIfNotBlank(treeConfig, "parentField", firstMapText(overrideMap, "parentField", "parentIdField"));
+            putIfNotBlank(treeConfig, "labelField", firstMapText(overrideMap, "labelField", "displayField", "nameField"));
+            putIfNotBlank(treeConfig, "filterField", firstMapText(overrideMap, "filterField", "rightFilterField", "listFilterField"));
+            putIfNotBlank(treeConfig, "targetField", firstMapText(overrideMap, "targetField", "nodeValueField", "valueField"));
+            putIfNotBlank(treeConfig, "childrenField", text(overrideMap.get("childrenField")));
+            putIfNotBlank(treeConfig, "treeTitle", firstMapText(overrideMap, "treeTitle", "title"));
+            putIfNotBlank(treeConfig, "loadMode", text(overrideMap.get("loadMode")));
             if (StringUtils.isBlank(text(treeConfig.get("loadMode")))
-                    && map.get("lazy") instanceof Boolean lazy
+                    && overrideMap.get("lazy") instanceof Boolean lazy
                     && lazy) {
                 treeConfig.put("loadMode", "lazy");
             }
-            if (map.get("enabled") instanceof Boolean enabled) {
-                treeConfig.put("enabled", enabled);
+            Boolean overrideEnabled = readBooleanFlag(overrideMap.get("enabled"));
+            if (overrideEnabled != null) {
+                treeConfig.put("enabled", overrideEnabled);
             }
         }
         LowcodePageModelRef sourceRef = resolveTreeSourceRef(pageSchema, text(treeConfig.get("sourceModelCode")));
@@ -96,13 +100,74 @@ final class RuntimeTreeConfigBuilder {
                 text(treeConfig.get("sourceModelName")),
                 modelSchema == null ? null : modelSchema.getBusinessName());
         treeConfig.putIfAbsent("treeTitle", StringUtils.isBlank(defaultTreeTitle) ? "树形导航" : defaultTreeTitle + "树");
-        // 左树右表必须显式启用，否则 TreeCrudTemplate 会降级成普通列表
+        // 左树右表 / 嵌入式树表都必须显式 enabled=true，否则前端会降级成普通平铺列表
         if (isLeftTreeRightTableLayout(pageSchema)) {
             treeConfig.put("enabled", Boolean.TRUE);
             // 默认点上级查询本级+全部下级
             treeConfig.putIfAbsent("includeChildren", Boolean.TRUE);
+        } else if (isModelTreeEnabled(modelSchema) || Boolean.TRUE.equals(treeConfig.get("enabled"))) {
+            treeConfig.put("enabled", Boolean.TRUE);
         }
         return treeConfig;
+    }
+
+    /**
+     * 区域 props 里可能是 LinkedHashMap，也可能仍是设计态写入的 {@link LowcodeTreeConfig}。
+     */
+    private static Map<?, ?> asTreeOverrideMap(Object overrides) {
+        if (overrides instanceof Map<?, ?> map) {
+            return map;
+        }
+        if (overrides instanceof LowcodeTreeConfig config) {
+            Map<String, Object> map = new LinkedHashMap<>();
+            putIfNotBlank(map, "sourceModelCode", config.getSourceModelCode());
+            putIfNotBlank(map, "sourceModelName", config.getSourceModelName());
+            putIfNotBlank(map, "sourceTableName", config.getSourceTableName());
+            putIfNotBlank(map, "sourceConfigKey", config.getSourceConfigKey());
+            putIfNotBlank(map, "keyField", config.getKeyField());
+            putIfNotBlank(map, "parentField", config.getParentField());
+            putIfNotBlank(map, "labelField", config.getLabelField());
+            putIfNotBlank(map, "filterField", config.getFilterField());
+            putIfNotBlank(map, "targetField", config.getTargetField());
+            putIfNotBlank(map, "childrenField", config.getChildrenField());
+            putIfNotBlank(map, "treeTitle", config.getTreeTitle());
+            putIfNotBlank(map, "loadMode", config.getLoadMode());
+            if (config.getEnabled() != null) {
+                map.put("enabled", config.getEnabled());
+            }
+            return map;
+        }
+        return null;
+    }
+
+    private static boolean isModelTreeEnabled(LowcodeModelSchema modelSchema) {
+        if (modelSchema == null) {
+            return false;
+        }
+        String appType = StringUtils.defaultIfBlank(modelSchema.getAppType(), "SINGLE").toUpperCase(Locale.ROOT);
+        if ("TREE".equals(appType)) {
+            return true;
+        }
+        return modelSchema.getTreeConfig() != null && Boolean.TRUE.equals(modelSchema.getTreeConfig().getEnabled());
+    }
+
+    private static Boolean readBooleanFlag(Object value) {
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        if (value instanceof Number number) {
+            return number.intValue() != 0;
+        }
+        if (value instanceof String text) {
+            String normalized = text.trim().toLowerCase(Locale.ROOT);
+            if ("true".equals(normalized) || "1".equals(normalized) || "yes".equals(normalized)) {
+                return Boolean.TRUE;
+            }
+            if ("false".equals(normalized) || "0".equals(normalized) || "no".equals(normalized)) {
+                return Boolean.FALSE;
+            }
+        }
+        return null;
     }
 
     private static String firstMapText(Map<?, ?> values, String... keys) {
