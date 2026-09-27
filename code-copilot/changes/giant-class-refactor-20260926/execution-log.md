@@ -318,3 +318,9 @@
 - 使用 Resolver + Layered Fallback 从 `FlowTaskServiceImpl` 迁出 BPMN 节点表单、模型表单、动态表单服务和流程表单实例快照的解析优先级，同时让审批数组字段权限校验复用同一节点 Schema 来源。任务/流程表单上下文、访问守卫和流程变量读取继续留在主服务。
 - 业务代码表单、外部表单、动态表单、formRef/formMode/provider/viewKey 和实例快照协议保持原优先级；租户约束的 `selectByProcessInstanceIdAndTenantId` 一并迁入 Resolver，并同步更新源码安全契约归属。入口由 2449 行降至 2006 行，新 `FlowTaskFormConfigurationResolver` 518 行。
 - flow Reactor 编译退出码 0；执行 Resolver、节点策略、动作授权、状态流转、会签、流程图和待办性能相关 11 类 39 项，0 失败、0 错误；新增 3 项测试覆盖节点表单覆盖、业务表单引用和租户快照读取。额外执行未改动的 `DynamicFormArrayPermissionValidatorTest` 时存量 7 项中 1 项基线失败，校验器源码无本轮差异，因此未在重构提交中改变业务行为。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库或 Flowable 引擎；真实历史表单快照、远端表单资产和复杂数组权限仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第六十一个切口：Flowable 表单上下文协调器
+
+- 使用 Coordinator 从 `FlowTaskServiceImpl` 迁出任务/流程表单的访问守卫、授权任务快照、租户业务关联、流程定义定位、运行/历史变量合并、退回目标和直送视图组装，并组合既有表单 Resolver 与节点 Policy。命令副作用、审批状态和表单保存继续留在原边界。
+- 任务/流程可见性校验、`selectByIdOrTaskIdAndTenant`、业务关联租户条件和实例快照租户条件继续由源码契约约束；入口由 2006 行降至 1717 行，新 `FlowTaskFormContextCoordinator` 437 行。
+- flow Reactor 编译退出码 0；执行表单 Resolver、节点策略、动作授权、状态流转、会签、流程图和待办性能相关 11 类 39 项，0 失败、0 错误；旧源码契约仅改为读取新职责归属文件，没有放宽安全/性能断言。`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库或 Flowable 引擎；真实运行/历史变量并存、退回直送和跨版本流程定义仍需服务环境验收，无服务 PID 需停止。

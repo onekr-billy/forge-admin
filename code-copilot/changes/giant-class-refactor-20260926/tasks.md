@@ -60,5 +60,6 @@
 - [x] 提取 Flowable 流程图 Facade/Assembler，集中 BPMN 图片生成、节点/连线状态投影和人员批量展示，使 `FlowTaskServiceImpl` 降至 2848 行。
 - [x] 提取 Flowable 任务节点 Policy/Specification，集中动作许可、配置覆盖、必填变量、审批要点和退回目标判定，使 `FlowTaskServiceImpl` 降至 2449 行。
 - [x] 提取 Flowable 表单配置 Resolver，集中节点/模型/动态表单/实例快照的分层回退和数组字段权限 Schema 来源，使 `FlowTaskServiceImpl` 降至 2006 行。
+- [x] 提取 Flowable 任务/流程表单上下文 Coordinator，集中访问守卫、业务关联、定义定位、变量回退和动作视图组装，使 `FlowTaskServiceImpl` 降至 1717 行。
 - [ ] 完成业务流程服务级联调和运行配置真实页面验收。
 - [ ] 分阶段拆分动态 CRUD、设计态、发布、Flowable 任务/模型及业务动作/触发器；每阶段独立验证。

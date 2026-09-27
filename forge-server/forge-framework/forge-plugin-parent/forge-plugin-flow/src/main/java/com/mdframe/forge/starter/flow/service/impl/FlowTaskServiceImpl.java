@@ -54,7 +54,6 @@ import org.flowable.engine.runtime.Execution;
 import org.flowable.task.api.DelegationState;
 import org.flowable.task.api.Task;
 import org.flowable.task.api.history.HistoricTaskInstance;
-import org.flowable.variable.api.history.HistoricVariableInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -1406,6 +1405,24 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
         );
     }
 
+    private FlowTaskFormContextCoordinator formContextCoordinator() {
+        return new FlowTaskFormContextCoordinator(
+                taskService,
+                runtimeService,
+                repositoryService,
+                historyService,
+                getBaseMapper(),
+                flowBusinessMapper,
+                flowModelService,
+                flowAccessGuard,
+                formConfigurationResolver(),
+                taskNodePolicy(),
+                this::resolveProcessDefinitionKey,
+                this::resolveUserDisplayName,
+                this::isProcessStarterTask
+        );
+    }
+
     private boolean isProcessStarterTask(Task task, String userId) {
         if (task == null || isBlank(userId)) {
             return false;
@@ -1529,271 +1546,14 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
 
     @Override
     public TaskFormInfo getTaskFormInfo(String taskId) {
-        FlowTask visibleTask = flowAccessGuard.requireTaskVisible(taskId);
-        // 1. 获取任务信息
-        Task task = taskService.createTaskQuery().taskId(taskId).singleResult();
-        if (task == null) {
-            throw new RuntimeException("任务不存在：" + taskId);
-        }
-
-        TaskFormInfo formInfo = new TaskFormInfo();
-        formInfo.setTaskId(taskId);
-        formInfo.setTaskName(task.getName());
-        formInfo.setTaskDefKey(task.getTaskDefinitionKey());
-        formInfo.setProcessInstanceId(task.getProcessInstanceId());
-        formInfo.setStatus(visibleTask.getStatus());
-        formInfo.setAssignee(visibleTask.getAssignee());
-        formInfo.setCandidateUsers(visibleTask.getCandidateUsers());
-        formInfo.setCandidateGroups(visibleTask.getCandidateGroups());
-
-        // 2. 获取流程定义Key
-        String processDefKey = resolveProcessDefinitionKey(task.getProcessDefinitionId(), null);
-        formInfo.setProcessDefKey(processDefKey);
-
-        // 3. 获取流程变量
-        Map<String, Object> variables = taskService.getVariables(taskId);
-        formInfo.setVariables(variables);
-
-        // 4. 获取业务信息
-        Long taskTenantId = visibleTask != null && visibleTask.getTenantId() != null
-                ? visibleTask.getTenantId() : SessionHelper.getTenantId();
-        FlowBusiness business = taskTenantId == null
-                ? null
-                : flowBusinessMapper.selectByProcessInstanceIdAndTenantId(
-                        task.getProcessInstanceId(), taskTenantId);
-        if (business != null) {
-            formInfo.setBusinessKey(business.getBusinessKey());
-            formInfo.setTitle(business.getTitle());
-            formInfo.setStartUserId(business.getApplyUserId());
-            formInfo.setStartUserName(resolveUserDisplayName(
-                    business.getApplyUserId(), business.getApplyUserName()));
-            formInfo.setStartDeptId(business.getApplyDeptId());
-            formInfo.setStartDeptName(business.getApplyDeptName());
-        }
-
-        // 5. 读取流程模型和 BPMN 节点表单配置，同一次请求内复用给审批策略解析。
-        FlowModel flowModel = !isBlank(processDefKey) ? flowModelService.getModelByKey(processDefKey) : null;
-        // 主节点与直送源节点共用同一次 BPMN 解析（getBpmnModel 每次一条命令往返）
-        BpmnModel bpmnModel = isBlank(task.getProcessDefinitionId()) ? null
-                : repositoryService.getBpmnModel(task.getProcessDefinitionId());
-        FlowTaskFormConfigurationResolver formResolver = formConfigurationResolver();
-        FlowNode flowNode = formResolver.resolveFormFlowNode(bpmnModel, task.getTaskDefinitionKey());
-        formResolver.applyFormConfiguration(formInfo, flowModel, flowNode);
-        formResolver.hydrateFormInstanceSnapshotIfNecessary(
-                formInfo, task.getProcessInstanceId(), taskTenantId);
-
-        // 6. 获取节点办理配置（BPMN扩展属性 + 节点配置表，配置表优先）
-        taskNodePolicy().applyApprovalPolicy(formInfo, task, flowModel, flowNode);
-        formInfo.setReturnTargets(buildReturnTargets(task, formInfo.getAllowMultiReturn()));
-        populateDirectSendInfo(formInfo, task, bpmnModel, variables);
-        taskNodePolicy().applyNodePolicy(formInfo, flowNode);
-
-        log.info("获取任务表单信息：taskId={}, formType={}, formKey={}",
-                taskId, formInfo.getFormType(), formInfo.getFormKey());
-
-        return formInfo;
-    }
-
-    private List<TaskFormInfo.ReturnTarget> buildReturnTargets(Task task, Boolean allowMultiReturn) {
-        if (!Boolean.TRUE.equals(allowMultiReturn)) {
-            return Collections.emptyList();
-        }
-        return historyService.createHistoricActivityInstanceQuery()
-                .processInstanceId(task.getProcessInstanceId())
-                .activityType("userTask")
-                .finished()
-                .orderByHistoricActivityInstanceEndTime()
-                .desc()
-                .list()
-                .stream()
-                .filter(activity -> !Objects.equals(activity.getActivityId(), task.getTaskDefinitionKey()))
-                .collect(Collectors.toMap(HistoricActivityInstance::getActivityId,
-                        activity -> {
-                            TaskFormInfo.ReturnTarget target = new TaskFormInfo.ReturnTarget();
-                            target.setActivityId(activity.getActivityId());
-                            target.setActivityName(activity.getActivityName());
-                            target.setEndTime(activity.getEndTime());
-                            return target;
-                        }, (first, ignored) -> first, LinkedHashMap::new))
-                .values().stream().toList();
-    }
-
-    private void populateDirectSendInfo(TaskFormInfo formInfo, Task task, BpmnModel bpmnModel,
-            Map<String, Object> variables) {
-        // 直送标记变量已随任务全量取得（getTaskFormInfo 第 3 步），直接从 Map 读取，
-        // 避免三次独立的 runtimeService.getVariable 数据库往返
-        Object source = variables == null ? null : variables.get(RETURN_SOURCE_ACTIVITY_ID);
-        Object target = variables == null ? null : variables.get(RETURN_TARGET_ACTIVITY_ID);
-        Object returnToStartPending = variables == null ? null : variables.get(RETURN_TO_START_PENDING);
-        boolean returnedToHistoricalNode = target != null
-                && Objects.equals(String.valueOf(target), task.getTaskDefinitionKey());
-        boolean returnedToStart = Boolean.TRUE.equals(readBoolean(returnToStartPending));
-        if (source == null || (!returnedToHistoricalNode && !returnedToStart)) {
-            formInfo.setAllowDirectSend(false);
-            return;
-        }
-        String sourceId = String.valueOf(source);
-        FlowElement element = formConfigurationResolver().resolveFormFlowNode(bpmnModel, sourceId);
-        if (!(element instanceof UserTask)) {
-            formInfo.setAllowDirectSend(false);
-            return;
-        }
-        if (returnedToStart && !isProcessStarterTask(task, task.getAssignee())) {
-            formInfo.setAllowDirectSend(false);
-            return;
-        }
-        formInfo.setAllowDirectSend(true);
-        formInfo.setReturnSourceActivityId(sourceId);
-        formInfo.setReturnSourceActivityName(element.getName());
+        return formContextCoordinator().getTaskFormInfo(taskId);
     }
 
     @Override
     public TaskFormInfo getProcessFormInfo(String processInstanceId, String businessKey, String processDefKey,
                                            String taskId, String taskDefKey) {
-        if (!isBlank(taskId)) {
-            flowAccessGuard.requireTaskVisible(taskId);
-        } else if (!isBlank(processInstanceId)) {
-            flowAccessGuard.requireProcessVisible(processInstanceId);
-        }
-        if (!isBlank(taskId)) {
-            Task task = taskService.createTaskQuery().taskId(taskId).singleResult();
-            if (task != null) {
-                return getTaskFormInfo(taskId);
-            }
-        }
-
-        Long tenantId = requireTenantId();
-        FlowTask sourceTask = null;
-        if (!isBlank(taskId)) {
-            sourceTask = getBaseMapper().selectByIdOrTaskIdAndTenant(taskId, tenantId);
-        }
-
-        FlowBusiness business = resolveFlowBusiness(processInstanceId, businessKey);
-        String effectiveProcessInstanceId = firstNonBlank(processInstanceId,
-                business != null ? business.getProcessInstanceId() : null,
-                sourceTask != null ? sourceTask.getProcessInstanceId() : null);
-        String effectiveBusinessKey = firstNonBlank(businessKey,
-                business != null ? business.getBusinessKey() : null,
-                sourceTask != null ? sourceTask.getBusinessKey() : null);
-        String rawProcessDefKey = firstNonBlank(processDefKey,
-                business != null ? business.getProcessDefKey() : null,
-                sourceTask != null ? sourceTask.getProcessDefKey() : null);
-        String processDefinitionId = firstNonBlank(
-                sourceTask != null ? sourceTask.getProcessDefId() : null,
-                business != null ? business.getProcessDefId() : null,
-                resolveProcessDefinitionId(effectiveProcessInstanceId, rawProcessDefKey));
-        String effectiveProcessDefKey = resolveProcessDefinitionKey(processDefinitionId, rawProcessDefKey);
-        String effectiveTaskDefKey = firstNonBlank(
-                taskDefKey,
-                sourceTask != null ? sourceTask.getTaskDefKey() : null,
-                findActiveTaskDefinitionKey(effectiveProcessInstanceId),
-                findFirstHistoricTaskDefinitionKey(effectiveProcessInstanceId));
-
-        TaskFormInfo formInfo = new TaskFormInfo();
-        formInfo.setTaskId(taskId);
-        formInfo.setTaskName(sourceTask != null ? sourceTask.getTaskName() : null);
-        formInfo.setTaskDefKey(effectiveTaskDefKey);
-        formInfo.setProcessInstanceId(effectiveProcessInstanceId);
-        formInfo.setProcessDefKey(effectiveProcessDefKey);
-        formInfo.setBusinessKey(effectiveBusinessKey);
-        formInfo.setTitle(business != null ? business.getTitle() : sourceTask != null ? sourceTask.getTitle() : null);
-        if (business != null) {
-            formInfo.setStartUserId(business.getApplyUserId());
-            formInfo.setStartUserName(resolveUserDisplayName(
-                    business.getApplyUserId(), business.getApplyUserName()));
-            formInfo.setStartDeptId(business.getApplyDeptId());
-            formInfo.setStartDeptName(business.getApplyDeptName());
-        }
-
-        Map<String, Object> variables = readProcessVariablesForForm(effectiveProcessInstanceId);
-        if (!isBlank(effectiveBusinessKey)) {
-            variables.putIfAbsent("businessKey", effectiveBusinessKey);
-        }
-        formInfo.setVariables(variables);
-        FlowTaskFormConfigurationResolver formResolver = formConfigurationResolver();
-        formResolver.applyFormConfiguration(
-                formInfo, processDefinitionId, effectiveProcessDefKey, effectiveTaskDefKey);
-        formResolver.hydrateFormInstanceSnapshotIfNecessary(
-                formInfo, effectiveProcessInstanceId, tenantId);
-        formInfo.setAllowApprove(false);
-        formInfo.setAllowReject(false);
-        formInfo.setAllowDelegate(false);
-        formInfo.setAllowReturn(false);
-        formInfo.setAllowTerminate(false);
-        formInfo.setRequireComment(false);
-        formInfo.setRequireSignature(false);
-        formInfo.setAllowRejectToStart(false);
-        return formInfo;
-    }
-
-    private String findActiveTaskDefinitionKey(String processInstanceId) {
-        if (isBlank(processInstanceId)) {
-            return null;
-        }
-        try {
-            Task task = taskService.createTaskQuery()
-                    .processInstanceId(processInstanceId)
-                    .active()
-                    .orderByTaskCreateTime()
-                    .asc()
-                    .list()
-                    .stream()
-                    .findFirst()
-                    .orElse(null);
-            return task == null ? null : task.getTaskDefinitionKey();
-        } catch (Exception e) {
-            log.debug("读取运行中任务定义Key失败: processInstanceId={}", processInstanceId);
-            return null;
-        }
-    }
-
-    private FlowBusiness resolveFlowBusiness(String processInstanceId, String businessKey) {
-        Long tenantId = requireTenantId();
-        FlowBusiness business = null;
-        if (!isBlank(processInstanceId)) {
-            business = flowBusinessMapper.selectByProcessInstanceIdAndTenantId(processInstanceId, tenantId);
-        }
-        if (business == null && !isBlank(businessKey)) {
-            business = flowBusinessMapper.selectByBusinessKeyAndTenantId(tenantId, businessKey);
-        }
-        return business;
-    }
-
-    private String resolveProcessDefinitionId(String processInstanceId, String processDefKey) {
-        if (!isBlank(processInstanceId)) {
-            try {
-                ProcessInstance runtimeInstance = runtimeService.createProcessInstanceQuery()
-                        .processInstanceId(processInstanceId)
-                        .singleResult();
-                if (runtimeInstance != null) {
-                    return runtimeInstance.getProcessDefinitionId();
-                }
-            } catch (Exception e) {
-                log.debug("从运行实例解析流程定义失败: processInstanceId={}", processInstanceId);
-            }
-            try {
-                HistoricProcessInstance historicInstance = historyService.createHistoricProcessInstanceQuery()
-                        .processInstanceId(processInstanceId)
-                        .singleResult();
-                if (historicInstance != null) {
-                    return historicInstance.getProcessDefinitionId();
-                }
-            } catch (Exception e) {
-                log.debug("从历史实例解析流程定义失败: processInstanceId={}", processInstanceId);
-            }
-        }
-        if (!isBlank(processDefKey)) {
-            try {
-                ProcessDefinition definition = repositoryService.createProcessDefinitionQuery()
-                        .processDefinitionKey(processDefKey)
-                        .latestVersion()
-                        .singleResult();
-                return definition != null ? definition.getId() : null;
-            } catch (Exception e) {
-                log.debug("从流程定义Key解析最新流程定义失败: processDefKey={}", processDefKey);
-            }
-        }
-        return null;
+        return formContextCoordinator().getProcessFormInfo(
+                processInstanceId, businessKey, processDefKey, taskId, taskDefKey);
     }
 
     private String resolveProcessDefinitionKey(String processDefinitionId, String fallbackProcessDefKey) {
@@ -1832,55 +1592,6 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
             return extractProcessKey(fallbackProcessDefKey);
         }
         return fallbackProcessDefKey;
-    }
-
-    private Map<String, Object> readProcessVariablesForForm(String processInstanceId) {
-        Map<String, Object> variables = new HashMap<>();
-        if (isBlank(processInstanceId)) {
-            return variables;
-        }
-        try {
-            Map<String, Object> runtimeVariables = runtimeService.getVariables(processInstanceId);
-            if (runtimeVariables != null) {
-                variables.putAll(runtimeVariables);
-            }
-        } catch (Exception e) {
-            log.debug("读取运行流程变量失败，继续读取历史变量: processInstanceId={}", processInstanceId);
-        }
-        try {
-            List<HistoricVariableInstance> historicVariables = historyService.createHistoricVariableInstanceQuery()
-                    .processInstanceId(processInstanceId)
-                    .list();
-            if (historicVariables != null) {
-                for (HistoricVariableInstance variable : historicVariables) {
-                    if (variable != null && variable.getVariableName() != null) {
-                        variables.putIfAbsent(variable.getVariableName(), variable.getValue());
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.warn("读取历史流程变量失败: processInstanceId={}", processInstanceId, e);
-        }
-        return variables;
-    }
-
-    private String findFirstHistoricTaskDefinitionKey(String processInstanceId) {
-        if (isBlank(processInstanceId)) {
-            return null;
-        }
-        try {
-            List<HistoricTaskInstance> historicTasks = historyService.createHistoricTaskInstanceQuery()
-                    .processInstanceId(processInstanceId)
-                    .orderByHistoricTaskInstanceStartTime()
-                    .asc()
-                    .list();
-            if (historicTasks != null && !historicTasks.isEmpty()) {
-                return historicTasks.get(0).getTaskDefinitionKey();
-            }
-        } catch (Exception e) {
-            log.debug("读取历史任务定义Key失败: processInstanceId={}", processInstanceId);
-        }
-        return null;
     }
 
     /**

@@ -342,6 +342,15 @@
 
 验证结果：表单配置、节点选择、动态 Schema、实例快照和数组字段权限 Schema 来源已统一委托 `FlowTaskFormConfigurationResolver`；新增 3 项 Resolver 行为测试，相关 11 个测试类共 39 项通过，0 失败、0 错误。额外直接运行未改动的 `DynamicFormArrayPermissionValidatorTest` 时，存量 7 项中 1 项基线失败，本轮未修改该校验器且未借重构改变其业务语义。flow Reactor 编译与 `git diff --check` 通过；`FlowTaskServiceImpl` 2006 行，新 Resolver 518 行。
 
+## 2026-09-27 第六十一轮增量验证：Flowable 表单上下文协调器
+
+- P0：任务/流程表单读取必须先执行任务或流程可见性守卫，任务镜像、业务关联、表单实例查询必须携带可信租户。
+- P0：流程定义 ID/Key、活动/历史任务节点、运行/历史变量、发起人信息、退回目标和直送资格的既有回退顺序保持不变。
+- P1：使用 Coordinator 编排只读上下文并复用表单 Resolver 与节点 Policy，禁止在协调器内完成任务、保存表单或迁移业务状态；新生产类少于 1000 行。
+- 验证：执行 flow Reactor 编译，重跑表单 Resolver、节点策略、任务动作授权、状态流转、会签、流程图和待办性能契约；执行 `git diff --check` 和类行数检查，不启动真实服务。
+
+验证结果：任务和流程表单上下文已统一委托 `FlowTaskFormContextCoordinator`，源码安全/性能契约同步验证新职责归属；相关 11 个测试类共 39 项通过，0 失败、0 错误。flow Reactor 编译与 `git diff --check` 通过；`FlowTaskServiceImpl` 1717 行，新 Coordinator 437 行。
+
 ## 2026-09-26 第四十五轮增量验证：主子表持久化引擎
 
 - P0：主子表详情的数据权限、子表外键修复、关系值解析、读取流水线和审计元数据保持不变。
