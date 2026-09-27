@@ -237,7 +237,17 @@
 - 显式 SQL：流程入口、字段映射、表单版本和批次明细在 `@IgnoreTenant` Controller 调用链下使用显式 `tenant_id = #{tenantId}` 条件，不假设 MyBatis-Plus 自动租户拦截仍生效。
 - 实际结果：`FlowRuntimeIdentitySecurityTest` 6/6、`FlowBusinessObjectRuntimeAdapterIdentityTest` 3/3，四个 Mapper XML 结构校验通过；Flow Server 主代码依赖反应堆 38/38 模块编译成功。
 - 回归基线：`forge-plugin-flow` 完整运行 185 个测试，其中 2 个与本批修改文件无关的基线失败位于用户组源码契约与动态数组必填校验；`forge-flow-server` 完整运行 46 个测试，其中 2 个与本批修改文件无关的基线失败位于流程监控源码契约。四个失败均未命中本批修改类，不记为完整模块通过。
-- 后续范围：`FlowFormServiceImpl`、`FlowFillBatchServiceImpl`、`FlowInstanceServiceImpl` 和 `FlowRecordParticipantServiceImpl` 仍有默认租户 `1` 回退，应在下一批按表单管理、批次填报、流程实例与参与者路径分别收口。
+- 后续范围：`FlowFormServiceImpl`、`FlowFillBatchServiceImpl`、`FlowInstanceServiceImpl` 和 `FlowRecordParticipantServiceImpl` 的默认租户 `1` 回退已在 1.27 批次收口。
+
+## 1.27 2026-09-28 Flow 表单、填报、实例与参与人租户边界
+
+- 表单管理：分页、启用列表、详情、编码查重、复制、发布、版本和字段目录读取必须先取得正数会话租户；发布还必须取得正数操作者，客户端实体租户不得覆盖可信租户。
+- 填报批次：批次分页、更新、发布、删除与明细查询必须使用同一可信租户；`@IgnoreTenant` 控制器下的表单、版本、批次和明细 Mapper 必须显式包含 `tenant_id = #{tenantId}`。
+- 实例启动：会话租户与线程租户同时存在时必须一致；无会话后台任务只能使用非忽略作用域中显式建立的正数租户，缺失租户或发起人必须在 Flowable 查询/启动前拒绝。
+- 参与人索引：监听器和服务调用必须显式传递业务租户，空租户不得回退平台租户；填报明细行锁只能使用带租户条件的查询。
+- 实际结果：新增 `FlowMetadataTenantBoundaryTest` 11/11；连同相关身份、实例、参与人和行锁测试共 24/24 通过，四个 Mapper XML 校验通过，Flow Server 主代码依赖反应堆 38/38 模块编译成功。
+- 回归基线：`forge-plugin-flow` 完整运行 196 个测试，剩余 2 个与本批修改文件无关的失败位于用户组运行时解析源码契约和动态数组新增行必填校验；`forge-flow-server` 完整运行 46 个测试，剩余 2 个与本批修改文件无关的失败位于流程监控源码契约。不记为完整模块通过。
+- 环境限制：未连接真实 MySQL/Flowable 或启动 Flow Server 执行表单、批次、实例与参与人路径的 HTTP 跨租户矩阵；四个回归基线失败留待后续批次修复。
 
 ## 2. P0 必跑验证
 

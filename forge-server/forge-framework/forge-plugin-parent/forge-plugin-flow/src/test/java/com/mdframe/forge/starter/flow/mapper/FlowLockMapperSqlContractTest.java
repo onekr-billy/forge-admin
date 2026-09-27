@@ -21,7 +21,7 @@ class FlowLockMapperSqlContractTest {
     private static final Map<String, String> LOCK_STATEMENTS = Map.of(
             "mapper/FlowTaskMapper.xml", "selectByTaskIdForUpdateAndTenant",
             "mapper/FlowErrorLogMapper.xml", "selectByIdAndTenantIdForUpdate",
-            "mapper/FlowFillBatchItemMapper.xml", "selectByIdForUpdate",
+            "mapper/FlowFillBatchItemMapper.xml", "selectByIdForUpdateAndTenant",
             "mapper/FlowBusinessMapper.xml", "selectByProcessInstanceIdAndTenantIdForUpdate"
     );
 

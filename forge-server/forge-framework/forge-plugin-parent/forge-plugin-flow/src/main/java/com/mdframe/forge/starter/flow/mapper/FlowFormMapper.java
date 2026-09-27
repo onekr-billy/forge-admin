@@ -17,13 +17,19 @@ import java.util.List;
 public interface FlowFormMapper extends BaseMapper<FlowForm> {
 
     Page<FlowForm> selectFormPage(Page<FlowForm> page,
+                                  @Param("tenantId") Long tenantId,
                                   @Param("formName") String formName,
                                   @Param("status") Integer status);
 
-    List<FlowForm> selectEnabledForms();
+    List<FlowForm> selectEnabledForms(@Param("tenantId") Long tenantId);
 
-    FlowForm selectByFormKey(@Param("formKey") String formKey);
+    FlowForm selectByIdAndTenant(@Param("id") Long id,
+                                 @Param("tenantId") Long tenantId);
 
-    Long countByFormKey(@Param("formKey") String formKey,
+    FlowForm selectByFormKey(@Param("tenantId") Long tenantId,
+                             @Param("formKey") String formKey);
+
+    Long countByFormKey(@Param("tenantId") Long tenantId,
+                        @Param("formKey") String formKey,
                         @Param("excludeId") Long excludeId);
 }

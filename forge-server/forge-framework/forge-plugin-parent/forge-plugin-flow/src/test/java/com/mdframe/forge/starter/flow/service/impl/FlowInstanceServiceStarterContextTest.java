@@ -98,6 +98,7 @@ class FlowInstanceServiceStarterContextTest {
         Harness harness = harness(processModel("${amount > 1000}"));
         LoginUser loginUser = new LoginUser();
         loginUser.setUserId(9L);
+        loginUser.setTenantId(7L);
         loginUser.setRealName("可信姓名");
 
         try (MockedStatic<SessionHelper> session = mockStatic(SessionHelper.class)) {

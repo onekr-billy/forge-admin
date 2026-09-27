@@ -13,9 +13,8 @@ import java.util.List;
 @Mapper
 public interface FlowFillBatchItemMapper extends BaseMapper<FlowFillBatchItem> {
 
-    List<FlowFillBatchItem> selectByBatchId(@Param("batchId") Long batchId);
-
-    FlowFillBatchItem selectByIdForUpdate(@Param("id") Long id);
+    List<FlowFillBatchItem> selectByBatchId(@Param("tenantId") Long tenantId,
+                                           @Param("batchId") Long batchId);
 
     FlowFillBatchItem selectByIdForUpdateAndTenant(@Param("id") Long id,
                                                    @Param("tenantId") Long tenantId);

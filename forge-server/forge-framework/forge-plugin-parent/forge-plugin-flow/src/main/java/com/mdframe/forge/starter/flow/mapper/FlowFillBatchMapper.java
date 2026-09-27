@@ -15,5 +15,9 @@ import org.apache.ibatis.annotations.Param;
 public interface FlowFillBatchMapper extends BaseMapper<FlowFillBatch> {
 
     IPage<FlowFillBatch> selectBatchPage(Page<FlowFillBatch> page,
+                                         @Param("tenantId") Long tenantId,
                                          @Param("query") FlowFillBatchQueryDTO query);
+
+    FlowFillBatch selectByIdAndTenant(@Param("id") Long id,
+                                      @Param("tenantId") Long tenantId);
 }

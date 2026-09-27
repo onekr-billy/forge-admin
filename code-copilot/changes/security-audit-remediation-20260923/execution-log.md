@@ -1,5 +1,25 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：Flow 表单、填报、实例与参与人租户边界
+
+### 实现
+
+- `FlowFormServiceImpl` 和表单版本 Mapper 去除默认租户 `1`，表单分页、启用列表、详情、编码查重、复制、发布、版本列表和字段目录均使用入口捕获的可信租户；发布人来自同一会话身份快照。
+- `FlowFillBatchServiceImpl` 将批次分页、详情校验、明细列表、发布、组织解析和删除绑定当前租户，客户端提交的 `tenantId` 被可信会话租户覆盖；批次和明细 Mapper 在 `@IgnoreTenant` 链路下使用显式租户 SQL。
+- `FlowInstanceServiceImpl` 不再把缺失租户回退到租户 `1`，登录会话与线程租户不一致时拒绝；无会话后台调用只接受非忽略作用域中显式建立的正数租户，缺失发起人时在 Flowable 调用前拒绝。
+- `FlowRecordParticipantServiceImpl` 只接受业务实体或调用方显式传入的正数租户，不再根据空上下文猜测租户；填报明细行锁契约同步切换到带租户条件的方法。
+
+### 验证
+
+- `FlowMetadataTenantBoundaryTest` 11/11；连同运行身份、实例上下文、参与人解析和行锁契约定向回归共 24/24 通过。
+- 表单、表单版本、填报批次和填报明细四个 Mapper XML 均通过 `xmllint --noout`；Flow Server 主代码依赖反应堆 38/38 模块编译成功。
+- `forge-plugin-flow` 完整运行 196 个测试，剩余 2 个与本批修改文件无关的基线失败（用户组运行时解析源码契约、动态数组新增行必填校验）；`forge-flow-server` 完整运行 46 个测试，剩余 2 个与本批修改文件无关的流程监控源码契约失败。均不记为完整模块通过。
+- Flow 插件和 Flow Server 本轮默认租户 `1` 扫描已无命中；`git diff --check` 通过，用户已有 `.DS_Store` 修改未触碰、未纳入本批变更。
+
+### 未覆盖
+
+- 未启动 Flow Server 或连接真实 MySQL/Flowable 执行表单管理、批次发布、实例启动和参与人索引的 HTTP 跨租户验收；上述四个回归基线失败继续作为下一批修复目标。
+
 ## 2026-09-28：Flow 运行入口可信身份与显式租户 SQL
 
 ### 实现
@@ -18,7 +38,7 @@
 
 ### 未覆盖
 
-- 未启动 Flow Server 或连接真实 MySQL/Flowable 执行入口填报、业务对象落表和关联写入 HTTP 跨租户验收；`FlowFormServiceImpl`、`FlowFillBatchServiceImpl`、`FlowInstanceServiceImpl` 和 `FlowRecordParticipantServiceImpl` 的默认租户回退仍待下一批收口。
+- 未启动 Flow Server 或连接真实 MySQL/Flowable 执行入口填报、业务对象落表和关联写入 HTTP 跨租户验收；表单、填报、实例和参与人服务的默认租户回退已在后续批次收口。
 
 ## 2026-09-28：低代码设计、生成与发布租户边界收口
 

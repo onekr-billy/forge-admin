@@ -22,9 +22,35 @@ public final class FlowRuntimeIdentity {
         return requireTenantId(loginUser);
     }
 
+    /**
+     * 获取会话或已隔离后台任务建立的可信租户。
+     *
+     * <p>有登录会话时以会话租户为准，并校验线程租户一致性；无会话时仅接受
+     * 非 {@code ignoreTenant} 作用域中显式设置的正数租户。这样既支持后台任务，
+     * 又不会把全租户扫描作用域误当成某个业务租户。</p>
+     */
+    public static Long requireTenantIdFromSessionOrScope() {
+        LoginUser loginUser = currentLoginUser();
+        Long sessionTenantId = loginUser == null ? null : loginUser.getTenantId();
+        Long scopedTenantId = TenantContextHolder.getTenantId();
+        if (loginUser != null) {
+            if (!isPositive(sessionTenantId)) {
+                throw new IllegalStateException("FLOW_TENANT_REQUIRED");
+            }
+            if (scopedTenantId != null && !sessionTenantId.equals(scopedTenantId)) {
+                throw new IllegalStateException("FLOW_TENANT_MISMATCH");
+            }
+            return sessionTenantId;
+        }
+        if (!TenantContextHolder.isIgnore() && isPositive(scopedTenantId)) {
+            return scopedTenantId;
+        }
+        throw new IllegalStateException("FLOW_TENANT_REQUIRED");
+    }
+
     private static Long requireTenantId(LoginUser loginUser) {
         Long tenantId = loginUser.getTenantId();
-        if (tenantId == null || tenantId <= 0) {
+        if (!isPositive(tenantId)) {
             throw new IllegalStateException("FLOW_TENANT_REQUIRED");
         }
         Long scopedTenantId = TenantContextHolder.getTenantId();
@@ -50,16 +76,23 @@ public final class FlowRuntimeIdentity {
     }
 
     private static LoginUser requireLoginUser() {
-        LoginUser loginUser;
-        try {
-            loginUser = SessionHelper.getLoginUser();
-        } catch (Exception exception) {
-            loginUser = null;
-        }
+        LoginUser loginUser = currentLoginUser();
         if (loginUser == null) {
             throw new IllegalStateException("FLOW_IDENTITY_REQUIRED");
         }
         return loginUser;
+    }
+
+    private static LoginUser currentLoginUser() {
+        try {
+            return SessionHelper.getLoginUser();
+        } catch (Exception exception) {
+            return null;
+        }
+    }
+
+    private static boolean isPositive(Long value) {
+        return value != null && value > 0;
     }
 
     private static String firstText(String... values) {

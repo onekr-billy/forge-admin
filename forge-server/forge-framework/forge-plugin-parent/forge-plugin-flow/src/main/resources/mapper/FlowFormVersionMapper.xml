@@ -5,15 +5,9 @@
     <select id="selectLatestByFormId" resultType="com.mdframe.forge.starter.flow.entity.FlowFormVersion">
         SELECT v.*
         FROM sys_flow_form_version v
-        WHERE v.form_id = #{formId}
+        WHERE v.tenant_id = #{tenantId}
+          AND v.form_id = #{formId}
         ORDER BY v.version DESC
-        LIMIT 1
-    </select>
-
-    <select id="selectByIdForRuntime" resultType="com.mdframe.forge.starter.flow.entity.FlowFormVersion">
-        SELECT v.*
-        FROM sys_flow_form_version v
-        WHERE v.id = #{id}
         LIMIT 1
     </select>
 
@@ -28,7 +22,8 @@
     <select id="selectVersionsByFormId" resultType="com.mdframe.forge.starter.flow.entity.FlowFormVersion">
         SELECT v.*
         FROM sys_flow_form_version v
-        WHERE v.form_id = #{formId}
+        WHERE v.tenant_id = #{tenantId}
+          AND v.form_id = #{formId}
         ORDER BY v.version DESC
     </select>
 </mapper>

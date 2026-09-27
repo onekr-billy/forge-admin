@@ -16,12 +16,12 @@ import com.mdframe.forge.starter.flow.enums.FlowBusinessStatus;
 import com.mdframe.forge.starter.flow.enums.FlowTaskStatus;
 import com.mdframe.forge.starter.flow.mapper.FlowBusinessMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowTaskMapper;
+import com.mdframe.forge.starter.flow.security.FlowRuntimeIdentity;
 import com.mdframe.forge.starter.flow.service.FlowErrorLogService;
 import com.mdframe.forge.starter.flow.service.FlowInstanceService;
 import com.mdframe.forge.starter.flow.service.FlowModelService;
 import com.mdframe.forge.starter.flow.service.FlowOrgIntegrationService;
 import com.mdframe.forge.starter.flow.service.FlowRecordParticipantService;
-import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.flowable.bpmn.model.BpmnModel;
 import org.flowable.bpmn.model.FlowElement;
@@ -57,7 +57,6 @@ import java.util.stream.Collectors;
 @Service
 public class FlowInstanceServiceImpl implements FlowInstanceService {
 
-    private static final Long DEFAULT_TENANT_ID = 1L;
     private static final long FLOW_START_LOCK_WAIT_SECONDS = 5L;
 
     @Autowired
@@ -113,7 +112,8 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
     public String startProcess(String modelKey, String businessKey, String businessType,
                                 String title, Map<String, Object> variables, String userId,
                                 String userName, String deptId, String deptName) {
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireCurrentTenantId();
+        requireStarterUserId(userId);
         String displayUserName = resolveUserDisplayName(userId, userName);
         ReentrantLock startLock = acquireFlowStartLock(tenantId, businessKey);
         boolean unlockInFinally = true;
@@ -227,11 +227,10 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
             try {
                 LoginUser loginUser = SessionHelper.getLoginUser();
                 Long activeOrgId = loginUser == null ? null : loginUser.getActiveOrgId();
-                Long roleTenantId = loginUser == null ? tenantId : loginUser.getTenantId();
                 List<Long> roleIds = !contextRequirements.roles()
                         || sysUserService == null || activeOrgId == null
                         ? List.of()
-                        : sysUserService.selectUserOrgRoleIds(Long.parseLong(userId), activeOrgId, roleTenantId);
+                        : sysUserService.selectUserOrgRoleIds(Long.parseLong(userId), activeOrgId, tenantId);
                 if (roleIds != null && !roleIds.isEmpty()) {
                     // 注入角色ID列表（逗号分隔）
                     String roleIdsStr = roleIds.stream()
@@ -329,7 +328,7 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
 
     @Override
     public FlowBusiness getProcessStatus(String businessKey) {
-        return flowBusinessMapper.selectByBusinessKeyAndTenantId(resolveTenantId(), businessKey);
+        return flowBusinessMapper.selectByBusinessKeyAndTenantId(requireCurrentTenantId(), businessKey);
     }
 
     private String handleDuplicateBusinessKey(Long tenantId, String businessKey, DuplicateKeyException e) {
@@ -403,14 +402,6 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
 
     private boolean isEndedStatus(String status) {
         return FlowBusinessStatus.isEnded(status);
-    }
-
-    private Long resolveTenantId() {
-        Long tenantId = TenantContextHolder.getTenantId();
-        if (tenantId == null) {
-            tenantId = SessionHelper.getTenantId();
-        }
-        return tenantId == null ? DEFAULT_TENANT_ID : tenantId;
     }
 
     /**
@@ -653,7 +644,7 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
         if (taskId == null || newAssignee == null) {
             throw new RuntimeException("任务ID和新处理人ID不能为空");
         }
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireCurrentTenantId();
         if (flowOrgIntegrationService == null
                 || !flowOrgIntegrationService.isUserAvailableForTenant(newAssignee.trim(), tenantId)) {
             throw new BusinessException(400, "新处理人不存在、已停用或不属于当前租户");
@@ -788,13 +779,16 @@ public class FlowInstanceServiceImpl implements FlowInstanceService {
     }
 
     private Long requireCurrentTenantId() {
-        Long tenantId = TenantContextHolder.getTenantId();
-        if (tenantId == null) {
-            tenantId = SessionHelper.getTenantId();
-        }
-        if (tenantId == null || tenantId <= 0) {
+        try {
+            return FlowRuntimeIdentity.requireTenantIdFromSessionOrScope();
+        } catch (IllegalStateException exception) {
             throw new BusinessException(403, "无法确定当前租户，禁止管理流程实例");
         }
-        return tenantId;
+    }
+
+    private void requireStarterUserId(String userId) {
+        if (isBlank(userId) || "null".equalsIgnoreCase(userId.trim())) {
+            throw new BusinessException(403, "无法确定流程发起人，禁止启动流程");
+        }
     }
 }
