@@ -389,6 +389,16 @@
 
 验证结果：页面协议、跳转目标、组件动作及事务命令检查已统一委托 `BusinessObjectPagePublishValidator`，应用入口和页面校验共享 `BusinessPublishTargetCatalog`。相关 14 个测试类共 70 项通过，0 失败、0 错误；generator Reactor 编译与 `git diff --check` 通过。`BusinessObjectPublishService` 1680 行，新 Validator 641 行、Catalog 67 行。
 
+## 2026-09-27 第六十六轮增量验证：设计完整性与部署就绪校验链
+
+- P0：关系目标/字段、联动规则、运行配置、单据状态与流程、动作权限的检查顺序和等级保持不变。
+- P0：应用入口、菜单打开方式、敏感默认参数、运行数据源、在线 DDL 权限和表结构差异检查保持不变。
+- P0：目标对象加载、租户解析、触发器查询和在线 DDL 安全判定继续使用原依赖与原失败语义。
+- P1：使用两条 Validator Chain 分离设计完整性与部署就绪变化方向；Facade 只保留发布事务、投影组装和检查编排，所有生产类少于 1000 行。
+- 验证：执行 generator Reactor 编译，重跑业务对象设计器、发布、数据库同步和运行布局相关测试；执行 `git diff --check` 和类行数检查，不启动真实服务。
+
+验证结果：关系/联动/运行配置/单据/权限已委托 `BusinessObjectDesignPublishValidator`，应用入口/数据源/表结构已委托 `BusinessObjectDeploymentPublishValidator`；主链显式保持原执行顺序。相关 14 个测试类共 70 项通过，0 失败、0 错误；generator Reactor 编译与 `git diff --check` 通过。`BusinessObjectPublishService` 867 行，新 Validator 分别 598 行和 436 行，全部满足单类 1000 行目标。
+
 ## 2026-09-26 第四十五轮增量验证：主子表持久化引擎
 
 - P0：主子表详情的数据权限、子表外键修复、关系值解析、读取流水线和审计元数据保持不变。
