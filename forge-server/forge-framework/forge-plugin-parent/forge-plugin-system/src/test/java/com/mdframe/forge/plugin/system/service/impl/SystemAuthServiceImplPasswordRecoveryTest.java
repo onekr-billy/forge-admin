@@ -1,14 +1,17 @@
 package com.mdframe.forge.plugin.system.service.impl;
 
+import cn.dev33.satoken.stp.StpUtil;
 import com.mdframe.forge.plugin.system.auth.RecoveryChannelSupport;
 import com.mdframe.forge.plugin.system.auth.LoginPasswordDecoder;
 import com.mdframe.forge.plugin.system.entity.SysUser;
 import com.mdframe.forge.plugin.system.mapper.SysUserMapper;
 import com.mdframe.forge.plugin.system.service.ISysOnlineUserService;
+import com.mdframe.forge.plugin.system.service.IUserLoadService;
 import com.mdframe.forge.plugin.system.service.PasswordPolicyService;
 import com.mdframe.forge.plugin.system.entity.SysTenant;
 import com.mdframe.forge.plugin.system.mapper.SysTenantMapper;
 import com.mdframe.forge.starter.core.session.LoginUser;
+import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.auth.domain.RegisterRequest;
 import com.mdframe.forge.starter.auth.domain.ResetPasswordRequest;
 import com.mdframe.forge.starter.auth.domain.SendResetPasswordCodeRequest;
@@ -21,6 +24,8 @@ import com.mdframe.forge.starter.core.context.AuthProperties;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.message.config.SmsConfigProvider;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
@@ -35,6 +40,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mockStatic;
 
 class SystemAuthServiceImplPasswordRecoveryTest {
 
@@ -235,6 +241,66 @@ class SystemAuthServiceImplPasswordRecoveryTest {
         verify(onlineUserService).kickoutAllSessions(11L, null);
     }
 
+    @Test
+    void shouldRevokeCurrentSessionByDefaultAfterPasswordChange() {
+        AuthProperties authProperties = new AuthProperties();
+        SysUserMapper userMapper = mock(SysUserMapper.class);
+        IUserLoadService userLoadService = mock(IUserLoadService.class);
+        ISysOnlineUserService onlineUserService = mock(ISysOnlineUserService.class);
+        when(userLoadService.getUserPassword(11L)).thenReturn("encoded-current-password");
+        when(userLoadService.matchPassword("OldPass123", "encoded-current-password")).thenReturn(true);
+        when(userMapper.updateActiveUserPassword(anyLong(), anyLong(), anyString(), any())).thenReturn(1);
+        LoginUser loginUser = loginUser(3L);
+
+        SystemAuthServiceImpl service = passwordChangeService(
+                userMapper, userLoadService, onlineUserService, authProperties);
+        try (MockedStatic<SessionHelper> session = mockStatic(SessionHelper.class)) {
+            session.when(SessionHelper::getLoginUser).thenReturn(loginUser);
+
+            assertThat(service.changePassword("OldPass123", "NewPass123")).isTrue();
+        }
+
+        verify(onlineUserService).kickoutAllSessions(11L, null);
+    }
+
+    @Test
+    void shouldKeepOnlyCurrentSessionWhenExplicitlyConfigured() {
+        AuthProperties authProperties = new AuthProperties();
+        authProperties.setKeepCurrentSessionAfterPasswordChange(true);
+        SysUserMapper userMapper = mock(SysUserMapper.class);
+        IUserLoadService userLoadService = mock(IUserLoadService.class);
+        ISysOnlineUserService onlineUserService = mock(ISysOnlineUserService.class);
+        when(userLoadService.getUserPassword(11L)).thenReturn("encoded-current-password");
+        when(userLoadService.matchPassword("OldPass123", "encoded-current-password")).thenReturn(true);
+        when(userMapper.updateActiveUserPassword(anyLong(), anyLong(), anyString(), any())).thenReturn(1);
+        when(userMapper.selectActivePasswordVersion(11L, 1L)).thenReturn(4L);
+        LoginUser loginUser = loginUser(3L);
+
+        SystemAuthServiceImpl service = passwordChangeService(
+                userMapper, userLoadService, onlineUserService, authProperties);
+        try (MockedStatic<SessionHelper> session = mockStatic(SessionHelper.class);
+             MockedStatic<StpUtil> stp = mockStatic(StpUtil.class)) {
+            session.when(SessionHelper::getLoginUser).thenReturn(loginUser);
+            stp.when(StpUtil::getTokenValue).thenReturn("current-token");
+            TransactionSynchronizationManager.initSynchronization();
+            try {
+                assertThat(service.changePassword("OldPass123", "NewPass123")).isTrue();
+
+                assertThat(loginUser.getPasswordVersion()).isEqualTo(3L);
+                verify(onlineUserService, never()).kickoutAllSessions(anyLong(), any());
+                assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
+                TransactionSynchronizationManager.getSynchronizations().get(0).afterCommit();
+
+                session.verify(() -> SessionHelper.setLoginUser(loginUser));
+            } finally {
+                TransactionSynchronizationManager.clearSynchronization();
+            }
+        }
+
+        assertThat(loginUser.getPasswordVersion()).isEqualTo(4L);
+        verify(onlineUserService).kickoutAllSessions(11L, "current-token");
+    }
+
     private RecoveryChannelSupport smsSupport() {
         SmsConfigProvider.SmsConfig config = new SmsConfigProvider.SmsConfig();
         config.setStatus(1);
@@ -253,6 +319,26 @@ class SystemAuthServiceImplPasswordRecoveryTest {
                 userMapper, captchaService, null, null, null, new AuthProperties(),
                 configManagerService, null, cacheService, null, null, null,
                 recoveryChannelSupport, null, new PasswordPolicyService(configManagerService));
+    }
+
+    private SystemAuthServiceImpl passwordChangeService(SysUserMapper userMapper,
+                                                        IUserLoadService userLoadService,
+                                                        ISysOnlineUserService onlineUserService,
+                                                        AuthProperties authProperties) {
+        return new SystemAuthServiceImpl(
+                userMapper, mock(ICaptchaService.class), mock(AuthStrategyFactory.class),
+                userLoadService, onlineUserService, authProperties, mock(ConfigManagerService.class),
+                null, mock(ICacheService.class), null, null, null,
+                new RecoveryChannelSupport(Optional.empty(), Optional.empty()), null,
+                new PasswordPolicyService(null));
+    }
+
+    private LoginUser loginUser(Long passwordVersion) {
+        LoginUser loginUser = new LoginUser();
+        loginUser.setUserId(11L);
+        loginUser.setTenantId(1L);
+        loginUser.setPasswordVersion(passwordVersion);
+        return loginUser;
     }
 
     private RegisterRequest validRegisterRequest() {

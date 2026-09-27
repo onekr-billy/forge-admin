@@ -153,6 +153,8 @@ forge:
   auth:
     # 存量机密客户端全部升级为 BCrypt 后关闭。
     enable-legacy-client-secret-read: ${FORGE_AUTH_LEGACY_CLIENT_SECRET_READ_ENABLED:true}
+    # 用户主动改密后是否保留发起改密的当前会话；找回密码和管理员重置始终全部吊销。
+    keep-current-session-after-password-change: ${FORGE_AUTH_KEEP_CURRENT_SESSION_AFTER_PASSWORD_CHANGE:false}
   captcha:
     # 仅 dev/local Profile 可生效；生产即使误配为 true 也不回显
     dev-echo-code: ${FORGE_CAPTCHA_DEV_ECHO_CODE:false}

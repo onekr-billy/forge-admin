@@ -83,6 +83,11 @@ public class LoginUser implements Serializable {
     private Boolean forcePasswordChange;
 
     /**
+     * 登录时的密码凭证版本，用于跨实例吊销旧会话。
+     */
+    private Long passwordVersion;
+
+    /**
      * 角色ID列表
      */
     private List<Long> roleIds;

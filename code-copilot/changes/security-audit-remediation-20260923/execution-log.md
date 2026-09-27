@@ -92,7 +92,7 @@
 
 ### 环境阻断与未宣称完成项
 
-- `SystemAuthServiceImplPasswordRecoveryTest` 本轮 9 个用例均因 Mockito inline/Byte Buddy 无法 self-attach 报错；这是测试运行时限制，不记录为代码通过。相同用例在本次会话早期曾全部通过，当前仍以最新运行的环境阻断为准。
+- `SystemAuthServiceImplPasswordRecoveryTest` 最新 11 个用例在显式加载本地 Byte Buddy agent 后全部通过；未加载 agent 时 Mockito inline 仍会因当前 macOS/JDK 无法 self-attach，后续复跑必须保留相同 JVM 参数。
 - `FlowModelServiceImplTest` 中 9 个 Mockito 用例同样因 Byte Buddy attach 失败；流程解析的 13 个非 Mockito 测试和完整编译均通过。
 - 未连接真实 MySQL/Redis/对象存储/Flowable 服务，未执行 Flyway 实库迁移、Redis 故障切换、集群分片续传、真实跨租户接口矩阵或生产灰度。
 - 密码历史/过期策略、流程事件 event-id/Outbox 与补偿、低代码 DDL 发布 Outbox、CI SCA/SAST/SBOM 和 Playwright 恶意输入仍是后续任务；`tasks.md` 中保持未完成状态。
@@ -143,3 +143,28 @@
 ### 未覆盖
 
 - 未连接真实 Redis 集群，未执行节点切换、网络分区及 Lua 实库并发压测；本轮以 Lua 调用契约、服务行为单测和 Admin 聚合编译作为自动化证据。
+
+## 2026-09-27：A-05 密码凭证版本与跨实例会话失效
+
+### 实现
+
+- `sys_user` 新增 `password_version BIGINT NOT NULL DEFAULT 0`，以 `V1.0.188__add_user_password_version.sql` 提供 `information_schema` 防重复迁移；用户改密、找回密码和管理员重置均在密码更新 SQL 内原子递增版本。
+- 登录时把密码版本写入 `LoginUser` Token Session；Sa-Token 登录拦截器通过可扩展的 `LoginSessionValidator` 链调用系统插件校验器，逐请求读取数据库权威版本。该路径不依赖在线用户镜像或 Redis 版本缓存，跨实例更新和缓存丢失不会放行旧 Token。
+- 版本不一致、用户禁用/删除、租户成员关系撤销或数据库读取异常均 fail-closed，返回登录凭证失效；迁移前无版本字段的 Session 按 0 兼容，首次改密后自然失效。
+- 新增 `FORGE_AUTH_KEEP_CURRENT_SESSION_AFTER_PASSWORD_CHANGE`，Admin/App 显式配置且默认 false。开启时仅在数据库事务提交后更新当前 Session 的版本并排除当前 Token，其余会话仍吊销；读取或刷新新版本失败时退化为吊销全部会话。找回密码和管理员重置始终吊销全部会话。
+- 改密和管理员重置日志记录目标用户、配置选择及实际是否保留当前会话，不记录密码或完整 Token。
+
+### 验证
+
+- `LoginSessionValidationServiceTest`：3/3 通过，覆盖缺失登录用户、责任链短路及 auth starter 独立运行。
+- `PasswordVersionLoginSessionValidatorTest`：5/5 通过，覆盖版本一致、旧 Session 版本 0、多实例版本变化、用户不可用和数据库异常 fail-closed。
+- `SysUserPasswordVersionContractTest`：1/1 通过，确认改密与管理员重置两条 SQL 均原子递增凭证版本。
+- `SystemAuthServiceImplPasswordRecoveryTest`：11/11 通过，包含默认吊销当前会话、显式保留当前会话以及提交前不提前刷新 Session 的事务边界。
+- `SysUserServiceImplPasswordResetTest`：1/1 通过，确认管理员重置走版本递增 Mapper 并踢出目标用户全部会话。
+- 上述 System 插件定向测试合并运行 18/18 通过；`LoginSessionValidationServiceTest` 单独 3/3 通过。测试 JVM 显式加载 Byte Buddy agent 并启用 headless。
+- `mvn -pl forge-admin-server -am -DskipTests compile`：Admin 全依赖反应堆 46/46 成功。
+- `git diff --check`：通过。
+
+### 未覆盖
+
+- 未连接真实 MySQL/Redis，未执行 Flyway 实库迁移、两个真实应用实例间的旧 Token 回放或数据库故障注入；本轮以数据库权威版本设计、SQL 契约和服务级自动化测试作为证据。

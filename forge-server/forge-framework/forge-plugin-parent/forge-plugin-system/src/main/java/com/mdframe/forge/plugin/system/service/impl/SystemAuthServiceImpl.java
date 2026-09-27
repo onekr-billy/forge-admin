@@ -36,6 +36,8 @@ import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
@@ -484,8 +486,11 @@ public class SystemAuthServiceImpl implements IAuthService {
         boolean success = updateUserPassword(loginUser.getUserId(), loginUser.getTenantId(), encodedPassword);
         
         if (success) {
-            onlineUserService.kickoutAllSessions(loginUser.getUserId(), null);
-            log.info("用户修改密码成功: userId={}", loginUser.getUserId());
+            boolean keepCurrentSession = Boolean.TRUE.equals(
+                    authProperties.getKeepCurrentSessionAfterPasswordChange());
+            Long passwordVersion = keepCurrentSession ? loadCurrentCredentialVersion(loginUser) : null;
+            afterCommitOrNow(() -> handlePasswordChangeSessions(
+                    loginUser, keepCurrentSession, passwordVersion));
         }
         
         return success;
@@ -547,8 +552,10 @@ public class SystemAuthServiceImpl implements IAuthService {
         String encodedPassword = PasswordUtil.encrypt(rawPassword);
         boolean success = updateUserPassword(user.getId(), user.getTenantId(), encodedPassword);
         if (success) {
-            onlineUserService.kickoutAllSessions(user.getId(), null);
-            log.info("用户重置密码成功: userId={}, channel={}", user.getId(), channel);
+            afterCommitOrNow(() -> {
+                revokePasswordSessions(user.getId(), null);
+                log.info("用户重置密码成功: userId={}, channel={}", user.getId(), channel);
+            });
         }
         return success;
     }
@@ -759,6 +766,60 @@ public class SystemAuthServiceImpl implements IAuthService {
     protected boolean updateUserPassword(Long userId, Long tenantId, String encodedPassword) {
         return TenantContextHolder.executeIgnore(() -> userMapper.updateActiveUserPassword(
                 userId, tenantId, encodedPassword, LocalDateTime.now())) > 0;
+    }
+
+    private Long loadCurrentCredentialVersion(LoginUser loginUser) {
+        Long passwordVersion = TenantContextHolder.executeIgnore(() ->
+                userMapper.selectActivePasswordVersion(loginUser.getUserId(), loginUser.getTenantId()));
+        if (passwordVersion == null) {
+            log.warn("密码修改后无法读取凭证版本，按 fail-closed 策略吊销当前会话: userId={}",
+                    loginUser.getUserId());
+        }
+        return passwordVersion;
+    }
+
+    private void handlePasswordChangeSessions(LoginUser loginUser,
+                                              boolean keepCurrentSession,
+                                              Long passwordVersion) {
+        String excludedToken = null;
+        Long previousVersion = loginUser.getPasswordVersion();
+        if (keepCurrentSession && passwordVersion != null) {
+            try {
+                loginUser.setPasswordVersion(passwordVersion);
+                SessionHelper.setLoginUser(loginUser);
+                excludedToken = StpUtil.getTokenValue();
+            } catch (RuntimeException exception) {
+                loginUser.setPasswordVersion(previousVersion);
+                log.warn("密码修改后刷新当前会话失败，按 fail-closed 策略吊销全部会话: userId={}, exceptionType={}",
+                        loginUser.getUserId(), exception.getClass().getSimpleName());
+            }
+        }
+        boolean currentSessionKept = StrUtil.isNotBlank(excludedToken);
+        revokePasswordSessions(loginUser.getUserId(), currentSessionKept ? excludedToken : null);
+        log.info("用户修改密码成功: userId={}, keepCurrentSessionConfigured={}, currentSessionKept={}",
+                loginUser.getUserId(), keepCurrentSession, currentSessionKept);
+    }
+
+    private void revokePasswordSessions(Long userId, String excludedToken) {
+        try {
+            onlineUserService.kickoutAllSessions(userId, excludedToken);
+        } catch (RuntimeException exception) {
+            log.warn("在线会话镜像清理失败，数据库凭证版本将继续拒绝旧会话: userId={}, exceptionType={}",
+                    userId, exception.getClass().getSimpleName());
+        }
+    }
+
+    private void afterCommitOrNow(Runnable action) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            action.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
+            }
+        });
     }
 
     /**

@@ -79,4 +79,10 @@ public class AuthProperties {
      * 完成存量盘点和机会式升级后应关闭。
      */
     private Boolean enableLegacyClientSecretRead = true;
+
+    /**
+     * 用户主动修改密码后是否保留当前会话。
+     * 默认关闭；找回密码和管理员重置始终吊销全部旧会话。
+     */
+    private Boolean keepCurrentSessionAfterPasswordChange = false;
 }

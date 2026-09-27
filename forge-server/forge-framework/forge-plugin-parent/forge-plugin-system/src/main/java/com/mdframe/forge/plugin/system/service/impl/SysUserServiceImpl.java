@@ -38,9 +38,11 @@ import com.mdframe.forge.starter.core.session.LoginUser;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
 
@@ -49,6 +51,7 @@ import java.util.Objects;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> implements ISysUserService {
 
     private final SysUserMapper userMapper;
@@ -304,13 +307,14 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         assertCanManageUser(userId);
         assertNotSelfManagementUnlessAdmin(userId);
         passwordPolicyService.validate(newPassword);
-        SysUser user = new SysUser();
-        user.setId(userId);
-        user.setPassword(PasswordUtil.encrypt(newPassword));
-        user.setForcePasswordChange(true);
-        boolean updated = TenantContextHolder.executeIgnore(() -> userMapper.updateById(user) > 0);
+        String encodedPassword = PasswordUtil.encrypt(newPassword);
+        boolean updated = TenantContextHolder.executeIgnore(() -> userMapper.resetUserPassword(
+                userId, encodedPassword, LocalDateTime.now())) > 0;
         if (updated) {
             StpUtil.kickout(userId);
+            LoginUser operator = SessionHelper.getLoginUser();
+            log.info("管理员重置密码完成: targetUserId={}, operatorUserId={}, keepCurrentSession=false",
+                    userId, operator == null ? null : operator.getUserId());
         }
         return updated;
     }

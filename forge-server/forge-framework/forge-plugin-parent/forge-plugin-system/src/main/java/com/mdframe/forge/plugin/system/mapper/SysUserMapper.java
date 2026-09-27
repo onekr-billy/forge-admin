@@ -65,6 +65,18 @@ public interface SysUserMapper extends BaseMapper<SysUser> {
                                  @Param("encodedPassword") String encodedPassword,
                                  @Param("updateTime") java.time.LocalDateTime updateTime);
 
+    /** Reset a managed user's password and advance the credential version. */
+    int resetUserPassword(@Param("userId") Long userId,
+                          @Param("encodedPassword") String encodedPassword,
+                          @Param("updateTime") java.time.LocalDateTime updateTime);
+
+    /**
+     * Read the authoritative credential version for an active user in the selected tenant.
+     * This deliberately bypasses caches so a password change on another instance is visible immediately.
+     */
+    Long selectActivePasswordVersion(@Param("userId") Long userId,
+                                     @Param("tenantId") Long tenantId);
+
     /**
      * 协同目录同步：按手机号/邮箱查询租户内未删除用户（身份冲突检测，仅限本租户）
      */

@@ -150,3 +150,12 @@ rg -n "new Function|AsyncFunction|engine\.eval|StrictHostKeyChecking=no|fastjson
 - 缓存契约：执行 `RedissonCacheServiceImplTest`，确认 `INCRBY + 首建 PEXPIRE` 使用单次 Lua，非正 TTL 拒绝。
 - 聚合兼容：执行 `mvn -pl forge-admin-server -am -DskipTests compile`，验证共享 `ICacheService` 接口变化的 46 模块编译。
 - 环境限制：无真实 Redis 集群，本轮不声明节点切换、网络分区或 Lua 实库并发压测通过。
+
+## 9. 2026-09-27 密码凭证版本增量验证
+
+- 风险范围：用户改密、找回密码、管理员重置、Sa-Token 受保护请求和多实例旧会话吊销。
+- 数据契约：两条密码更新 SQL 必须在同一语句中执行 `password_version + 1`；Flyway 为存量用户补齐非空默认版本 0。
+- 请求期校验：Token Session 版本与数据库权威版本一致才允许继续；用户禁用、删除、租户成员关系撤销、版本不一致或数据库读取异常均 fail-closed。
+- 滚动兼容：迁移前创建且不含版本字段的会话按版本 0 处理；首次改密后数据库版本递增，所有旧会话立即失效。
+- 产品配置：`FORGE_AUTH_KEEP_CURRENT_SESSION_AFTER_PASSWORD_CHANGE` 默认 false；显式开启时只刷新发起改密的当前会话版本，其余会话仍失效。找回密码和管理员重置不受该开关影响，始终吊销全部会话。
+- 环境限制：本轮不连接真实 MySQL/Redis，不声明 Flyway 实库迁移、双 JVM 或网络分区演练通过。
