@@ -192,7 +192,7 @@ const latestMessages = ref([])
 const menuSheetVisible = ref(false)
 const menuSearchKeyword = ref('')
 
-const rawAvatarUrl = computed(() => authStore.userInfo?.avatar || '')
+const rawAvatarUrl = computed(() => authStore.avatar)
 
 const fallbackMenuItems = [
   {

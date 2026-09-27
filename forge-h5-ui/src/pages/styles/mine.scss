@@ -1,5 +1,5 @@
 .mine-page {
-  min-height: 100vh;
+  min-height: var(--forge-page-height, 100vh);
   background: var(--page-bg);
 }
 
@@ -10,7 +10,7 @@
   flex-direction: column;
   gap: 32rpx;
   margin: 0 auto;
-  padding: calc(32rpx + env(safe-area-inset-top)) 32rpx calc(136rpx + env(safe-area-inset-bottom));
+  padding: 32rpx 32rpx calc(136rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
 

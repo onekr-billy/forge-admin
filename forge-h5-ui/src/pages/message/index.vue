@@ -3,12 +3,9 @@
     <AiFeedbackHost />
     <view class="message-content">
       <view class="page-head">
-        <button class="back-button" @click="goBack">
-          <AiIcon name="chevron-left" color="#4e5969" size="md" />
-        </button>
         <view class="title-block">
           <text class="page-title">消息中心</text>
-          <text class="page-subtitle">通知、审批提醒和系统消息集中处理</text>
+          <text class="page-subtitle">审批提醒与系统通知</text>
         </view>
         <button class="refresh-button" @click="refresh">
           <AiIcon name="refresh-cw" color="#4266f7" size="sm" />
@@ -57,10 +54,10 @@
             :key="item.id"
             class="message-card"
             :class="{ unread: item.readFlag === 0 }"
-            @click="openDetail(item)"
+            @click="openMessage(item)"
           >
-            <view class="message-icon" :class="getToneClass(item)">
-              <AiIcon :name="isApprovalMessage(item) ? 'check-square' : 'message-square'" :color="getToneColor(item)" size="md" />
+            <view class="message-icon">
+              <AiIcon :name="isApprovalMessage(item) ? 'check-square' : 'message-square'" color="#4266f7" size="sm" />
             </view>
             <view class="message-main">
               <view class="message-meta">
@@ -75,52 +72,12 @@
               </view>
               <text class="message-desc">{{ stripHtml(item.content || item.description || '-') }}</text>
             </view>
+            <AiIcon name="chevron-right" color="#86909c" size="sm" />
           </view>
         </template>
       </view>
     </view>
 
-    <AiPopupSheet
-      v-model="showDetail"
-      :title="currentMessage?.title || '消息详情'"
-      :description="detailDescription"
-      max-height="84vh"
-      body-max-height="calc(84vh - 230rpx - env(safe-area-inset-bottom))"
-    >
-      <view class="detail-content">
-        <view class="detail-tags">
-          <AiTag :type="getTagType(currentMessage)" size="small" round>
-            {{ getMessageCategory(currentMessage) }}
-          </AiTag>
-          <AiTag :type="currentMessage?.readFlag === 0 ? 'danger' : 'success'" size="small" round>
-            {{ currentMessage?.readFlag === 0 ? '未读' : '已读' }}
-          </AiTag>
-        </view>
-        <rich-text v-if="detailHtml" class="detail-html" :nodes="detailHtml" />
-        <text v-else class="detail-empty">暂无正文内容</text>
-
-      </view>
-
-      <template #footer>
-        <view class="detail-actions">
-          <AiButton
-            v-if="currentMessage?.readFlag === 0 && !isApprovalMessage(currentMessage)"
-            variant="secondary"
-            size="sm"
-            @click="markRead(currentMessage)"
-          >
-            标记已读
-          </AiButton>
-          <AiButton
-            v-if="hasBusinessAction"
-            size="sm"
-            @click="openBiz(currentMessage)"
-          >
-            {{ businessActionText }}
-          </AiButton>
-        </view>
-      </template>
-    </AiPopupSheet>
   </view>
 </template>
 
@@ -131,7 +88,6 @@ import AiEmpty from '@/components/AiEmpty.vue'
 import AiFeedbackHost from '@/components/feedback/AiFeedbackHost.vue'
 import AiIcon from '@/components/AiIcon.vue'
 import AiListSkeleton from '@/components/AiListSkeleton.vue'
-import AiPopupSheet from '@/components/AiPopupSheet.vue'
 import AiSearchBar from '@/components/AiSearchBar.vue'
 import AiTag from '@/components/AiTag.vue'
 import api from '@/api'
@@ -142,7 +98,6 @@ import {
   isFlowTodoMessage,
   resolveFlowMessageMode,
   resolveFlowMessageTaskId,
-  shouldAutoMarkMessageRead,
 } from '@/utils/message-flow-navigation'
 import { toast } from '@/utils/notify'
 
@@ -152,9 +107,8 @@ const bizTypes = ref([])
 const unreadCount = ref(0)
 const keyword = ref('')
 const activeTab = ref('all')
-const showDetail = ref(false)
-const currentMessage = ref(null)
 const pendingOpenId = ref('')
+const openingMessageId = ref('')
 
 const tabs = computed(() => [
   { key: 'all', label: '全部' },
@@ -181,20 +135,6 @@ const markableUnreadMessages = computed(() => messages.value.filter(item => item
 const markAllReadLabel = computed(() => messages.value.some(item => item.readFlag === 0 && isApprovalMessage(item))
   ? '其他消息全部已读'
   : '全部标为已读')
-const hasBusinessAction = computed(() => Boolean(
-  currentMessage.value && (isApprovalMessage(currentMessage.value) || currentMessage.value.bizType || currentMessage.value.jumpUrl),
-))
-const businessActionText = computed(() => {
-  if (!isApprovalMessage(currentMessage.value)) return '查看业务'
-  return Number(currentMessage.value?.readFlag) === 0 ? '去处理' : '查看处理结果'
-})
-
-const detailHtml = computed(() => currentMessage.value?.content || '')
-const detailDescription = computed(() => {
-  const time = formatMessageTime(currentMessage.value?.createTime || currentMessage.value?.receiveTime)
-  return time ? `接收时间 ${time}` : '消息详情'
-})
-
 onLoad((query = {}) => {
   pendingOpenId.value = query.id ? String(query.id) : ''
 })
@@ -203,7 +143,7 @@ onShow(async () => {
   await refresh()
   if (pendingOpenId.value) {
     const target = messages.value.find(item => String(item.id) === pendingOpenId.value)
-    await openDetail(target || { id: pendingOpenId.value })
+    await openMessage(target || { id: pendingOpenId.value })
     pendingOpenId.value = ''
   }
 })
@@ -275,23 +215,43 @@ function switchTab(key) {
   activeTab.value = key
 }
 
-async function openDetail(item) {
+async function openMessage(item) {
+  if (!item?.id || openingMessageId.value) return
+  openingMessageId.value = String(item.id)
   try {
     const res = await api.getMessageDetail(item.id)
-    currentMessage.value = {
+    const message = {
       ...item,
       ...(res?.data || {}),
       readFlag: Number((res?.data || item).readFlag ?? item.readFlag ?? 0),
     }
-    showDetail.value = true
-    if (shouldAutoMarkMessageRead(currentMessage.value)) {
-      await markRead(currentMessage.value, { silent: true })
+    const route = resolveBizRoute(message)
+    if (isApprovalMessage(message) || isFlowTaskRoute(route)) {
+      const taskId = resolveFlowMessageTaskId(message, route)
+      if (taskId) {
+        uni.navigateTo({ url: buildFlowTaskDetailUrl(taskId, resolveFlowMessageMode(message), message.id) })
+      }
+      else {
+        uni.switchTab({ url: '/pages/todo' })
+      }
+      return
     }
+    if (message.readFlag === 0) await markRead(message, { silent: true })
+    if (route.startsWith('/pages/') && !route.startsWith('/pages/message/')) {
+      uni.navigateTo({ url: route, fail: () => openMessagePage(message.id) })
+      return
+    }
+    openMessagePage(message.id)
   }
   catch (error) {
-    console.error('加载消息详情失败:', error)
-    toast('消息详情加载失败', { type: 'error' })
+    console.error('打开消息失败:', error)
+    toast('打开消息失败，请稍后重试', { type: 'error' })
   }
+  finally { openingMessageId.value = '' }
+}
+
+function openMessagePage(id) {
+  uni.navigateTo({ url: `/pages/message/detail?id=${encodeURIComponent(String(id))}` })
 }
 
 async function markRead(item, options = {}) {
@@ -304,9 +264,6 @@ async function markRead(item, options = {}) {
     const listItem = messages.value.find(message => String(message.id) === String(item.id))
     if (listItem) {
       listItem.readFlag = 1
-    }
-    if (String(currentMessage.value?.id || '') === String(item.id)) {
-      currentMessage.value.readFlag = 1
     }
     unreadCount.value = Math.max(0, unreadCount.value - 1)
     if (!options.silent) {
@@ -346,29 +303,6 @@ async function markAllRead() {
   }
 }
 
-function openBiz(message) {
-  const route = resolveBizRoute(message)
-  showDetail.value = false
-  if (isApprovalMessage(message) || isFlowTaskRoute(route)) {
-    const taskId = resolveFlowMessageTaskId(message, route)
-    if (taskId) {
-      uni.navigateTo({ url: buildFlowTaskDetailUrl(taskId, resolveFlowMessageMode(message), message?.id) })
-    }
-    else {
-      uni.switchTab({ url: '/pages/todo' })
-    }
-    return
-  }
-  if (route && route.startsWith('/pages/')) {
-    uni.navigateTo({
-      url: route,
-      fail: () => toast('移动端业务页暂未接入', { type: 'info' }),
-    })
-    return
-  }
-  toast('该消息暂无移动端业务入口', { type: 'info' })
-}
-
 function resolveBizRoute(message) {
   if (message?.jumpUrl) {
     return replaceRouteParams(message.jumpUrl, message)
@@ -405,26 +339,12 @@ function getMessageCategory(item) {
 
 function getTagType(item) {
   if (isApprovalMessage(item)) {
-    return 'success'
+    return 'primary'
   }
   if (item?.readFlag === 0) {
     return 'primary'
   }
   return 'default'
-}
-
-function getToneClass(item) {
-  if (isApprovalMessage(item)) {
-    return 'tone-emerald'
-  }
-  return item?.readFlag === 0 ? 'tone-blue' : 'tone-slate'
-}
-
-function getToneColor(item) {
-  if (isApprovalMessage(item)) {
-    return '#16815d'
-  }
-  return item?.readFlag === 0 ? '#4266f7' : '#4e5969'
 }
 
 function stripHtml(value) {
@@ -470,14 +390,6 @@ function parseMessageDate(value) {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
-function goBack() {
-  const pages = getCurrentPages()
-  if (pages.length > 1) {
-    uni.navigateBack()
-    return
-  }
-  uni.switchTab({ url: '/pages/index/index' })
-}
 </script>
 
 <style lang="scss" scoped src="../styles/message.scss"></style>

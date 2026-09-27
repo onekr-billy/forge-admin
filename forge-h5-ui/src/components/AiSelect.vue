@@ -72,20 +72,20 @@ function handleClear() {
 
 <style lang="scss" scoped>
 .ai-select {
-  min-width: 160rpx;
+  min-width: 80px;
 
   &--compact {
-    min-width: 172rpx;
+    min-width: 86px;
   }
 }
 
 .ai-select :deep(.wd-picker__cell) {
   display: flex;
-  min-height: 88rpx;
+  min-height: 44px;
   align-items: center;
-  padding: 0 24rpx;
-  border: 1rpx solid var(--forge-color-border, #c9cdd4);
-  border-radius: var(--forge-radius-control, 12rpx);
+  padding: 0 12px;
+  border: 1px solid var(--forge-color-border, #c9cdd4);
+  border-radius: 6px;
   background: var(--forge-color-surface, #fff);
   box-sizing: border-box;
 }
@@ -93,27 +93,27 @@ function handleClear() {
 .ai-select :deep(.wd-cell__wrapper),
 .ai-select :deep(.wd-picker__value) {
   display: flex;
-  min-height: 86rpx;
+  min-height: 42px;
   align-items: center;
   line-height: 1.5;
 }
 
 .ai-select--compact :deep(.wd-picker__cell) {
-  min-height: 88rpx;
-  padding: 0 18rpx;
-  border-radius: var(--forge-radius-control, 12rpx);
+  min-height: 44px;
+  padding: 0 9px;
+  border-radius: 6px;
 }
 
 .ai-select-description {
   display: block;
-  margin-top: 8rpx;
+  margin-top: 4px;
   color: var(--forge-color-text-muted, #86909c);
-  font-size: 26rpx;
+  font-size: 13px;
 }
 
 .ai-select :deep(.wd-picker__value) {
   color: var(--forge-color-text, #1d2129);
-  font-size: 28rpx;
+  font-size: 14px;
 }
 
 .ai-select :deep(.wd-picker__placeholder) {

@@ -1,7 +1,7 @@
 .login-page,
 .page-shell,
 .wecom-loading-shell {
-  min-height: 100vh;
+  min-height: var(--forge-page-height, 100vh);
   box-sizing: border-box;
 }
 
@@ -16,7 +16,7 @@
 
 .login-masthead {
   min-height: 300rpx;
-  padding: calc(24rpx + env(safe-area-inset-top)) 32rpx 48rpx;
+  padding: 24rpx 32rpx 48rpx;
   color: #ffffff;
   background: var(--primary-color);
   box-sizing: border-box;
@@ -238,7 +238,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: calc(24rpx + env(safe-area-inset-top)) 28rpx calc(24rpx + env(safe-area-inset-bottom));
+  padding: 24rpx 28rpx calc(24rpx + env(safe-area-inset-bottom));
 }
 
 .wecom-loading-content {

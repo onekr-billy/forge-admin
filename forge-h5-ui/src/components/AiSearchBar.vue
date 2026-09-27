@@ -100,18 +100,19 @@ function handleBlur(event) {
   width: 100%;
 }
 
-:deep(.wd-search) {
+:deep(.wd-search.ai-search-bar__control) {
   padding: 0;
   background: transparent;
 }
 
 :deep(.wd-search__block) {
   display: flex;
-  min-height: 88rpx;
+  height: 44px;
+  min-width: 0;
   align-items: center;
-  padding: 0 24rpx;
-  border: 1rpx solid var(--border-color, #c9cdd4);
-  border-radius: var(--radius-control, 12rpx);
+  padding: 0 12px;
+  border: 1px solid var(--border-color, #c9cdd4);
+  border-radius: 6px;
   background: #fff;
   transition: border-color .16s ease, background-color .16s ease;
 }
@@ -122,34 +123,65 @@ function handleBlur(event) {
 
 :deep(.wd-search__field) {
   display: flex;
-  height: 86rpx;
+  height: 100%;
+  min-width: 0;
+  flex: 1;
   align-items: center;
   background: transparent;
 }
 
+:deep(.wd-search__search-left-icon) {
+  position: static;
+  display: flex;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  align-items: center;
+  justify-content: center;
+  margin-right: 8px;
+  color: var(--text-muted, #86909c);
+  font-size: 16px;
+  transform: none;
+}
+
 :deep(.wd-search__input) {
-  height: 86rpx;
+  height: 100%;
+  min-width: 0;
+  flex: 1;
   padding: 0;
   color: #1d2129;
-  font-size: 28rpx;
+  font-size: 14px;
   font-weight: 400;
-  line-height: 86rpx;
+  line-height: normal;
   box-sizing: border-box;
+}
+
+:deep(.wd-search__input .uni-input-wrapper),
+:deep(.wd-search__input .uni-input-form),
+:deep(.wd-search__input .uni-input-input) {
+  height: 100%;
+  min-width: 0;
+}
+
+:deep(.wd-search__input .uni-input-placeholder) {
+  display: flex;
+  height: 100%;
+  align-items: center;
 }
 
 :deep(.wd-search__placeholder-txt) {
   color: #86909c;
-  font-size: 28rpx;
+  font-size: 14px;
   font-weight: 400;
-  line-height: 86rpx;
+  line-height: normal;
 }
 
 :deep(.wd-search__search-icon),
-:deep(.wd-search__clear) { display: flex; align-items: center; align-self: stretch; }
+:deep(.wd-search__clear) { display: flex; align-items: center; justify-content: center; }
 
 :deep(.wd-search__cancel) {
   color: var(--primary-color, #4266f7);
-  font-size: 26rpx;
+  font-size: 13px;
   font-weight: 500;
 }
 

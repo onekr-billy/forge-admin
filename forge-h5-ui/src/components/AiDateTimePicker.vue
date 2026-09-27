@@ -101,11 +101,11 @@ function handleClear() {
 <style lang="scss" scoped>
 :deep(.wd-datetime-picker__cell) {
   display: flex;
-  min-height: 88rpx;
+  min-height: 44px;
   align-items: center;
-  padding: 0 20rpx;
-  border: 1rpx solid var(--forge-color-border, #c9cdd4);
-  border-radius: var(--forge-radius-control, 12rpx);
+  padding: 0 10px;
+  border: 1px solid var(--forge-color-border, #c9cdd4);
+  border-radius: 6px;
   background: var(--forge-color-surface, #fff);
   box-sizing: border-box;
 }
@@ -113,7 +113,7 @@ function handleClear() {
 :deep(.wd-cell__wrapper),
 :deep(.wd-datetime-picker__value) {
   display: flex;
-  min-height: 86rpx;
+  min-height: 42px;
   align-items: center;
   line-height: 1.5;
 }

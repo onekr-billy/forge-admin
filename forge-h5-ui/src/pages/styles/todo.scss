@@ -1,6 +1,6 @@
 .todo-page {
   display: flex;
-  height: 100vh;
+  height: var(--forge-page-height, 100vh);
   flex-direction: column;
   background: var(--page-bg);
 }
@@ -12,9 +12,9 @@
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  gap: 24rpx;
+  gap: 20rpx;
   margin: 0 auto;
-  padding: calc(32rpx + env(safe-area-inset-top)) 32rpx calc(136rpx + env(safe-area-inset-bottom));
+  padding: 24rpx 32rpx calc(136rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
 
@@ -24,10 +24,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 20rpx;
-  padding: 16rpx 20rpx;
-  border: 1rpx solid var(--border-color);
-  border-radius: var(--radius-card);
-  background: #fff;
+  padding: 0 4rpx;
   box-sizing: border-box;
 }
 
@@ -67,39 +64,39 @@
 .todo-tools {
   display: flex;
   flex-direction: column;
-  gap: 20rpx;
-  padding: 0 20rpx 20rpx;
-  border: 1rpx solid var(--border-color);
-  border-radius: var(--radius-card);
+  gap: 12px;
+  padding: 0 16px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
   background: #fff;
 }
 
 .work-scope-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-bottom: 1rpx solid var(--border-light);
+  border-bottom: 1px solid var(--border-light);
 }
 
 .work-scope-tab {
   position: relative;
-  min-height: 88rpx;
+  min-height: 44px;
   margin: 0;
-  padding: 0 8rpx;
+  padding: 0 4px;
   border: 0;
   border-radius: 0;
   color: var(--text-muted);
-  font-size: 24rpx;
+  font-size: 14px;
   background: transparent;
 }
 
 .work-scope-tab.active { color: var(--text-strong); font-weight: 500; }
 .work-scope-tab.active::before {
   position: absolute;
-  right: 18rpx;
-  bottom: -1rpx;
-  left: 18rpx;
-  height: 4rpx;
-  border-radius: 4rpx 4rpx 0 0;
+  right: 9px;
+  bottom: -1px;
+  left: 9px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
   background: var(--primary-color);
   content: '';
 }
@@ -107,25 +104,26 @@
 .todo-query-row {
   display: flex;
   flex-direction: column;
-  gap: 16rpx;
+  gap: 8px;
 }
 
 .category-select { width: 100%; }
 
 .status-filter-list {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12rpx;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .status-filter-button {
-  min-height: 88rpx;
+  min-width: 68px;
+  min-height: 44px;
   margin: 0;
-  padding: 0 12rpx;
-  border: 1rpx solid var(--border-color);
-  border-radius: var(--radius-control);
+  padding: 0 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
   color: var(--text-secondary);
-  font-size: 22rpx;
+  font-size: 13px;
   background: #fff;
 }
 
@@ -277,20 +275,19 @@
   .todo-content {
     display: grid;
     grid-template-areas:
-      "head head"
-      "tools list";
-    grid-template-columns: var(--forge-aside-width) minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
+      "head"
+      "tools"
+      "list";
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
     gap: 24px;
     padding: 24px 24px 112px;
   }
 
   .todo-header { grid-area: head; }
-  .todo-tools { grid-area: tools; align-self: start; }
+  .todo-tools { grid-area: tools; }
   .todo-list { grid-area: list; width: 100%; height: 100%; }
-  .work-scope-tabs { grid-template-columns: 1fr; }
-  .work-scope-tab { text-align: left; }
-  .work-scope-tab.active::before { top: 18rpx; right: auto; bottom: 18rpx; left: -1rpx; width: 4rpx; height: auto; border-radius: 0 4rpx 4rpx 0; }
+  .todo-query-row { display: grid; grid-template-columns: minmax(0, 1fr) 240px; align-items: stretch; }
   .task-card { margin-bottom: 12px; padding: 20px 24px; }
   .task-card__meta-grid { grid-template-columns: repeat(2, minmax(0, 220px)); }
 }

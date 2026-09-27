@@ -24,6 +24,7 @@ const title = ref('应用功能')
 
 onLoad((query = {}) => {
   title.value = String(query.title || '应用功能')
+  uni.setNavigationBarTitle({ title: title.value })
   const configKey = String(query.configKey || query.runtimeConfigKey || query.pageConfigKey || '').trim()
   const path = String(query.path || '').trim()
   if (configKey || /(?:crud-page|crud)\//.test(path)) {

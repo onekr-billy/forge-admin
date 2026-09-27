@@ -285,7 +285,7 @@ import { toast } from '@/utils/notify'
 const authStore = useAuthStore()
 const userInfo = computed(() => authStore.userInfo || {})
 
-const rawAvatarUrl = computed(() => userInfo.value.avatar || '')
+const rawAvatarUrl = computed(() => authStore.avatar)
 
 const profileSheetVisible = ref(false)
 const passwordSheetVisible = ref(false)
@@ -456,6 +456,7 @@ const menuGroups = computed(() => [
 onShow(async () => {
   hideNativeTabBar()
   messageQuietMode.value = uni.getStorageSync('forge_h5_quiet_mode') === '1'
+  await authStore.fetchUserInfo().catch(error => console.warn('更新头像信息失败:', error))
   if (!authStore.menus.length && !authStore.permissions.length) {
     await authStore.fetchAccessSnapshot()
   }

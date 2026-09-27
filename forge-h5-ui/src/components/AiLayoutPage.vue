@@ -51,7 +51,7 @@ const props = defineProps({
   },
   showNav: {
     type: Boolean,
-    default: true
+    default: false
   },
   showBack: {
     type: Boolean,
@@ -114,12 +114,12 @@ function handleBack() {
 .ai-layout-page {
   position: relative;
   display: flex;
-  min-height: 100vh;
+  min-height: var(--forge-page-height, 100vh);
   flex-direction: column;
 }
 
 .ai-layout-page--fixed {
-  height: 100vh;
+  height: var(--forge-page-height, 100vh);
   overflow: hidden;
 }
 

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import api from '@/api'
+import { useAppStore } from './app'
 import { loadRuntimeCryptoConfig } from '@/utils/crypto/crypto-config'
 import { rsaEncrypt } from '@/utils/crypto/rsa'
 
@@ -27,6 +28,7 @@ export const useAuthStore = defineStore('auth', {
       const roles = state.userInfo?.roleKeys || state.userInfo?.roles || []
       return Array.isArray(roles) && roles.length ? roles.join(' / ') : '移动端用户'
     },
+    avatar: state => state.userInfo?.avatar || state.userInfo?.staffInfo?.avatar || '',
   },
   actions: {
     setToken(data = {}) {
@@ -60,6 +62,20 @@ export const useAuthStore = defineStore('auth', {
       this.userInfo = null
       this.menus = []
       this.permissions = []
+      useAppStore().setBrandConfig(null)
+    },
+    async loadBrand(tenantId, force = false) {
+      const appStore = useAppStore()
+      if (!force && appStore.brandConfig && String(appStore.brandConfig.tenantId || '') === String(tenantId || '')) return appStore.brandConfig
+      try {
+        const response = await api.getLoginConfig({
+          userClient: import.meta.env.VITE_USER_CLIENT || 'h5',
+          ...(tenantId ? { tenantId } : {}),
+        })
+        appStore.setBrandConfig(response?.data || null)
+      }
+      catch (error) { console.warn('加载租户品牌配置失败:', error) }
+      return appStore.brandConfig
     },
     async encryptPassword(password, enabled) {
       if (!enabled) {
@@ -85,6 +101,7 @@ export const useAuthStore = defineStore('auth', {
         userClient,
         ...(form.tenantId ? { tenantId: form.tenantId } : {}),
       })
+      useAppStore().setBrandConfig(loginConfigResponse?.data || null)
       const passwordEncryptionEnabled = loginConfigResponse?.data?.enablePasswordEncryption !== false
       const password = await this.encryptPassword(form.password, passwordEncryptionEnabled)
       const payload = {
@@ -124,6 +141,8 @@ export const useAuthStore = defineStore('auth', {
       }
       const res = await api.getUserInfo()
       this.setUserInfo(res.data || null)
+      const tenantId = this.userInfo?.tenantId
+      if (tenantId && String(useAppStore().brandConfig?.tenantId || '') !== String(tenantId)) await this.loadBrand(tenantId)
       return this.userInfo
     },
     async fetchAccessSnapshot() {

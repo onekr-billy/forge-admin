@@ -61,7 +61,10 @@ test('message and todo pages keep the handling round trip continuous', () => {
 
   assert.match(messageSource, /target \|\| \{ id: pendingOpenId\.value \}/)
   assert.match(messageSource, /resolveFlowMessageTaskId\(message, route\)/)
-  assert.match(messageSource, /buildFlowTaskDetailUrl\(taskId, resolveFlowMessageMode\(message\), message\?\.id\)/)
+  assert.match(messageSource, /buildFlowTaskDetailUrl\(taskId, resolveFlowMessageMode\(message\), message\.id\)/)
+  assert.match(messageSource, /@click="openMessage\(item\)"/)
+  assert.doesNotMatch(messageSource, /<AiPopupSheet/)
+  assert.match(messageSource, /openMessagePage\(message\.id\)/)
   assert.match(messageSource, /api\.markMessagesReadBatch\(messageIds\)/)
   assert.match(todoSource, /onShow\(async \(\) => \{\s*await loadTasks\(\{ reset: true \}\)/)
   assert.match(detailSource, /await api\.markMessageRead\(sourceMessageId\.value\)/)

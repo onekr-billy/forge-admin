@@ -1,16 +1,6 @@
 <template>
   <view class="todo-detail-page">
     <AiFeedbackHost />
-    <view class="detail-nav">
-      <button class="nav-back" @click="goBack">
-        <AiIcon icon="/static/icons/ai-icon/arrow-left.svg" color="#1d2129" size="sm" />
-      </button>
-      <text class="nav-title">审批详情</text>
-      <button class="nav-more" @click="refresh">
-        <AiIcon icon="/static/icons/ai-icon/refresh-cw.svg" color="#4e5969" size="sm" />
-      </button>
-    </view>
-
     <scroll-view class="detail-scroll" scroll-y :show-scrollbar="false">
       <view v-if="loading" class="detail-skeleton">
         <AiListSkeleton :rows="2" />
@@ -18,6 +8,7 @@
       </view>
       <template v-else-if="task">
         <TodoTaskSummary :task="task" />
+        <button class="detail-refresh" @click="refresh"><AiIcon name="refresh-cw" color="#4266f7" size="sm" /><text>刷新详情</text></button>
 
         <AiTabs v-model="activeTabIndex" :tabs="detailTabs" class="detail-tabs">
           <AiTab :index="0">
@@ -123,7 +114,7 @@
     <view v-if="task && !readonlyMode" class="action-bar">
       <AiButton v-if="isCandidateTask" block size="sm" :loading="claimLoading" @click="claimTask">签收后处理</AiButton>
       <template v-else>
-        <AiButton v-if="canDelegate || canTerminate" class="more-action" size="sm" variant="secondary" :disabled="actionLoading" @click="moreVisible = true">
+        <AiButton v-if="canDelegate || canTerminate" class="more-action" size="sm" variant="secondary" :disabled="Boolean(blockedReason) || actionLoading" @click="moreVisible = true">
           <template #leftIcon><AiIcon icon="/static/icons/ai-icon/more-horizontal.svg" color="#4e5969" size="sm" /></template>
           更多
         </AiButton>
@@ -164,17 +155,17 @@
       </view>
     </AiPopupSheet>
 
-    <AiPopupSheet v-model="delegateVisible" title="转办任务" description="选择处理人后，再确认转办">
+    <AiPopupSheet v-model="delegateVisible" title="转办任务" description="选择处理人后，再确认转办" max-height="90vh" body-max-height="calc(90vh - 230rpx - env(safe-area-inset-bottom))">
       <view class="delegate-search"><AiSearchBar v-model="userKeyword" placeholder="搜索姓名或用户名" @search="loadUsers" @clear="loadUsers" /></view>
       <view v-if="delegateUser" class="delegate-choice">
-        <view class="delegate-choice__avatar">{{ userInitial(delegateUser) }}</view>
+        <view class="delegate-choice__avatar"><AiAuthImage v-if="delegateUser.avatar" :src="delegateUser.avatar" mode="aspectFill" /><text v-else>{{ userInitial(delegateUser) }}</text></view>
         <view class="delegate-choice__copy"><text>已选择</text><text>{{ delegateUserName(delegateUser) }}</text></view>
         <AiIcon icon="/static/icons/ai-icon/check-circle.svg" color="#4266f7" size="md" />
       </view>
       <view class="user-list">
         <AiListSkeleton v-if="usersLoading" :rows="3" compact />
         <button v-for="user in users" v-else :key="user.id" class="user-row" :class="{ active: isDelegateUserSelected(user) }" @click.stop="selectDelegateUser(user)">
-          <view class="user-avatar">{{ userInitial(user) }}</view>
+          <view class="user-avatar"><AiAuthImage v-if="user.avatar" :src="user.avatar" mode="aspectFill" /><text v-else>{{ userInitial(user) }}</text></view>
           <view class="user-copy">
             <text class="user-name">{{ delegateUserName(user) }}</text>
             <text class="user-meta">{{ user.username }}{{ user.deptName ? ` · ${user.deptName}` : '' }}</text>
@@ -203,6 +194,7 @@
 import { computed, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import AiButton from '@/components/AiButton.vue'
+import AiAuthImage from '@/components/AiAuthImage.vue'
 import AiFeedbackHost from '@/components/feedback/AiFeedbackHost.vue'
 import AiIcon from '@/components/AiIcon.vue'
 import AiListSkeleton from '@/components/AiListSkeleton.vue'
@@ -222,6 +214,7 @@ import { showConfirmDialog } from '@/utils/dialog'
 import { createFlowActionCredentials } from '@/utils/flow-action-idempotency'
 import { compactObject as compact, parseNestedJson as parseJson, resolveApiErrorMessage as resolveErrorMessage } from '@/utils/flow-page'
 import { toast } from '@/utils/notify'
+import { hasDeclaredFormCreateRules, resolveTaskFormFields } from '@/utils/form-create-mobile'
 import { normalizeDictOptions } from '@/utils/lowcode-runtime'
 import {
   adaptBusinessTaskFields,
@@ -324,7 +317,7 @@ const mainFields = computed(() => {
     return adaptBusinessTaskFields(context.fields, context.fieldPermissions)
   if (businessSchemaFallback.value.length)
     return adaptBusinessTaskFields(businessSchemaFallback.value, context?.fieldPermissions)
-  return adaptBusinessTaskFields(resolveTaskFormFields(formInfo.value))
+  return adaptBusinessTaskFields(resolveTaskFormFields(formInfo.value), formInfo.value?.fieldPermissions || formInfo.value?.formFieldPermissions)
 })
 const allChildren = computed(() => adaptChildrenConfig(
   businessContext.value?.childrenConfig || [],
@@ -358,9 +351,13 @@ const formSchemaUnavailable = computed(() =>
   ),
 )
 const blockedReason = computed(() => {
+  if (!formInfo.value && !isConfiguredBusinessTaskForm(businessContext.value))
+    return '未取得审批节点的表单和权限配置，请刷新后重试。'
+  if (isConfiguredBusinessTaskForm(businessContext.value) && !hasLowcodeForm.value)
+    return '当前业务表单没有可在移动端渲染的字段配置，请检查流程节点表单资产。'
   if (formInfo.value?.formType === 'external' && formInfo.value?.formUrl && !hasLowcodeForm.value)
     return '此节点未提供可移动端渲染的字段描述，不能跳过 PC 专属表单直接审批。'
-  if (formInfo.value?.formType === 'dynamic' && formInfo.value?.formJson && !hasLowcodeForm.value)
+  if (hasDeclaredFormCreateRules(formInfo.value?.formJson) && !hasLowcodeForm.value)
     return '此动态表单没有可识别的字段描述，不能跳过填写直接审批。'
   return ''
 })
@@ -404,7 +401,7 @@ async function saveCommentPhrase() {
 }
 
 async function refresh() {
-  if (!taskId.value) return
+  if (!taskId.value) { loading.value = false; formLoading.value = false; return }
   loading.value = true
   formLoading.value = true
   historyLoading.value = true
@@ -426,20 +423,22 @@ async function refresh() {
     }
     if (!task.value) return
     const currentTaskId = task.value.taskId || task.value.id || taskId.value
-    const [businessResult, historyResult, diagramResult] = await Promise.allSettled([
-      readonlyMode.value ? loadReadonlyBusinessContext({ taskId: currentTaskId }) : loadBusinessContext({ taskId: currentTaskId }),
+    const formPromise = readonlyMode.value
+      ? api.getFlowProcessForm(compact({ taskId: currentTaskId, processInstanceId: task.value.processInstanceId, businessKey: task.value.businessKey, processDefKey: task.value.processDefKey || task.value.processDefinitionKey, taskDefKey: task.value.taskDefKey || task.value.taskDefinitionKey }))
+      : api.getFlowTaskForm(currentTaskId)
+    const [formResult, historyResult, diagramResult] = await Promise.allSettled([
+      formPromise,
       task.value.processInstanceId ? api.getFlowTaskHistory(task.value.processInstanceId) : Promise.resolve({ data: [] }),
       task.value.processInstanceId ? api.getFlowDiagramInfo(task.value.processInstanceId) : Promise.resolve({ data: null }),
     ])
-    const isBusinessManaged = businessResult.status === 'fulfilled' && isConfiguredBusinessTaskForm(businessResult.value)
-    if (!isBusinessManaged) {
-      const formResult = readonlyMode.value
-        ? await api.getFlowProcessForm(compact({ taskId: currentTaskId, processInstanceId: task.value.processInstanceId, businessKey: task.value.businessKey, processDefKey: task.value.processDefKey || task.value.processDefinitionKey, taskDefKey: task.value.taskDefKey || task.value.taskDefinitionKey }))
-        : await api.getFlowTaskForm(currentTaskId)
-      formInfo.value = formResult?.data || null
-      seedApprovalPointChecks(formInfo.value)
-      replaceMainData(formInfo.value?.variables)
-    }
+    formInfo.value = formResult.status === 'fulfilled' ? formResult.value?.data || null : null
+    const context = readonlyMode.value
+      ? await loadReadonlyBusinessContext({ taskId: currentTaskId })
+      : await loadBusinessContext({ taskId: currentTaskId })
+    if (context?.taskFormInfo) formInfo.value = { ...(formInfo.value || {}), ...context.taskFormInfo }
+    seedApprovalPointChecks(formInfo.value)
+    if (!isConfiguredBusinessTaskForm(context)) replaceMainData(formInfo.value?.variables)
+    await loadDictOptions()
     if (historyResult.status === 'fulfilled') history.value = Array.isArray(historyResult.value?.data) ? historyResult.value.data : []
     if (diagramResult.status === 'fulfilled') diagramInfo.value = diagramResult.value?.data || null
   }
@@ -462,7 +461,6 @@ async function loadReadonlyBusinessContext(overrides = {}) {
     const res = await api.getBusinessTaskReadonlyContext(query)
     businessContext.value = res?.data || null
     applyBusinessContext(businessContext.value)
-    await loadDictOptions()
     return businessContext.value
   }
   catch (error) {
@@ -478,7 +476,6 @@ async function loadBusinessContext(overrides = {}) {
     const res = await api.getBusinessTaskFormContext(query)
     businessContext.value = res?.data || null
     applyBusinessContext(businessContext.value)
-    await loadDictOptions()
     return businessContext.value
   }
   catch (error) {
@@ -489,15 +486,17 @@ async function loadBusinessContext(overrides = {}) {
 
 function buildBusinessContextQuery(overrides = {}) {
   const info = formInfo.value || {}
+  const rawRef = parseJson(info.formJson, {})
+  const formRef = info.formRef || (rawRef && !Array.isArray(rawRef) ? rawRef.formRef || rawRef : {})
   return compact({
     taskId: overrides.taskId || info.taskId || task.value?.taskId || taskId.value,
     businessKey: info.businessKey || task.value?.businessKey,
     processInstanceId: info.processInstanceId || task.value?.processInstanceId,
     processDefKey: info.processDefKey || task.value?.processDefKey || task.value?.processDefinitionKey,
     taskDefKey: info.taskDefKey || task.value?.taskDefKey || task.value?.taskDefinitionKey,
-    objectCode: info.objectCode || task.value?.objectCode,
-    recordId: info.recordId || task.value?.recordId,
-    formKey: info.formKey,
+    objectCode: info.objectCode || formRef.objectCode || task.value?.objectCode,
+    recordId: info.recordId || formRef.recordId || task.value?.recordId,
+    formKey: info.formKey || formRef.formKey,
   })
 }
 function hasBusinessContextQuery(query) {
@@ -765,19 +764,6 @@ function validateRequiredFields() {
     return false
   }
   return true
-}
-
-function resolveTaskFormFields(info = {}) {
-  const candidates = [
-    parseJson(info?.formJson),
-    info?.fields,
-    info?.formRef?.fields,
-    info?.fieldCatalog,
-    info?.formRef?.fieldCatalog,
-    info?.formRef,
-    info,
-  ]
-  return candidates.find(candidate => adaptBusinessTaskFields(candidate).length) || []
 }
 
 function hasSignature(value, signatureRef) {

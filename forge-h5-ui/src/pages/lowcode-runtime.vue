@@ -2,9 +2,7 @@
   <AiLayoutPage
     :title="pageChrome.title"
     :subtitle="pageChrome.subtitle"
-    :show-nav="pageChrome.showNav"
-    :show-back="pageChrome.showBack"
-    :back-url="pageChrome.backUrl"
+    :show-nav="false"
     :safe-bottom="pageChrome.safeBottom"
     :padded="pageChrome.padded"
   >
@@ -179,7 +177,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { onLoad, onUnload } from '@dcloudio/uni-app'
 import { storeToRefs } from 'pinia'
 import AiButton from '@/components/AiButton.vue'
@@ -222,6 +220,9 @@ const {
 } = storeToRefs(runtimeStore)
 const { routeQuery, searchData, mainData, childData, dictOptions } = runtimeStore
 const pageSize = runtimeStore.pageSize
+watch(title, value => {
+  if (value) uni.setNavigationBarTitle({ title: value })
+})
 const runtimeHelpItems = computed(() => mode.value === 'detail'
   ? ['字段内容来自当前业务记录', '附件、明细和关联信息保持只读展示']
   : ['带 * 的字段为必填项', '关联选项会根据当前表单内容实时更新', '确认信息无误后再保存提交'])

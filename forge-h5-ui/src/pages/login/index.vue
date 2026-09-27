@@ -3,7 +3,7 @@
     <AiFeedbackHost />
     <view v-if="wecomPending" class="wecom-loading-shell">
       <view class="wecom-loading-content">
-        <image class="wecom-loading-logo" :src="assetUrl('/static/logo.png')" mode="aspectFit" />
+        <image class="wecom-loading-logo" :src="brandLogoSrc" mode="aspectFit" @error="brandLogoFailed = true" />
         <wd-loading type="ring" color="#4266F7" :size="28" />
         <text class="wecom-loading-text">正在验证企业身份</text>
       </view>
@@ -14,10 +14,10 @@
         <view class="brand-bar">
           <view class="brand-main">
             <view class="brand-mark">
-              <image class="brand-logo" :src="assetUrl('/static/logo.png')" mode="aspectFit" />
+              <image class="brand-logo" :src="brandLogoSrc" mode="aspectFit" @error="brandLogoFailed = true" />
             </view>
             <view class="brand-copy">
-              <text class="brand-title">Forge 移动工作台</text>
+              <text class="brand-title">{{ brandName }}</text>
               <text class="brand-subtitle">企业应用统一入口</text>
             </view>
           </view>
@@ -69,7 +69,7 @@
         </view>
 
         <view class="login-foot">
-          <text>{{ title }} · © 2026 FORGE</text>
+          <text>{{ brandName }} · © 2026 FORGE</text>
         </view>
       </view>
     </view>
@@ -105,7 +105,7 @@ import AiFeedbackHost from '@/components/feedback/AiFeedbackHost.vue'
 import AiField from '@/components/AiField.vue'
 import AiIcon from '@/components/AiIcon.vue'
 import AiPopupSheet from '@/components/AiPopupSheet.vue'
-import { useAuthStore } from '@/store'
+import { useAppStore, useAuthStore } from '@/store'
 import api from '@/api'
 import { resolveStaticUrl } from '@/utils/assets'
 import { notify, toast } from '@/utils/notify'
@@ -132,7 +132,7 @@ export default {
   components: { AiButton, AiFeedbackHost, AiField, AiIcon, AiPopupSheet },
   data() {
     return {
-      title: import.meta.env.VITE_TITLE || 'Forge 移动端',
+      brandLogoFailed: false,
       userClient: import.meta.env.VITE_USER_CLIENT || 'app',
       requestPrefix: import.meta.env.VITE_REQUEST_PREFIX || '/',
       redirect: '/pages/index/index',
@@ -155,6 +155,12 @@ export default {
     }
   },
   computed: {
+    brandName() {
+      return useAppStore().brandName
+    },
+    brandLogoSrc() {
+      return this.brandLogoFailed ? this.assetUrl('/static/logo.png') : useAppStore().brandLogoUrl
+    },
     showTenantSelect() {
       return this.tenantOptions.length > 1
     },
@@ -175,6 +181,7 @@ export default {
       this.goTarget()
       return
     }
+    authStore.loadBrand(this.form.tenantId).catch(() => {})
     // 企微客户端内正处于免登流程时，等待其结果，避免闪现账号密码登录表单
     if (isWeComAutoLoginPending()) {
       this.wecomPending = true
@@ -241,11 +248,13 @@ export default {
     closeWorkspaceModal() {
       this.showWorkspaceModal = false
     },
-    confirmWorkspace(option) {
+    async confirmWorkspace(option) {
       if (!option?.tenantId || this.loading)
         return
       this.form.tenantId = option.tenantId
       this.showWorkspaceModal = false
+      this.brandLogoFailed = false
+      await useAuthStore().loadBrand(option.tenantId, true)
       this.handleLogin()
     },
     applyWorkspaceChallenge(error) {

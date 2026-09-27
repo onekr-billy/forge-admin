@@ -65,6 +65,14 @@
 3. 检查待办列表不再挂载任务中转弹层；待签收任务点击调用既有签收接口后直接导航审批页，其他待办直接导航。
 4. 复跑 56 项 H5 运行时、审批、消息和设计规范测试，执行 H5/微信小程序生产构建、移动视口输入控件验证及 `git diff --check`。
 
+## 第十三轮增量验证：消息直达与审批动态表单
+
+1. 检查 `pages.json` 无 `navigationStyle: custom`，消息页无详情弹层；列表点击根据消息类型直接导航，普通消息完整详情页具备统一反馈宿主。
+2. 单测覆盖 form-create 嵌套布局、主子表数组和节点权限，并复跑既有移动运行时、审批、消息、设计规范测试。
+3. 核对登录配置与租户公开 Logo 接口、用户头像与鉴权图片通道保持和 PC 相同的后端来源。
+4. 在 390px 与 836px H5 视口检查搜索图标、控件 44px 高度、状态筛选和原生导航；构建 H5 与微信小程序并执行 `git diff --check`。
+5. 若无真实 App/Flow 服务与可办理任务，仅记录未验证的 API/动态表单/转办弹层实际数据行为，不把静态测试当作端到端通过。
+
 ## 执行命令
 
 ```bash
@@ -81,7 +89,9 @@ node --test \
   src/utils/__tests__/lowcode-runtime.test.js \
   src/utils/__tests__/uni-adapter.test.js \
   src/utils/__tests__/mobile-selector-runtime.test.js \
-  src/utils/__tests__/machine-code.test.js
+  src/utils/__tests__/machine-code.test.js \
+  src/utils/__tests__/form-create-mobile.test.js \
+  src/utils/__tests__/message-html.test.js
 
 ./node_modules/.bin/uni build
 ./node_modules/.bin/uni build -p mp-weixin

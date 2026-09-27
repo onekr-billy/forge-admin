@@ -80,21 +80,21 @@ function handleBlur(event) {
 </script>
 
 <style lang="scss" scoped>
-.ai-field { display: flex; flex-direction: column; gap: 10rpx; }
-.ai-field--horizontal { flex-direction: row; align-items: center; gap: 28rpx; }
-.ai-field--horizontal .ai-field__label { width: 156rpx; flex: 0 0 auto; }
+.ai-field { display: flex; flex-direction: column; gap: 5px; }
+.ai-field--horizontal { flex-direction: row; align-items: center; gap: 14px; }
+.ai-field--horizontal .ai-field__label { width: 78px; flex: 0 0 auto; }
 .ai-field--horizontal .ai-field__content { min-width: 0; flex: 1; }
-.ai-field__label { color: var(--forge-color-text-secondary, #4e5969); font-size: 28rpx; font-weight: 400; line-height: 1.5; }
-.ai-field__required { margin-right: 6rpx; color: var(--forge-color-danger, #f53f3f); }
-.ai-field__content { display: flex; flex-direction: column; gap: 8rpx; }
-.ai-field__control { display: flex; min-height: 88rpx; align-items: center; padding: 0 12rpx; border: 1rpx solid var(--forge-color-border, #c9cdd4); border-radius: var(--forge-radius-control, 12rpx); background: #fff; box-sizing: border-box; transition: border-color .16s ease, background-color .16s ease; }
+.ai-field__label { color: var(--forge-color-text-secondary, #4e5969); font-size: 14px; font-weight: 400; line-height: 1.5; }
+.ai-field__required { margin-right: 3px; color: var(--forge-color-danger, #f53f3f); }
+.ai-field__content { display: flex; flex-direction: column; gap: 4px; }
+.ai-field__control { display: flex; min-height: 44px; align-items: center; padding: 0 6px; border: 1px solid var(--forge-color-border, #c9cdd4); border-radius: 6px; background: #fff; box-sizing: border-box; transition: border-color .16s ease, background-color .16s ease; }
 .ai-field__control.is-focused { border-color: var(--forge-color-primary, #4266f7); }
 .ai-field__control.is-error { border-color: var(--forge-color-danger, #f53f3f); }
 .ai-field__control.is-disabled { background: var(--forge-color-surface-subtle, #f7f8fa); opacity: .72; }
 .ai-field__input { width: 100%; min-width: 0; }
-.ai-field__error { color: var(--forge-color-danger, #f53f3f); font-size: 24rpx; line-height: 1.5; }
-:deep(.wd-input) { display: flex; width: 100%; min-height: 86rpx; align-items: center; padding: 0 12rpx; background: transparent; box-sizing: border-box; }
+.ai-field__error { color: var(--forge-color-danger, #f53f3f); font-size: 12px; line-height: 1.5; }
+:deep(.wd-input) { display: flex; width: 100%; min-height: 42px; align-items: center; padding: 0 6px; background: transparent; box-sizing: border-box; }
 :deep(.wd-input__prefix),
 :deep(.wd-input__suffix) { display: flex; align-items: center; align-self: stretch; }
-:deep(.wd-input__inner) { height: 86rpx; padding: 0; color: var(--forge-color-text, #1d2129); font-size: 28rpx; font-weight: 400; line-height: 86rpx; box-sizing: border-box; }
+:deep(.wd-input__inner) { height: 42px; padding: 0; color: var(--forge-color-text, #1d2129); font-size: 14px; font-weight: 400; line-height: 42px; box-sizing: border-box; }
 </style>
