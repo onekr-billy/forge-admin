@@ -664,3 +664,11 @@
 - 保留 `BusinessDocumentConfigService` 六参数构造、公开 API、保存事务和状态/流程绑定配置；预览不消耗真实序列，不启动服务、不连接数据库或 Redis。
 
 验证结果：新规则引擎的 5 项测试与单据运行态 20 项测试全部通过，0 失败、0 错误；generator Reactor 编译与 `git diff --check` 通过。`BusinessDocumentConfigService` 871 行，新引擎 390 行。
+
+## 2026-09-27 第八十三轮增量验证：单据运行态动作策略
+
+- P0：迁出主流程配置、手动/触发器发起模式、状态映射准入、当前待办、流程实例和撤回权限判断，并统一投影发起、去处理、修改后重提和撤回动作。
+- P0：保留终态/运行中流程不重复发起、应用级流程撤回、发起人修改任务回退和预加载轻量校验行为；原 Service 构造参数及 FlowClient 注入方式不变。
+- P1：新增 Policy 直测并重跑完整 `BusinessDocumentRuntimeServiceTest`；执行 generator Reactor 编译、`git diff --check` 和类行数检查，不启动服务。
+
+验证结果：新增动作 Policy 4 项测试与原运行态 20 项测试全部通过，0 失败、0 错误；generator Reactor 编译与 `git diff --check` 通过。`BusinessDocumentRuntimeService` 867 行，新 Policy 300 行。

@@ -451,3 +451,9 @@
 - 使用 Interpreter Strategy 从 `BusinessDocumentConfigService` 迁出旧模板归一、Token 目录、日期/序列/上下文/业务字段解释、预览告警、规则校验、序列键和运行时编号生成；四类解释器共享一条渲染链，避免预览与真实取号规则漂移。
 - Service 继续持有配置查询/保存事务、字段推断、状态映射和主流程绑定，并通过私有工厂保持原六参数构造边界。入口由 1162 行降至 871 行，新 `BusinessDocumentNoRuleEngine` 390 行，均低于 1000 行。
 - generator Reactor 编译退出码 0；执行 `BusinessDocumentNoRuleEngineTest,BusinessDocumentRuntimeServiceTest` 共 2 类 25 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin 服务、未连接数据库或 Redis；真实并发序列分配、登录人/部门上下文和跨日重置仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第八十三个切口：单据运行态动作策略与投影
+
+- 使用 Policy/Specification + Projector 从 `BusinessDocumentRuntimeService` 迁出主流程配置、发起模式、状态准入、流程实例、待办和撤回权限决策，并统一生成发起、去处理、修改后重提与撤回动作。
+- Service 继续持有单条/批量查询、记录加载、流程关联、FlowClient 待办批量读取和轻量发起校验入口；通过私有工厂保持原七参数构造及可选 FlowClient 字段注入。入口由 1122 行降至 867 行，新 `BusinessDocumentRuntimeActionPolicy` 300 行，均低于 1000 行。
+- generator Reactor 编译退出码 0；执行 `BusinessDocumentRuntimeActionPolicyTest,BusinessDocumentRuntimeServiceTest` 共 2 类 24 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接数据库或 Flowable；真实并发待办、跨服务短暂延迟和撤回接口联动仍需服务环境验收，无服务 PID 需停止。

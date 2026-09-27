@@ -82,5 +82,6 @@
 - [x] 提取业务流程画布 Graph Validator Strategy，集中节点注册、端口、连线和 DAG/可达性规则，使 `BusinessProcessSchemaValidator` 降至 930 行并满足单类 1000 行目标。
 - [x] 提取角色管理 Access Policy，集中权限通配符、租户/委派边界、系统角色维护、数据范围和组织归属规则，使 `SysRoleServiceImpl` 降至 974 行并满足单类 1000 行目标。
 - [x] 提取单据编号规则引擎，以 Interpreter Strategy 统一旧模板归一、预览、校验和运行时序列生成，使 `BusinessDocumentConfigService` 降至 871 行并满足单类 1000 行目标。
+- [x] 提取单据运行态 Action Policy/Projector，集中主流程、发起模式、状态准入及发起/待办/撤回按钮投影，使 `BusinessDocumentRuntimeService` 降至 867 行并满足单类 1000 行目标。
 - [ ] 完成业务流程服务级联调和运行配置真实页面验收。
 - [ ] 分阶段拆分动态 CRUD、设计态、发布、Flowable 任务/模型及业务动作/触发器；每阶段独立验证。
