@@ -9,6 +9,7 @@ import com.mdframe.forge.plugin.capability.identity.config.CapabilityIdentityAut
 import com.mdframe.forge.plugin.capability.identity.mapper.AiCapabilityAccessTokenMapper;
 import com.mdframe.forge.plugin.capability.identity.mapper.AiCapabilityExternalIdentityMapper;
 import com.mdframe.forge.plugin.capability.identity.mapper.AiCapabilityOAuthRedirectUriMapper;
+import com.mdframe.forge.plugin.capability.identity.mapper.CapabilityIdentityStartupMapper;
 import com.mdframe.forge.plugin.capability.identity.token.CapabilityAccessTokenService;
 import com.mdframe.forge.plugin.capability.opengateway.auth.OpenGatewayAuthenticator;
 import com.mdframe.forge.plugin.capability.opengateway.mapper.AiCapabilityOpenapiIdempotencyMapper;
@@ -57,6 +58,8 @@ class OpenGatewayAutoConfigurationTest {
                         () -> mock(AiCapabilityExternalIdentityMapper.class))
                 .withBean(AiCapabilityOAuthRedirectUriMapper.class,
                         () -> mock(AiCapabilityOAuthRedirectUriMapper.class))
+                .withBean(CapabilityIdentityStartupMapper.class,
+                        () -> mock(CapabilityIdentityStartupMapper.class))
                 .withBean(IUserLoadService.class, () -> mock(IUserLoadService.class))
                 .withBean(StringRedisTemplate.class, () -> mock(StringRedisTemplate.class))
                 .withBean(CapabilityGrantService.class, () -> mock(CapabilityGrantService.class))

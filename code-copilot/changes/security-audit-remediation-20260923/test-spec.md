@@ -32,6 +32,16 @@
 - 默认 Mockito inline 在一次复跑中因 Byte Buddy 无法 self-attach 环境阻断；使用本地同版本 `byte-buddy-agent` 显式加载后，19 个用例全部通过。另以无 Mockito 方式独立执行租约协调器与 SQL 契约测试，3/3 通过。
 - Generator 及 33 个依赖反应堆模块在上述测试命令中编译成功；Admin 全依赖 JDK 17 编译 46/46 成功。真实 MySQL 迁移、多 JVM 租约接管和 Flowable 远程补偿仍未执行，不据此宣称通过。
 
+## 1.3 2026-09-28 开放网关启动门禁与分页缓存增量验证
+
+- 风险范围：identity/open-gateway 开启时的密钥强度、默认 client/grant、SERVICE/HYBRID 身份租户/用户/组织绑定，以及数据集分页缓存串页。
+- 配置门禁：空 pepper、长度不足、低字符多样性、常见占位值和三组相同 pepper 均必须阻止启动；默认关闭时不创建身份服务和数据审计 runner。
+- 数据门禁：全租户活动 client/grant 中存在保留 client code、无效 auth mode、签名密钥缺失、服务身份绑定失效、能力/有效版本失效或动作字段策略缺失时必须阻止启动。
+- 安全链路回归：OAuth/HMAC 验证、防重放、scope/RBAC、限流、幂等、业务/流程动作适配、高风险提交/回调及版本化 KEK 测试必须通过。
+- 缓存隔离：相同 datasetId、查询参数和用户上下文下，pageNum 或 pageSize 任一变化都必须生成不同缓存项。
+- 实际结果：启动门禁 10/10、platform 安全链路 45/45、replay guard 10/10、actions 12/12、高风险 15/15、数据缓存/执行器 6/6 通过；Admin 聚合编译 46/46 成功。
+- 环境限制：没有真实 MySQL/Redis/开放网关，未执行生产 client/grant 实库扫描、网关压测和生产启用审批；这些结果不得替代上线人工门禁。
+
 ## 2. P0 必跑验证
 
 ### 动态脚本与 HTML

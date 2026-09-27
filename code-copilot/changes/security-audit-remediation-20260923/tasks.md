@@ -95,8 +95,8 @@
 - capability 默认 client/grant 初始化脚本和启动检查
 
 - [x] 新增配置绑定测试，确认未设置环境变量时 open-gateway、flow-actions、identity 均为关闭。
-- [ ] 启动检查拒绝空 pepper、弱密钥、默认 client/grant 和未绑定租户/组织的 SERVICE 身份。
-- [ ] 保留 OAuth/HMAC、防重放、scope、RBAC、限流、幂等和高风险确认，测试关闭/开启两种模式。
+- [x] 启动检查拒绝空 pepper、弱密钥、默认 client/grant 和未绑定租户/组织的 SERVICE 身份。
+- [x] 保留 OAuth/HMAC、防重放、scope、RBAC、限流、幂等和高风险确认，测试关闭/开启两种模式。
 - [ ] 生产开启必须有环境配置、审计快照和人工审批；回滚只切回关闭状态。
 
 ### T1.6 临时 JDBC 和 preview-sql 隔离
@@ -184,7 +184,7 @@
 - [x] 先写 page 1/page 2 和 pageSize 上限测试。
 - [x] 为 dialect 增加 offset + limit API；按 `pageNum` 计算 offset，拒绝溢出和负数。
 - [x] 增加独立 count 查询或明确响应字段为 `pageTotal`；不能把当前页数量伪装成总数。
-- [ ] 验证缓存键包含 pageNum/pageSize，避免不同页命中同一缓存。
+- [x] 验证缓存键包含 pageNum/pageSize，避免不同页命中同一缓存。
 
 ### T3.2 SQL AST、元数据参数化和标识符校验
 

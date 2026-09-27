@@ -9,6 +9,7 @@ import com.mdframe.forge.plugin.capability.identity.authorization.ForgeCapabilit
 import com.mdframe.forge.plugin.capability.identity.mapper.AiCapabilityAccessTokenMapper;
 import com.mdframe.forge.plugin.capability.identity.mapper.AiCapabilityExternalIdentityMapper;
 import com.mdframe.forge.plugin.capability.identity.mapper.AiCapabilityOAuthRedirectUriMapper;
+import com.mdframe.forge.plugin.capability.identity.mapper.CapabilityIdentityStartupMapper;
 import com.mdframe.forge.plugin.capability.identity.token.CapabilityAccessTokenService;
 import com.mdframe.forge.plugin.capability.spi.CapabilityAuthorizationPolicy;
 import com.mdframe.forge.plugin.system.service.IUserLoadService;
@@ -61,6 +62,8 @@ class CapabilityIdentityAutoConfigurationTest {
                         () -> mock(AiCapabilityExternalIdentityMapper.class))
                 .withBean(AiCapabilityOAuthRedirectUriMapper.class,
                         () -> mock(AiCapabilityOAuthRedirectUriMapper.class))
+                .withBean(CapabilityIdentityStartupMapper.class,
+                        () -> mock(CapabilityIdentityStartupMapper.class))
                 .withBean(IUserLoadService.class, () -> mock(IUserLoadService.class))
                 .withBean(StringRedisTemplate.class, () -> mock(StringRedisTemplate.class))
                 .withBean(OpenApiReplayGuard.class, () -> mock(OpenApiReplayGuard.class))
@@ -94,6 +97,8 @@ class CapabilityIdentityAutoConfigurationTest {
                         () -> mock(AiCapabilityExternalIdentityMapper.class))
                 .withBean(AiCapabilityOAuthRedirectUriMapper.class,
                         () -> mock(AiCapabilityOAuthRedirectUriMapper.class))
+                .withBean(CapabilityIdentityStartupMapper.class,
+                        () -> mock(CapabilityIdentityStartupMapper.class))
                 .withBean(IUserLoadService.class, () -> mock(IUserLoadService.class))
                 .withBean(StringRedisTemplate.class, () -> mock(StringRedisTemplate.class))
                 .withBean(OpenApiReplayGuard.class, () -> mock(OpenApiReplayGuard.class))

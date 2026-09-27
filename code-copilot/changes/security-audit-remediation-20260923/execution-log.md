@@ -1,5 +1,30 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：A-15 开放网关启动门禁与 A-10 数据集缓存隔离
+
+### 实现
+
+- capability identity/open-gateway 开启时增加双层启动门禁：配置层拒绝空值、长度不足、低熵、占位词和三组重复 pepper；数据层全局审计所有租户的活动 client/grant，发现保留 client code、无效认证模式、缺失签名密钥、SERVICE/HYBRID 身份未绑定有效用户/组织/组织角色、失效能力/版本或动作字段策略缺失时直接阻止启动。
+- 启动数据检查通过独立 Mapper XML 完成，并显式忽略租户拦截器以覆盖全量租户；只在 identity 或 open-gateway 开启时装配，默认关闭部署不访问这些表。
+- 保留既有 OAuth、HMAC、防重放、scope/RBAC、限流、幂等和高风险审批实现，并补齐开启模式的自动配置、动作适配、审批回调和版本化 KEK 回归。
+- 为数据集运行时缓存增加 pageNum/pageSize 隔离用例，确认相同数据集与查询参数的不同页不会复用缓存项；生产缓存键实现无需修改。
+- 修复 `SecureActionCatalogServiceTest` 缺失 `SecureActionDescriptor` import 导致的既有测试编译阻断，不改变生产行为。
+
+### 验证
+
+- identity 启动门禁、Mapper SQL 契约及 identity/open-gateway 自动配置测试：10/10 通过。
+- capability platform 选定安全链路测试：45/45 通过；openapi replay guard：10/10 通过。
+- capability actions 自动配置与网关适配测试：12/12 通过；高风险审批提交、回调和 KEK 加密测试：15/15 通过。
+- 数据缓存与执行器测试：6/6 通过，包含不同 pageNum/pageSize 的显式隔离断言。
+- Mapper XML 通过 `xmllint --noout`；`git diff --check` 通过。
+- `mvn -pl forge-admin-server -am -DskipTests compile`（JDK 17）：Admin 聚合反应堆 46/46 成功。
+
+### 未覆盖
+
+- 未连接真实 MySQL/Redis，也未实际打开生产网关；数据库启动审计以 Mapper XML 契约测试和 Spring 自动配置测试验证，不宣称实库执行、网关压测或生产灰度通过。
+- 生产开启仍必须提供正式环境配置、审计快照和人工审批；该任务保持未完成，回滚策略仍为关闭 open-gateway/identity/flow-actions。
+- 一次从 capability 子模块直接执行 Maven 因沙箱禁止写入用户目录 `.m2/*.lastUpdated` 失败；改由仓库根反应堆运行后全部通过，此项记录为环境限制而非代码失败。
+
 ## 2026-09-23：创建整改规格
 
 ### 范围
