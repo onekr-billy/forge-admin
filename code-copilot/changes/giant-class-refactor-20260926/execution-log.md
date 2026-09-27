@@ -427,3 +427,9 @@
 - 使用 Builder 从 `VelocityCodegenStrategy` 迁出字典、API 加解密和脱敏配置解析及列元数据回写；使用 Planner 迁出关联表列投影、主子表配置/页面关系双来源合并、主外键解析、树元数据和注入依赖去重。
 - 保留 Strategy 的公开 `RelatedTableMeta` / `TreeCodegenMeta` 类型、模板渲染、文件输出和所有权清单边界；Planner 经包内窄支持方法复用字段类型与命名规则。入口由 1401 行降至 993 行，新 Builder 151 行、Planner 387 行，均低于 1000 行。
 - generator Reactor 干净编译退出码 0；执行 `VelocityAnnotationContextBuilderTest,VelocityRelatedTablePlannerTest,BusinessApplicationCodegenContractTest,PrintCodegenContributorTest,LowcodeCodegenOptionUtilsTest` 共 5 类 26 项，0 失败、0 错误；源码契约同步改为在 Planner 校验页面关系兜底职责。`git diff --check` 通过。未启动 Admin 服务、未连接真实数据库；真实多层主子关系、大型模板包和多贡献器冲突仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第七十九个切口：动态 Excel 单元格协议适配器
+
+- 使用 Adapter + Pipeline 从 `DynamicCrudExcelService` 迁出导入空行过滤、必填错误聚合、字典标签解析、数据类型转换、导出展示字段投影、日期/结构化值格式化和导入模板提示生成；共享的列与原始行模型迁入 `service.excel` 包。
+- Service 继续持有公开 API、运行配置解析、工作簿读写、导入事务和异步导出任务状态机。入口由 1235 行降至 858 行，新 `DynamicCrudExcelValueAdapter` 381 行，所有新增生产类均低于 1000 行。
+- generator Reactor 编译退出码 0；执行 `DynamicCrudExcelValueAdapterTest` 共 5 项，0 失败、0 错误；测试覆盖数字/日期转换、字典映射顺序、错误聚合、展示字段优先、JSON 导出和模板提示。`git diff --check` 通过。未启动 Admin 服务、未连接真实数据库；真实大文件、异步导出、字典租户隔离和 Excel 样式仍需服务环境验收，无服务 PID 需停止。

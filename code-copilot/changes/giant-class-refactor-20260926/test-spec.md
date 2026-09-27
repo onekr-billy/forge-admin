@@ -544,6 +544,15 @@
 
 验证结果：安全注解配置已委托 `VelocityAnnotationContextBuilder`，关联表/主子表/树规划已委托 `VelocityRelatedTablePlanner`；新增 4 项测试覆盖安全标志、空脱敏、页面关系兜底和树源去重。相关 5 个测试类共 26 项通过，0 失败、0 错误；generator Reactor 干净编译与 `git diff --check` 通过。`VelocityCodegenStrategy` 993 行，新 Builder 151 行、Planner 387 行。
 
+## 2026-09-27 第七十九轮增量验证：动态 Excel 单元格协议适配器
+
+- P0：导入空行跳过、必填错误聚合、数字/日期时间转换、字典标签和值双向识别及租户条件保持不变。
+- P0：导出展示字段优先、日期/数字/结构化值格式化和导入模板字典下拉、示例、填写说明保持不变。
+- P1：使用 Adapter + Pipeline 隔离单元格协议和字典数据边界；Service 仅保留工作簿 IO、异步任务、事务和运行配置编排，新生产类少于 1000 行。
+- 验证：执行 generator Reactor 编译，运行值适配器单元测试，执行 `git diff --check` 与类行数检查；不启动真实服务。
+
+验证结果：导入行转换、字典映射、导出行投影和模板列组装已委托 `DynamicCrudExcelValueAdapter`；新增 5 项测试覆盖有序转换、字典先映射后类型转换、错误聚合、展示字段/JSON 导出和模板提示。generator Reactor 编译通过，测试 5 项通过、0 失败、0 错误，`git diff --check` 通过。`DynamicCrudExcelService` 858 行，新 Adapter 381 行、共享列/行模型分别 21/17 行。
+
 ## 2026-09-27 第五十六轮增量验证：历史页面协议适配器
 
 - P0：旧 searchSchema/editSchema/columnsSchema 的字段引用、控件、字典、校验、列宽、排序、固定列和渲染配置迁移保持不变。
