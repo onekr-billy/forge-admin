@@ -1,5 +1,24 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：低代码设计、生成与发布租户边界收口
+
+### 实现
+
+- 新增 `LowcodeTenantContext`，统一校验会话身份与显式租户作用域；两者不一致、缺失、非正数或处于忽略租户作用域时统一 fail-closed。
+- `LowcodeDomainService`、`LowcodeDataModelService` 和 `LowcodeAppService` 移除默认租户 `1`，查询、草稿、领域汇总、模型编码和业务对象关联复用单次捕获的租户，并校验实体归属。
+- `LowcodeCodegenService` 在应用、配置键、历史版本和生成选项读取前验证租户，禁止信任客户端或实体携带的其他租户归属。
+- `LowcodePublishService` 将入口租户贯穿发布、回滚、版本查询与快照写入；`LowcodePublishPostEvent` 显式携带租户，异步处理器在校验事件与配置归属后恢复 `TenantContextHolder`，避免异步线程脱离租户上下文。
+
+### 验证
+
+- 新增 `LowcodeMetadataIdentitySecurityTest` 8/8，覆盖领域、模型、应用、代码预览和发布在缺失租户时的副作用前拒绝，代码生成拒绝跨租户配置，以及发布后处理的租户恢复和错配拒绝。
+- Generator 完整依赖反应堆 33/33 模块成功，`forge-plugin-generator` 1322/1322 测试通过，0 失败、0 错误、0 跳过。
+- 生成器低代码服务中本轮默认租户扫描已无命中；`git diff --check` 通过，用户已有 `.DS_Store` 修改未触碰、未纳入本批变更。
+
+### 未覆盖
+
+- 未启动 Admin 或连接真实 MySQL/业务数据源执行跨租户 HTTP 及真实异步发布验收；Flow Server 业务对象运行适配器仍有默认租户 `1` 回退，留待下一批修复；T4.5 发布 Outbox、跨数据源补偿、死信和人工重放仍未完成。
+
 ## 2026-09-28：查询方案、消息收件人与动态导入导出租户边界收口
 
 ### 实现

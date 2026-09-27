@@ -55,7 +55,7 @@ public class LowcodeDataModelService extends ServiceImpl<AiLowcodeModelMapper, A
 
     public Page<LowcodeDataModelVO> page(PageQuery pageQuery, Long domainId, String keyword,
                                          String status, Boolean masterData) {
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireTenantId();
         Page<AiLowcodeModel> modelPage = baseMapper.selectModelPage(
                 new Page<>(pageQuery.getPageNum(), pageQuery.getPageSize()),
                 tenantId,
@@ -70,7 +70,7 @@ public class LowcodeDataModelService extends ServiceImpl<AiLowcodeModelMapper, A
 
     public List<LowcodeDataModelVO> list(Long domainId, String keyword, String status) {
         return baseMapper.selectModelList(
-                        resolveTenantId(),
+                        requireTenantId(),
                         domainId,
                         StringUtils.trimToNull(keyword),
                         StringUtils.trimToNull(status))
@@ -121,8 +121,9 @@ public class LowcodeDataModelService extends ServiceImpl<AiLowcodeModelMapper, A
         if (id == null) {
             throw new BusinessException("数据模型ID不能为空");
         }
-        AiLowcodeModel model = baseMapper.selectModelById(resolveTenantId(), id);
-        if (model == null) {
+        Long tenantId = requireTenantId();
+        AiLowcodeModel model = baseMapper.selectModelById(tenantId, id);
+        if (model == null || model.getTenantId() == null || !tenantId.equals(model.getTenantId())) {
             throw new BusinessException("数据模型不存在");
         }
         return model;
@@ -141,14 +142,15 @@ public class LowcodeDataModelService extends ServiceImpl<AiLowcodeModelMapper, A
         String status = StringUtils.defaultIfBlank(dto.getStatus(), STATUS_ENABLED);
         validateStatus(status);
         Long excludeId = dto.getId();
-        if (baseMapper.countByCode(resolveTenantId(), domain.getId(), modelCode, excludeId) > 0) {
+        Long tenantId = requireTenantId();
+        if (baseMapper.countByCode(tenantId, domain.getId(), modelCode, excludeId) > 0) {
             throw new BusinessException("同一业务领域下模型编码已存在: " + modelCode);
         }
 
         LowcodeModelSchema modelSchema = normalizeModelSchema(dto.getModelSchema(), domain, modelCode, modelName);
         schemaValidator.validateModel(modelSchema);
 
-        model.setTenantId(resolveTenantId());
+        model.setTenantId(tenantId);
         model.setDomainId(domain.getId());
         model.setDomainCode(domain.getDomainCode());
         model.setModelCode(modelCode);
@@ -250,9 +252,10 @@ public class LowcodeDataModelService extends ServiceImpl<AiLowcodeModelMapper, A
         if (StringUtils.isBlank(suiteCode) || StringUtils.isBlank(objectCode)) {
             return;
         }
-        AiBusinessObject object = businessObjectMapper.selectByObjectCode(resolveTenantId(), suiteCode, objectCode);
+        Long tenantId = requireTenantId();
+        AiBusinessObject object = businessObjectMapper.selectByObjectCode(tenantId, suiteCode, objectCode);
         if (object == null) {
-            object = businessObjectMapper.selectByObjectCode(resolveTenantId(), suiteCode, objectCode.toUpperCase());
+            object = businessObjectMapper.selectByObjectCode(tenantId, suiteCode, objectCode.toUpperCase());
         }
         if (object == null) {
             return;
@@ -320,13 +323,7 @@ public class LowcodeDataModelService extends ServiceImpl<AiLowcodeModelMapper, A
         }
     }
 
-    private Long resolveTenantId() {
-        Long tenantId;
-        try {
-            tenantId = SessionHelper.getTenantId();
-        } catch (Exception e) {
-            tenantId = null;
-        }
-        return tenantId != null ? tenantId : 1L;
+    private Long requireTenantId() {
+        return LowcodeTenantContext.requireTenantId("低代码数据模型");
     }
 }

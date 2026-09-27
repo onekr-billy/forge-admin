@@ -111,7 +111,9 @@ public class LowcodePublishService {
 
     @Transactional(rollbackFor = Exception.class)
     public Long publish(Long id, LowcodePublishDTO dto) {
+        Long tenantId = requireTenantId();
         AiCrudConfig config = appService.requireConfig(id);
+        requireTenantId(config);
         LowcodeModelSchema modelSchema = resolvePublishModel(config, dto);
         PublishDomainContext domainContext = resolvePublishDomainContext(config, modelSchema);
         applyDomainToModelSchema(modelSchema, domainContext, config.getConfigKey());
@@ -138,18 +140,19 @@ public class LowcodePublishService {
             menuParentId = config.getMenuParentId();
         }
 
-        int versionNo = nextVersionNo(config);
+        int versionNo = nextVersionNo(config, tenantId);
         config.setPublishStatus("PUBLISHED");
         config.setPublishedVersion(versionNo);
         config.setPublishTime(LocalDateTime.now());
         config.setPublishBy(SessionHelper.getUserId());
         configService.updateById(config);
-        AiCrudConfigVersion version = createVersion(config, versionNo, "publish",
+        AiCrudConfigVersion version = createVersion(config, tenantId, versionNo, "publish",
                 dto != null ? dto.getRemark() : null);
 
         // 菜单注册 + 业务入口同步全部放到事务提交后异步执行，不再阻塞响应
         if (eventPublisher != null) {
-            eventPublisher.publishEvent(new LowcodePublishPostEvent(config, dto, domainContext, syncMenu, menuParentId));
+            eventPublisher.publishEvent(new LowcodePublishPostEvent(
+                    config, dto, domainContext, syncMenu, menuParentId, tenantId));
         }
         return version.getId();
     }
@@ -161,9 +164,11 @@ public class LowcodePublishService {
 
     @Transactional(rollbackFor = Exception.class)
     public void rollback(Long id, Long versionId, boolean syncMenu) {
+        Long tenantId = requireTenantId();
         AiCrudConfig config = appService.requireConfig(id);
+        requireTenantId(config);
         AiCrudConfigVersion targetVersion = versionMapper.selectVersionById(
-                resolveTenantId(config), config.getId(), versionId);
+                tenantId, config.getId(), versionId);
         if (targetVersion == null) {
             throw new BusinessException("版本不存在或不属于当前应用");
         }
@@ -198,23 +203,26 @@ public class LowcodePublishService {
                     text(snapshot.get("mountTarget")), config.getMountTarget()));
         }
 
-        int versionNo = nextVersionNo(config);
+        int versionNo = nextVersionNo(config, tenantId);
         config.setPublishStatus("PUBLISHED");
         config.setPublishedVersion(versionNo);
         config.setPublishTime(LocalDateTime.now());
         config.setPublishBy(SessionHelper.getUserId());
         configService.updateById(config);
-        createVersion(config, versionNo, "rollback", "回滚到版本 " + targetVersion.getVersionNo());
+        createVersion(config, tenantId, versionNo, "rollback", "回滚到版本 " + targetVersion.getVersionNo());
 
         // 菜单注册 + 业务入口同步放到事务提交后异步执行
         if (eventPublisher != null) {
-            eventPublisher.publishEvent(new LowcodePublishPostEvent(config, null, domainContext, syncMenu, menuParentId));
+            eventPublisher.publishEvent(new LowcodePublishPostEvent(
+                    config, null, domainContext, syncMenu, menuParentId, tenantId));
         }
     }
 
     public List<LowcodeVersionVO> listVersions(Long id) {
+        Long tenantId = requireTenantId();
         AiCrudConfig config = appService.requireConfig(id);
-        return versionMapper.selectByConfigId(resolveTenantId(config), config.getId()).stream()
+        requireTenantId(config);
+        return versionMapper.selectByConfigId(tenantId, config.getId()).stream()
                 .map(this::toVersionVO)
                 .toList();
     }
@@ -447,7 +455,7 @@ public class LowcodePublishService {
         if (config == null || context == null || context.domain() == null || StringUtils.isBlank(config.getConfigKey())) {
             return;
         }
-        Long tenantId = resolveTenantId(config);
+        Long tenantId = requireTenantId(config);
         AiBusinessApp existingApp = businessAppMapper.selectByConfigKey(tenantId, config.getConfigKey());
         String suiteCode = StringUtils.firstNonBlank(dto != null ? dto.getBusinessSuiteCode() : null,
                 existingApp == null ? null : existingApp.getSuiteCode(),
@@ -542,14 +550,15 @@ public class LowcodePublishService {
         return normalized.length() > 64 ? normalized.substring(0, 64).replaceAll("_+$", "") : normalized;
     }
 
-    private int nextVersionNo(AiCrudConfig config) {
-        Integer maxVersionNo = versionMapper.selectMaxVersionNo(resolveTenantId(config), config.getId());
+    private int nextVersionNo(AiCrudConfig config, Long tenantId) {
+        Integer maxVersionNo = versionMapper.selectMaxVersionNo(tenantId, config.getId());
         return (maxVersionNo == null ? 0 : maxVersionNo) + 1;
     }
 
-    private AiCrudConfigVersion createVersion(AiCrudConfig config, Integer versionNo, String versionType, String remark) {
+    private AiCrudConfigVersion createVersion(AiCrudConfig config, Long tenantId,
+                                               Integer versionNo, String versionType, String remark) {
         AiCrudConfigVersion version = new AiCrudConfigVersion();
-        version.setTenantId(resolveTenantId(config));
+        version.setTenantId(tenantId);
         version.setConfigId(config.getId());
         version.setConfigKey(config.getConfigKey());
         version.setDomainId(config.getDomainId());
@@ -725,17 +734,12 @@ public class LowcodePublishService {
         return vo;
     }
 
-    private Long resolveTenantId(AiCrudConfig config) {
-        if (config.getTenantId() != null) {
-            return config.getTenantId();
-        }
-        Long tenantId;
-        try {
-            tenantId = SessionHelper.getTenantId();
-        } catch (Exception e) {
-            tenantId = null;
-        }
-        return tenantId != null ? tenantId : 1L;
+    private Long requireTenantId() {
+        return LowcodeTenantContext.requireTenantId("低代码应用发布");
+    }
+
+    private Long requireTenantId(AiCrudConfig config) {
+        return LowcodeTenantContext.requireConfigTenant(config, "低代码应用发布");
     }
 
     private PublishDomainContext resolvePublishDomainContext(AiCrudConfig config, LowcodeModelSchema modelSchema) {

@@ -3,6 +3,8 @@ package com.mdframe.forge.plugin.generator.service.lowcode;
 import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfig;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePublishDTO;
 import com.mdframe.forge.plugin.generator.service.AiCrudConfigService;
+import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -32,12 +34,19 @@ public class LowcodePublishPostProcessor {
     public void handlePostPublish(LowcodePublishPostEvent event) {
         AiCrudConfig config = event.config();
         try {
-            publishService.registerOrUpdateMenuAsync(config, event.syncMenu(), event.menuParentId());
-            publishService.syncBusinessRuntimeEntry(config, event.dto(), event.domainContext());
-            configService.updateById(config);
+            Long tenantId = event.tenantId();
+            if (config == null || tenantId == null || tenantId <= 0
+                    || config.getTenantId() == null || !tenantId.equals(config.getTenantId())) {
+                throw new BusinessException("低代码发布异步事件租户上下文不合法");
+            }
+            TenantContextHolder.executeWithTenant(tenantId, () -> {
+                publishService.registerOrUpdateMenuAsync(config, event.syncMenu(), event.menuParentId());
+                publishService.syncBusinessRuntimeEntry(config, event.dto(), event.domainContext());
+                configService.updateById(config);
+            });
         } catch (Exception e) {
             log.warn("[lowcode-publish] 异步后置处理失败（不影响发布结果）: configKey={}, reason={}",
-                    config.getConfigKey(), e.getMessage());
+                    config == null ? null : config.getConfigKey(), e.getMessage());
         }
     }
 }

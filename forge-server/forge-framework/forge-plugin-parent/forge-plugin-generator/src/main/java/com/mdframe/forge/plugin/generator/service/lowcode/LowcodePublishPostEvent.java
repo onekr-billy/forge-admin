@@ -14,6 +14,7 @@ public record LowcodePublishPostEvent(
         LowcodePublishDTO dto,
         LowcodePublishService.PublishDomainContext domainContext,
         boolean syncMenu,
-        Long menuParentId
+        Long menuParentId,
+        Long tenantId
 ) {
 }
