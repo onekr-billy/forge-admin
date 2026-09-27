@@ -351,6 +351,15 @@
 
 验证结果：任务和流程表单上下文已统一委托 `FlowTaskFormContextCoordinator`，源码安全/性能契约同步验证新职责归属；相关 11 个测试类共 39 项通过，0 失败、0 错误。flow Reactor 编译与 `git diff --check` 通过；`FlowTaskServiceImpl` 1717 行，新 Coordinator 437 行。
 
+## 2026-09-27 第六十二轮增量验证：Flowable 动态会签协调器
+
+- P0：加签/减签的可信租户、操作者、目标用户、并行模式、人数上限、候选人关系、评论和任务镜像更新保持不变。
+- P0：多实例执行创建/删除、子任务处理人、关系审计、幂等冲突和动态会签关系列表的租户可见性保持不变。
+- P1：使用 Command + Strategy 显式分离普通候选人和 Flowable 多实例路径，Facade 保留公开事务边界；新生产类少于 1000 行。
+- 验证：执行 flow Reactor 编译，重跑动态会签、动作授权、状态流转、表单和安全契约；执行 `git diff --check` 和类行数检查，不启动真实服务。
+
+验证结果：动态加签/减签已统一委托 `FlowTaskDynamicSignCoordinator`，会签源码契约同步验证新策略归属；相关 11 个测试类共 39 项通过，0 失败、0 错误。flow Reactor 编译与 `git diff --check` 通过；`FlowTaskServiceImpl` 1499 行，新 Coordinator 316 行。
+
 ## 2026-09-26 第四十五轮增量验证：主子表持久化引擎
 
 - P0：主子表详情的数据权限、子表外键修复、关系值解析、读取流水线和审计元数据保持不变。

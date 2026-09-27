@@ -14,32 +14,34 @@ class FlowTaskSignContractTest {
     void dynamicSignActionsMustBeTenantBoundAuditedAndIdempotentAtCandidateSetLevel() throws IOException {
         String service = Files.readString(Path.of(
                 "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskServiceImpl.java"));
+        String coordinator = Files.readString(Path.of(
+                "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskDynamicSignCoordinator.java"));
         String controller = Files.readString(Path.of(
                 "../../../forge-flow/forge-flow-server/src/main/java/com/mdframe/forge/flow/controller/FlowTaskController.java"));
         assertTrue(service.contains("public void addSign"));
         assertTrue(service.contains("public void reduceSign"));
         assertTrue(service.contains("assertTaskMutationActor(taskId, userId, false)"));
-        assertTrue(service.contains("validateReassignTarget(targetUserId.trim())"));
-        assertTrue(service.contains("MAX_DYNAMIC_SIGNERS = 50"));
-        assertTrue(service.contains("不能将当前任务办理人再次加入加签名单"));
-        assertTrue(service.contains("taskService.addCandidateUser"));
-        assertTrue(service.contains("taskService.deleteCandidateUser"));
-        assertTrue(service.contains("taskService.addComment(taskId, task.getProcessInstanceId(), action"));
+        assertTrue(service.contains("this::validateReassignTarget"));
+        assertTrue(coordinator.contains("MAX_DYNAMIC_SIGNERS = 50"));
+        assertTrue(coordinator.contains("不能将当前任务办理人再次加入加签名单"));
+        assertTrue(coordinator.contains("taskService.addCandidateUser"));
+        assertTrue(coordinator.contains("taskService.deleteCandidateUser"));
+        assertTrue(coordinator.contains("taskService.addComment(task.getId(), task.getProcessInstanceId(), action"));
         assertTrue(controller.contains("@PostMapping(\"/add-sign\")"));
         assertTrue(controller.contains("@PostMapping(\"/reduce-sign\")"));
         assertTrue(controller.contains("/{taskId}/sign-relations"));
-        assertTrue(service.contains("FlowTaskSignMode.fromCode(signMode)"));
-        assertTrue(service.contains("relation.setParentTaskId(task.getTaskId())"));
-        assertTrue(service.contains("relation.setOperatorId(operatorId)"));
-        assertTrue(service.contains("deactivateWithAudit"));
-        assertTrue(service.contains("selectByIdempotency"));
-        assertTrue(service.contains("FLOW_TASK_IDEMPOTENCY_CONFLICT"));
-        assertTrue(service.contains("addMultiInstanceExecution"));
-        assertTrue(service.contains("deleteMultiInstanceExecution"));
-        assertTrue(service.contains("resolveMultiInstanceUserTask"));
-        assertTrue(service.contains("childExecutionId"));
-        assertTrue(service.contains("FlowTaskSignMode.PARALLEL.getCode().equals(normalizedSignMode)"));
-        assertTrue(service.contains("FLOW_TASK_SIGN_MODE_UNSUPPORTED"));
+        assertTrue(coordinator.contains("FlowTaskSignMode.fromCode(signMode)"));
+        assertTrue(coordinator.contains("relation.setParentTaskId(task.getTaskId())"));
+        assertTrue(coordinator.contains("relation.setOperatorId(operatorId)"));
+        assertTrue(coordinator.contains("deactivateWithAudit"));
+        assertTrue(coordinator.contains("selectByIdempotency"));
+        assertTrue(coordinator.contains("FLOW_TASK_IDEMPOTENCY_CONFLICT"));
+        assertTrue(coordinator.contains("addMultiInstanceExecution"));
+        assertTrue(coordinator.contains("deleteMultiInstanceExecution"));
+        assertTrue(coordinator.contains("resolveMultiInstanceUserTask"));
+        assertTrue(coordinator.contains("childExecutionId"));
+        assertTrue(coordinator.contains("FlowTaskSignMode.PARALLEL.getCode().equals(normalizedSignMode)"));
+        assertTrue(coordinator.contains("FLOW_TASK_SIGN_MODE_UNSUPPORTED"));
     }
 
     @Test

@@ -11,17 +11,13 @@ import com.mdframe.forge.starter.flow.dto.ProcessDiagramInfo;
 import com.mdframe.forge.starter.flow.dto.TaskFormInfo;
 import com.mdframe.forge.starter.flow.entity.FlowBusiness;
 import com.mdframe.forge.starter.flow.entity.FlowErrorLog;
-import com.mdframe.forge.starter.flow.entity.FlowModel;
 import com.mdframe.forge.starter.flow.entity.FlowTask;
 import com.mdframe.forge.starter.flow.enums.FlowBusinessStatus;
 import com.mdframe.forge.starter.flow.enums.FlowTaskStatus;
-import com.mdframe.forge.starter.flow.enums.FlowTaskSignMode;
 import com.mdframe.forge.starter.flow.mapper.FlowBusinessMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowFormInstanceMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowTaskMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowTaskCandidateMapper;
-import com.mdframe.forge.starter.flow.entity.FlowTaskCandidate;
-import com.mdframe.forge.starter.flow.enums.FlowTaskCandidateStatus;
 import com.mdframe.forge.starter.flow.service.FlowErrorLogService;
 import com.mdframe.forge.starter.flow.service.FlowFormService;
 import com.mdframe.forge.starter.flow.service.FlowModelService;
@@ -36,21 +32,15 @@ import com.mdframe.forge.starter.flow.vo.FlowTaskSignRelationVO;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.extern.slf4j.Slf4j;
 import org.flowable.bpmn.model.BpmnModel;
-import org.flowable.bpmn.model.FlowElement;
 import org.flowable.bpmn.model.FlowNode;
-import org.flowable.bpmn.model.UserTask;
-import org.flowable.bpmn.model.MultiInstanceLoopCharacteristics;
 import org.flowable.bpmn.model.Process;
 import org.flowable.engine.HistoryService;
 import org.flowable.engine.ProcessEngineConfiguration;
 import org.flowable.engine.RepositoryService;
 import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
-import org.flowable.engine.history.HistoricActivityInstance;
-import org.flowable.engine.history.HistoricProcessInstance;
 import org.flowable.engine.repository.ProcessDefinition;
 import org.flowable.engine.runtime.ProcessInstance;
-import org.flowable.engine.runtime.Execution;
 import org.flowable.task.api.DelegationState;
 import org.flowable.task.api.Task;
 import org.flowable.task.api.history.HistoricTaskInstance;
@@ -70,8 +60,6 @@ import java.util.stream.Collectors;
 @Service
 public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> implements FlowTaskService {
 
-    private static final int MAX_DYNAMIC_SIGNERS = 50;
-
     private static final String ACTION_APPROVE = "approve";
     private static final String ACTION_REJECT = "reject";
     private static final String ACTION_REJECT_TO_START = "rejectToStart";
@@ -80,13 +68,11 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     private static final String ACTION_TERMINATE = "terminate";
     private static final String AUTO_APPROVAL_FIRST_ONLY = "firstOnly";
     private static final String AUTO_APPROVAL_CONSECUTIVE = "consecutive";
-    private static final String AUTO_APPROVAL_NONE = "none";
     private static final String RETURN_SOURCE_ACTIVITY_ID = "FLOW_RETURN_SOURCE_ACTIVITY_ID";
     private static final int MAX_DETAIL_HISTORY_ITEMS = 1000;
     private static final String RETURN_TARGET_ACTIVITY_ID = "FLOW_RETURN_TARGET_ACTIVITY_ID";
     private static final String RETURN_TO_START_PENDING = "FLOW_RETURN_TO_START_PENDING";
     private static final String DIRECT_SEND_VARIABLE = "directSend";
-    private static final String COMMENT_TYPE_APPROVAL_POINTS = "approvalPoints";
 
     @Autowired
     private RuntimeService runtimeService;
@@ -314,6 +300,16 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
 
     private boolean containsCsv(String csv, String value) {
         return splitIds(csv).contains(value);
+    }
+
+    private List<String> splitIds(String value) {
+        if (isBlank(value)) {
+            return List.of();
+        }
+        return Arrays.stream(value.split(","))
+                .map(String::trim)
+                .filter(item -> !item.isEmpty())
+                .toList();
     }
 
     @Override
@@ -947,7 +943,8 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void addSign(String taskId, String userId, String targetUserId, String reason, String signMode) {
-        mutateCandidateSign(taskId, userId, targetUserId, reason, signMode,
+        dynamicSignCoordinator().mutate(
+                taskId, userId, targetUserId, reason, signMode,
                 SessionHelper.getTenantId(), null, null, true);
     }
 
@@ -955,7 +952,8 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     @Transactional(rollbackFor = Exception.class)
     public void addSign(String taskId, String userId, String targetUserId, String reason, String signMode,
                         Long tenantId, String idempotencyKey, String requestDigest) {
-        mutateCandidateSign(taskId, userId, targetUserId, reason, signMode,
+        dynamicSignCoordinator().mutate(
+                taskId, userId, targetUserId, reason, signMode,
                 tenantId, idempotencyKey, requestDigest, true);
     }
 
@@ -968,7 +966,8 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void reduceSign(String taskId, String userId, String targetUserId, String reason, String signMode) {
-        mutateCandidateSign(taskId, userId, targetUserId, reason, signMode,
+        dynamicSignCoordinator().mutate(
+                taskId, userId, targetUserId, reason, signMode,
                 SessionHelper.getTenantId(), null, null, false);
     }
 
@@ -976,245 +975,15 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
     @Transactional(rollbackFor = Exception.class)
     public void reduceSign(String taskId, String userId, String targetUserId, String reason, String signMode,
                            Long tenantId, String idempotencyKey, String requestDigest) {
-        mutateCandidateSign(taskId, userId, targetUserId, reason, signMode,
+        dynamicSignCoordinator().mutate(
+                taskId, userId, targetUserId, reason, signMode,
                 tenantId, idempotencyKey, requestDigest, false);
-    }
-
-    private void mutateCandidateSign(String taskId, String userId, String targetUserId,
-                                     String reason, String signMode, Long tenantId,
-                                     String idempotencyKey, String requestDigest, boolean add) {
-        if (isBlank(targetUserId)) {
-            throw new RuntimeException("目标用户不能为空");
-        }
-        String normalizedSignMode = FlowTaskSignMode.fromCode(signMode).getCode();
-        if (!FlowTaskSignMode.PARALLEL.getCode().equals(normalizedSignMode)) {
-            throw new IllegalStateException("FLOW_TASK_SIGN_MODE_UNSUPPORTED");
-        }
-        assertTaskMutationActor(taskId, userId, false);
-        validateReassignTarget(targetUserId.trim());
-        if (tenantId == null || tenantId <= 0) {
-            throw new IllegalStateException("FLOW_TASK_TENANT_REQUIRED");
-        }
-        if ((idempotencyKey == null) != (requestDigest == null)) {
-            throw new IllegalStateException("FLOW_TASK_IDEMPOTENCY_INVALID");
-        }
-        if (idempotencyKey != null && flowTaskCandidateMapper == null) {
-            throw new IllegalStateException("FLOW_TASK_IDEMPOTENCY_UNAVAILABLE");
-        }
-        FlowTask localTask = baseMapper.selectByTaskIdAndTenant(taskId, tenantId);
-        Task task = taskService.createTaskQuery().taskId(taskId).singleResult();
-        if (task == null || localTask == null) {
-            throw new RuntimeException("任务不存在或已处理");
-        }
-        localTask = baseMapper.selectByTaskIdForUpdateAndTenant(taskId, tenantId);
-        if (localTask == null || !tenantId.equals(localTask.getTenantId())) {
-            throw new RuntimeException("任务不存在或已处理");
-        }
-        if (Objects.equals(String.valueOf(userId), targetUserId.trim())
-                || Objects.equals(String.valueOf(localTask.getAssignee()), targetUserId.trim())) {
-            throw new RuntimeException("不能将当前任务办理人再次加入加签名单");
-        }
-        if (flowTaskCandidateMapper != null && add
-                && flowTaskCandidateMapper.countActiveByTaskAndValue(
-                tenantId, taskId, FlowTaskCandidate.TYPE_USER, targetUserId.trim()) > 0) {
-            throw new RuntimeException("目标用户已经在加签名单中");
-        }
-
-        if (idempotencyKey != null) {
-            FlowTaskCandidate previous = flowTaskCandidateMapper.selectByIdempotency(
-                    tenantId, taskId, FlowTaskCandidate.TYPE_USER, idempotencyKey);
-            if (previous != null) {
-                if (!Objects.equals(requestDigest, previous.getRequestDigest())
-                        || !Objects.equals(targetUserId.trim(), previous.getCandidateValue())
-                        || !Objects.equals(add, FlowTaskCandidateStatus.ACTIVE.matches(previous.getStatus()))) {
-                    throw new IllegalStateException("FLOW_TASK_IDEMPOTENCY_CONFLICT");
-                }
-                return;
-            }
-        }
-
-        if (isMultiInstanceTask(task)) {
-            mutateFlowableMultiInstanceSign(task, localTask, userId, targetUserId.trim(), reason,
-                    normalizedSignMode, idempotencyKey, requestDigest, add);
-            return;
-        }
-
-        LinkedHashSet<String> candidates = new LinkedHashSet<>(splitIds(localTask.getCandidateUsers()));
-        boolean changed;
-        if (add) {
-            if (candidates.size() >= MAX_DYNAMIC_SIGNERS) {
-                throw new RuntimeException("单个任务最多允许加签 " + MAX_DYNAMIC_SIGNERS + " 人");
-            }
-            changed = candidates.add(targetUserId.trim());
-            if (changed) {
-                taskService.addCandidateUser(taskId, targetUserId.trim());
-                syncCandidateRelation(localTask, targetUserId.trim(), userId, reason, normalizedSignMode,
-                        idempotencyKey, requestDigest, true, null, null);
-            }
-        } else {
-            changed = candidates.remove(targetUserId.trim());
-            if (changed) {
-                taskService.deleteCandidateUser(taskId, targetUserId.trim());
-                syncCandidateRelation(localTask, targetUserId.trim(), userId, reason, normalizedSignMode,
-                        idempotencyKey, requestDigest, false, null, null);
-            }
-        }
-        if (!changed) {
-            throw new RuntimeException(add ? "目标用户已经在加签名单中" : "目标用户不在加签名单中");
-        }
-
-        FlowTask update = new FlowTask();
-        update.setCandidateUsers(String.join(",", candidates));
-        update.setComment(reason);
-        if (!updateTaskByTenant(taskId, update)) {
-            throw new IllegalStateException("加签状态同步失败");
-        }
-        String action = add ? "加签" : "减签";
-        taskService.addComment(taskId, task.getProcessInstanceId(), action,
-                isBlank(reason) ? action : reason.trim());
-        log.info("流程任务{}：taskId={}, actor={}, target={}", action, taskId, userId, targetUserId);
-    }
-
-    /**
-     * 对已经由 BPMN 配置为多实例的用户任务，使用 Flowable 原生多实例执行 API 创建/删除子执行。
-     * 普通用户任务继续使用候选关系兼容路径，避免把一个普通任务伪装成流程子任务。
-     */
-    private void mutateFlowableMultiInstanceSign(Task task, FlowTask parentTask, String operatorId,
-                                                  String targetUserId, String reason, String signMode,
-                                                  String idempotencyKey, String requestDigest, boolean add) {
-        UserTask userTask = resolveMultiInstanceUserTask(task);
-        if (flowTaskCandidateMapper == null || userTask == null || userTask.getLoopCharacteristics() == null) {
-            throw new IllegalStateException("FLOW_TASK_SIGN_MULTI_INSTANCE_UNAVAILABLE");
-        }
-        MultiInstanceLoopCharacteristics loop = userTask.getLoopCharacteristics();
-        if (add) {
-            String elementVariable = loop.getElementVariable();
-            if (isBlank(elementVariable)) {
-                elementVariable = "assignee";
-            }
-            Map<String, Object> variables = new HashMap<>();
-            variables.put(elementVariable, targetUserId);
-            Execution execution = runtimeService.addMultiInstanceExecution(
-                    userTask.getId(), task.getProcessInstanceId(), variables);
-            if (execution == null || isBlank(execution.getId())) {
-                throw new IllegalStateException("FLOW_TASK_SIGN_CHILD_EXECUTION_CREATE_FAILED");
-            }
-            Task childTask = taskService.createTaskQuery().executionId(execution.getId()).singleResult();
-            if (childTask == null && !loop.isSequential()) {
-                throw new IllegalStateException("FLOW_TASK_SIGN_CHILD_TASK_CREATE_FAILED");
-            }
-            if (childTask != null && !Objects.equals(targetUserId, childTask.getAssignee())) {
-                taskService.setAssignee(childTask.getId(), targetUserId);
-            }
-            syncCandidateRelation(parentTask, targetUserId, operatorId, reason, signMode,
-                    idempotencyKey, requestDigest, true,
-                    childTask == null ? null : childTask.getId(), execution.getId());
-            taskService.addComment(task.getId(), task.getProcessInstanceId(), "加签",
-                    isBlank(reason) ? "加签" : reason.trim());
-            return;
-        }
-
-        FlowTaskCandidate relation = flowTaskCandidateMapper.selectActiveDynamicSignRelation(
-                parentTask.getTenantId(), parentTask.getTaskId(), targetUserId);
-        if (relation == null || isBlank(relation.getChildExecutionId())) {
-            throw new RuntimeException("目标用户不存在可撤销的多实例加签");
-        }
-        runtimeService.deleteMultiInstanceExecution(relation.getChildExecutionId(), false);
-        syncCandidateRelation(parentTask, targetUserId, operatorId, reason, signMode,
-                idempotencyKey, requestDigest, false,
-                relation.getChildTaskId(), relation.getChildExecutionId());
-        taskService.addComment(task.getId(), task.getProcessInstanceId(), "减签",
-                isBlank(reason) ? "减签" : reason.trim());
-    }
-
-    private boolean isMultiInstanceTask(Task task) {
-        return resolveMultiInstanceUserTask(task) != null;
-    }
-
-    private UserTask resolveMultiInstanceUserTask(Task task) {
-        if (task == null || isBlank(task.getProcessDefinitionId())
-                || isBlank(task.getTaskDefinitionKey()) || repositoryService == null) {
-            return null;
-        }
-        try {
-            BpmnModel model = repositoryService.getBpmnModel(task.getProcessDefinitionId());
-            if (model == null) {
-                return null;
-            }
-            FlowElement element = model.getFlowElement(task.getTaskDefinitionKey());
-            if (element instanceof UserTask userTask && userTask.hasMultiInstanceLoopCharacteristics()) {
-                return userTask;
-            }
-        } catch (Exception e) {
-            log.warn("解析多实例任务配置失败: taskId={}, error={}", task.getId(), e.getMessage());
-        }
-        return null;
-    }
-
-    private void syncCandidateRelation(FlowTask task, String candidateUserId, String operatorId,
-                                       String reason, String signMode, String idempotencyKey,
-                                       String requestDigest, boolean active,
-                                       String childTaskId, String childExecutionId) {
-        if (flowTaskCandidateMapper == null || task == null || task.getTenantId() == null
-                || task.getTaskId() == null || isBlank(candidateUserId)) {
-            return;
-        }
-        LocalDateTime now = LocalDateTime.now();
-        if (active) {
-            FlowTaskCandidate relation = new FlowTaskCandidate();
-            relation.setTenantId(task.getTenantId());
-            relation.setTaskId(task.getTaskId());
-            relation.setParentTaskId(task.getTaskId());
-            relation.setChildTaskId(childTaskId);
-            relation.setChildExecutionId(childExecutionId);
-            relation.setProcessInstanceId(task.getProcessInstanceId());
-            relation.setCandidateType(FlowTaskCandidate.TYPE_USER);
-            relation.setCandidateValue(candidateUserId);
-            relation.setSource(FlowTaskCandidate.SOURCE_DYNAMIC_SIGN);
-            relation.setSignMode(signMode);
-            relation.setOperatorId(operatorId);
-            relation.setReason(reason);
-            relation.setIdempotencyKey(idempotencyKey);
-            relation.setRequestDigest(requestDigest);
-            relation.setStatus(FlowTaskCandidateStatus.ACTIVE.getCode());
-            relation.setCreateTime(now);
-            relation.setUpdateTime(now);
-            flowTaskCandidateMapper.insertIgnore(relation);
-        } else {
-            flowTaskCandidateMapper.deactivateWithAudit(task.getTenantId(), task.getTaskId(),
-                    FlowTaskCandidate.TYPE_USER, candidateUserId, operatorId, reason,
-                    idempotencyKey, requestDigest, now);
-        }
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<FlowTaskSignRelationVO> getSignRelations(String taskId, String userId) {
-        if (isBlank(taskId) || isBlank(userId)) {
-            throw new IllegalArgumentException("FLOW_TASK_SIGN_RELATION_REQUIRED");
-        }
-        Long tenantId = SessionHelper.getTenantId();
-        if (tenantId == null || tenantId <= 0) {
-            throw new IllegalStateException("FLOW_TASK_TENANT_REQUIRED");
-        }
-        FlowTask task = flowAccessGuard.requireTaskVisible(taskId);
-        if (!tenantId.equals(task.getTenantId())) {
-            throw new RuntimeException("FLOW_RESOURCE_NOT_FOUND");
-        }
-        if (flowTaskCandidateMapper == null) {
-            return List.of();
-        }
-        return flowTaskCandidateMapper.selectDynamicSignRelations(tenantId, task.getTaskId());
-    }
-
-    private List<String> splitIds(String value) {
-        if (isBlank(value)) {
-            return List.of();
-        }
-        return Arrays.stream(value.split(","))
-                .map(String::trim)
-                .filter(item -> !item.isEmpty())
-                .toList();
+        return dynamicSignCoordinator().getSignRelations(taskId, userId);
     }
 
     @Override
@@ -1420,6 +1189,19 @@ public class FlowTaskServiceImpl extends ServiceImpl<FlowTaskMapper, FlowTask> i
                 this::resolveProcessDefinitionKey,
                 this::resolveUserDisplayName,
                 this::isProcessStarterTask
+        );
+    }
+
+    private FlowTaskDynamicSignCoordinator dynamicSignCoordinator() {
+        return new FlowTaskDynamicSignCoordinator(
+                runtimeService,
+                taskService,
+                repositoryService,
+                getBaseMapper(),
+                flowTaskCandidateMapper,
+                flowAccessGuard,
+                (taskId, userId) -> assertTaskMutationActor(taskId, userId, false),
+                this::validateReassignTarget
         );
     }
 
