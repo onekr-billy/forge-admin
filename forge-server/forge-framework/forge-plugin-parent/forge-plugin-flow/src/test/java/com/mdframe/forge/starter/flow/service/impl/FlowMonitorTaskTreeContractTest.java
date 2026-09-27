@@ -24,7 +24,7 @@ class FlowMonitorTaskTreeContractTest {
     void adminTaskDetailsMustBuildTreeAndExposeCurrentTaskIds() throws IOException {
         String source = Files.readString(SERVICE);
         assertTrue(source.contains("selectAdminTaskTreeByProcessInstance"));
-        assertTrue(source.contains("result.setTaskTree(buildAdminTaskTree(treeTasks))"));
+        assertTrue(source.contains("result.setTaskTree(FlowMonitorViewAssembler.buildAdminTaskTree(treeTasks))"));
         assertTrue(source.contains("result.setCurrentTaskIds(treeTasks.stream()"));
         assertTrue(source.contains("FlowTaskStatus.isActionable(task.getStatus())"));
         assertTrue(source.contains("selectAdminTaskTreeByProcessInstance(business.getProcessInstanceId(), tenantId, 500)"));

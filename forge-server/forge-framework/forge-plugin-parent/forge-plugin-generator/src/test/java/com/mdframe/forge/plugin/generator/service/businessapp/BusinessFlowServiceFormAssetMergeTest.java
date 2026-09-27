@@ -1,5 +1,6 @@
 package com.mdframe.forge.plugin.generator.service.businessapp;
 
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
 import com.mdframe.forge.plugin.generator.mapper.AiCrudConfigMapper;
@@ -19,8 +20,6 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -41,12 +40,11 @@ class BusinessFlowServiceFormAssetMergeTest {
     private BusinessFlowService service;
     private BusinessFieldDesignService fieldDesignService;
     private BusinessObjectMapper businessObjectMapper;
-    private Method appendUniqueFormAssets;
-    private Method appendObjectFieldRegistryFallback;
-    private Method buildObjectFieldRegistryFormSchema;
-    private Method resolveRuntimeBusinessFormRef;
-    private Method resolveBusinessTaskFormAsset;
-    private Method mergeRequestedFlowVariables;
+    private BusinessFlowFormAssetCatalog formAssetCatalog;
+    private BusinessFlowTaskNodeFormResolver taskNodeFormResolver;
+    private BusinessFlowStartContextAssembler startContextAssembler;
+    private BusinessFlowTaskChildPolicy taskChildPolicy;
+    private BusinessFlowFormAssetAssembler formAssetAssembler;
     private BusinessApplicationService applicationService;
 
     @BeforeEach
@@ -71,24 +69,16 @@ class BusinessFlowServiceFormAssetMergeTest {
         Field applicationField = BusinessFlowService.class.getDeclaredField("businessApplicationService");
         applicationField.setAccessible(true);
         applicationField.set(service, applicationService);
-        appendUniqueFormAssets = BusinessFlowService.class.getDeclaredMethod(
-                "appendUniqueFormAssets", List.class, List.class);
-        appendUniqueFormAssets.setAccessible(true);
-        appendObjectFieldRegistryFallback = BusinessFlowService.class.getDeclaredMethod(
-                "appendObjectFieldRegistryFallback", List.class, BusinessObjectVO.class);
-        appendObjectFieldRegistryFallback.setAccessible(true);
-        buildObjectFieldRegistryFormSchema = BusinessFlowService.class.getDeclaredMethod(
-                "buildObjectFieldRegistryFormSchema", BusinessObjectVO.class, String.class);
-        buildObjectFieldRegistryFormSchema.setAccessible(true);
-        resolveRuntimeBusinessFormRef = BusinessFlowService.class.getDeclaredMethod(
-                "resolveRuntimeBusinessFormRef", Map.class);
-        resolveRuntimeBusinessFormRef.setAccessible(true);
-        resolveBusinessTaskFormAsset = BusinessFlowService.class.getDeclaredMethod(
-                "resolveBusinessTaskFormAsset", String.class, String.class);
-        resolveBusinessTaskFormAsset.setAccessible(true);
-        mergeRequestedFlowVariables = BusinessFlowService.class.getDeclaredMethod(
-                "mergeRequestedFlowVariables", Map.class, Map.class);
-        mergeRequestedFlowVariables.setAccessible(true);
+        formAssetAssembler = new BusinessFlowFormAssetAssembler(
+                fieldDesignService, (fields, layout) -> fields, (options, fields) -> { });
+        Field formAssetCatalogField = BusinessFlowService.class.getDeclaredField("formAssetCatalog");
+        formAssetCatalogField.setAccessible(true);
+        formAssetCatalog = (BusinessFlowFormAssetCatalog) formAssetCatalogField.get(service);
+        Field nodeFormResolverField = BusinessFlowService.class.getDeclaredField("taskNodeFormResolver");
+        nodeFormResolverField.setAccessible(true);
+        taskNodeFormResolver = (BusinessFlowTaskNodeFormResolver) nodeFormResolverField.get(service);
+        startContextAssembler = BusinessFlowStartContextAssembler.standard();
+        taskChildPolicy = new BusinessFlowTaskChildPolicy();
     }
 
     @Test
@@ -213,7 +203,8 @@ class BusinessFlowServiceFormAssetMergeTest {
                     "formDesignerSchema":{"components":[{"type":"input","fieldBinding":{"fieldCode":"employeeName"},"props":{"label":"员工姓名"}}]}}]
                 }}
                 """);
-        when(applicationService.detail(10L)).thenReturn(application);
+        when(applicationService.loadInAppBuilder(10L)).thenReturn(
+                JSON.parseObject(application.getOptions()).getJSONObject("inAppBuilder"));
         String formKey = "app_10_page_page_page_form_asset_1";
         Map<String, Object> formInfo = Map.of("variables", Map.of(
                 "formKey", formKey,
@@ -224,9 +215,9 @@ class BusinessFlowServiceFormAssetMergeTest {
                         "pageId", "page_page",
                         "pageName", "打卡申请")));
 
-        Map<String, Object> runtimeRef = (Map<String, Object>) resolveRuntimeBusinessFormRef.invoke(service, formInfo);
-        Map<String, Object> resolved = (Map<String, Object>) resolveBusinessTaskFormAsset.invoke(
-                service, "business_object", runtimeRef.get("formKey"));
+        Map<String, Object> runtimeRef = taskNodeFormResolver.resolveRuntimeBusinessFormRef(formInfo);
+        Map<String, Object> resolved = taskNodeFormResolver.resolveBusinessTaskFormAsset(
+                "business_object", String.valueOf(runtimeRef.get("formKey")));
 
         assertEquals(formKey, runtimeRef.get("formKey"));
         assertEquals("page_page", runtimeRef.get("pageId"));
@@ -246,7 +237,7 @@ class BusinessFlowServiceFormAssetMergeTest {
         runtimeAsset.put("supportsSave", true);
         List<Map<String, Object>> target = new ArrayList<>(List.of(designAsset));
 
-        appendUniqueFormAssets.invoke(service, target, List.of(runtimeAsset));
+        formAssetAssembler.appendUniqueFormAssets(target, List.of(runtimeAsset));
 
         assertEquals(1, target.size());
         Map<String, Object> merged = target.get(0);
@@ -265,7 +256,7 @@ class BusinessFlowServiceFormAssetMergeTest {
         List<Map<String, Object>> target = new ArrayList<>(List.of(
                 asset("purchase_form", "采购申请单", List.of(field("orderNo", "采购单号")))));
 
-        appendUniqueFormAssets.invoke(service, target, List.of(
+        formAssetAssembler.appendUniqueFormAssets(target, List.of(
                 asset("invoice_form", "发票表单", List.of(field("invoiceNo", "发票号")))));
 
         assertEquals(2, target.size());
@@ -294,11 +285,7 @@ class BusinessFlowServiceFormAssetMergeTest {
         flowStatus.setReadonly(true);
         org.mockito.Mockito.when(fieldDesignService.listFields(1001L))
                 .thenReturn(List.of(employee, flowStatus));
-        Method collectFallback = BusinessFlowService.class.getDeclaredMethod(
-                "collectObjectFieldRegistryFormAssets", BusinessObjectVO.class);
-        collectFallback.setAccessible(true);
-
-        List<Map<String, Object>> assets = (List<Map<String, Object>>) collectFallback.invoke(service, object);
+        List<Map<String, Object>> assets = formAssetAssembler.collectObjectFieldRegistryFormAssets(object);
 
         assertEquals(1, assets.size());
         assertEquals("attendance", assets.get(0).get("formKey"));
@@ -322,7 +309,7 @@ class BusinessFlowServiceFormAssetMergeTest {
         Map<String, Object> existing = asset("attendance", "定制打卡表单", List.of());
         List<Map<String, Object>> assets = new ArrayList<>(List.of(existing));
 
-        appendObjectFieldRegistryFallback.invoke(service, assets, object);
+        formAssetAssembler.appendObjectFieldRegistryFallback(assets, object);
 
         assertEquals(1, assets.size());
         assertEquals("attendance", assets.get(0).get("formKey"));
@@ -345,8 +332,7 @@ class BusinessFlowServiceFormAssetMergeTest {
         employee.setFormVisible(true);
         org.mockito.Mockito.when(fieldDesignService.listFields(1001L)).thenReturn(List.of(employee));
 
-        Map<String, Object> schema = (Map<String, Object>) buildObjectFieldRegistryFormSchema
-                .invoke(service, object, "attendance");
+        Map<String, Object> schema = formAssetCatalog.buildObjectFieldRegistryFormSchema(object, "attendance");
 
         assertEquals("attendance", schema.get("formKey"));
         assertEquals(1, ((List<?>) schema.get("components")).size());
@@ -361,12 +347,11 @@ class BusinessFlowServiceFormAssetMergeTest {
                 "objectCode", "forged_object",
                 "businessKey", "forged:999");
 
-        InvocationTargetException exception = assertThrows(InvocationTargetException.class,
-                () -> mergeRequestedFlowVariables.invoke(service, target, requested));
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> startContextAssembler.mergeRequestedVariables(target, requested));
 
-        assertTrue(exception.getCause() instanceof BusinessException);
         assertEquals("启动变量不能覆盖服务端业务上下文：businessKey, objectCode",
-                exception.getCause().getMessage());
+                exception.getMessage());
         assertEquals(Map.of("businessKey", "order:100"), target);
     }
 
@@ -376,7 +361,7 @@ class BusinessFlowServiceFormAssetMergeTest {
         Map<String, Object> target = new LinkedHashMap<>(Map.of("businessKey", "order:100"));
         Map<String, Object> selectedApprovers = Map.of("managerApprove", List.of("101", "102"));
 
-        mergeRequestedFlowVariables.invoke(service, target, Map.of(
+        startContextAssembler.mergeRequestedVariables(target, Map.of(
                 "PROCESS_START_USER", selectedApprovers,
                 "urgent", true));
 
@@ -388,9 +373,6 @@ class BusinessFlowServiceFormAssetMergeTest {
     @Test
     @DisplayName("object-shaped form permission string keeps child writable field")
     void objectFormPermissionStringKeepsChildWritableField() throws Exception {
-        Method buildTaskChildPermissions = BusinessFlowService.class.getDeclaredMethod(
-                "buildTaskChildPermissions", List.class, JSONObject.class);
-        buildTaskChildPermissions.setAccessible(true);
         String permissions = """
                 {"version":2,"fields":[{"field":"fieldInput","scope":"child","childKey":"cgou_detail_ujpc","childField":"fieldInput","readable":true,"writable":true}],"children":[{"childKey":"cgou_detail_ujpc","readable":true,"allowUpdate":true}]}
                 """;
@@ -401,10 +383,8 @@ class BusinessFlowServiceFormAssetMergeTest {
         child.put("allowUpdate", true);
         child.put("fields", List.of(Map.of("field", "fieldInput", "writable", false)));
 
-        @SuppressWarnings("unchecked")
         Map<String, DynamicCrudService.TaskChildPermission> result =
-                (Map<String, DynamicCrudService.TaskChildPermission>) buildTaskChildPermissions.invoke(
-                        service, List.of(child), nodeForm);
+                taskChildPolicy.buildSavePermissions(List.of(child), nodeForm);
 
         assertTrue(result.get("cgou_detail_ujpc").writableFields().contains("fieldInput"));
     }

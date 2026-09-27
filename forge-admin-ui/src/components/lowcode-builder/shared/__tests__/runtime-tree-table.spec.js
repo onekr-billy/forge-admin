@@ -30,12 +30,17 @@ describe('runtime tree table', () => {
       options: { treeConfig: { enabled: true } },
     })).toBe(false)
     expect(isEmbeddedTreeTableRuntime({
+      layoutType: 'list-form',
+      options: { treeConfig: { enabled: 'true', parentField: 'parentId' } },
+    })).toBe(true)
+    expect(isEmbeddedTreeTableRuntime({
       options: { treeConfig: { enabled: false } },
     })).toBe(false)
+    // appType 误写入 layoutType=SINGLE 时，只要有 treeConfig 且未显式关闭，仍走嵌入式树表
     expect(isEmbeddedTreeTableRuntime({
       layoutType: 'SINGLE',
       options: { treeConfig: { parentField: 'parentId' } },
-    })).toBe(false)
+    })).toBe(true)
   })
 
   it('aligns search treeSelect with left-tree optionSource sort and includeChildren', () => {
@@ -161,6 +166,46 @@ describe('runtime tree table', () => {
     expect(props.treeConfig.parentField).toBe('parentId')
     expect(props.tableProps.childrenKey).toBe('children')
     expect(props.publicParams.loadMode).toBe('full')
+  })
+
+  it('activates embedded tree when treeConfig exists but enabled is omitted', () => {
+    const props = buildRuntimeCrudProps({
+      configKey: 'org_tree',
+      layoutType: 'SINGLE',
+      apiConfig: {
+        list: 'get@/ai/crud/当前配置/page',
+        tree: 'get@/ai/crud/当前配置/tree',
+      },
+      options: {
+        treeConfig: {
+          keyField: 'id',
+          parentField: 'parentId',
+          childrenField: 'children',
+        },
+      },
+    })
+    expect(props.apiConfig.list).toContain('/tree')
+    expect(props.showPagination).toBe(false)
+    expect(props.tableProps.childrenKey).toBe('children')
+  })
+
+  it('does not activate embedded tree when enabled is explicitly false', () => {
+    const props = buildRuntimeCrudProps({
+      configKey: 'org_tree',
+      layoutType: 'simple-crud',
+      apiConfig: {
+        list: 'get@/ai/crud/当前配置/page',
+        tree: 'get@/ai/crud/当前配置/tree',
+      },
+      options: {
+        treeConfig: {
+          enabled: false,
+          parentField: 'parentId',
+        },
+      },
+    })
+    expect(props.apiConfig.list).toContain('/page')
+    expect(props.tableProps?.childrenKey).toBeUndefined()
   })
 
   it('keeps pagination list api for left-tree-right-table layout', () => {

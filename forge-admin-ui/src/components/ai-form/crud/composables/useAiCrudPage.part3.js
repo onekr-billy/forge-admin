@@ -105,7 +105,8 @@ export function applyAiCrudPagePart3(props, emit, deps = {}) {
     childToolbarItemSelected, childToolbarQuantity, offlineFormRuntime, offlineDraftId, offlineBaseRecordVersion, offlineDraftNotice, offlineDraftHydrating, offlineReplayLoading,
     commandActionTitle, commandActionFormSchema, commandActionFormContext, childToolbarActionTitle, childToolbarQuantityLabel, childToolbarItemOptions, childToolbarQuantityMax, visibleToolbarActions,
     visibleDetailActions, visibleFormActions, maxActionButtons, rowKeyFn, tableRowKeyFn, resolvedCustomQueryConfigKey, toolbarOverflowOptions, toolbarDropdownOptions,
-    activeSourceColumns, formContext, normalizedExpandConfig, hasExpandConfig, resolvedResizable, inlineSwitchUpdatingMap, tableColumns, paginationConfig,
+    activeSourceColumns, formContext, normalizedExpandConfig, hasExpandConfig, resolvedResizable, inlineSwitchUpdatingMap, tableColumns,
+    isEmbeddedTreeTable, effectiveShowPagination, effectiveTableProps, collectEmbeddedTreeExpandKeys, paginationConfig,
     searchSlots, tableSlots, formSlots, isDetailMode, resolvedFormOpenMode, usesInlineFormWorkspace, isTabWorkspaceMode, inlineWorkspaceVisible,
     showInlineListPane, showInlineFormWorkspacePane, tiledEditGridCols, activeInlineFormTab, activeInlineFormTitle, inlineFormModeLabel, showInlineFormModeTag, resolvedTabWorkspace,
     activeModalWidth, detailFlowTimelineVisible, detailFlowDiagramVisible, showDetailFlowTabs, dataAuditMeta, showDataChangeLogTab, showDetailExtraTabs, dataAuditObjectId,
@@ -119,7 +120,7 @@ export function applyAiCrudPagePart3(props, emit, deps = {}) {
    * 加载列表数据
    */
   async function loadList() {
-    if (!customQueryPayload.value && !props.api && !props.apiConfig.list) {
+    if (!customQueryPayload.value && !props.api && !props.apiConfig.list && !props.apiConfig.tree) {
       console.warn('未配置 API 地址')
       return
     }
@@ -133,8 +134,8 @@ export function applyAiCrudPagePart3(props, emit, deps = {}) {
         ...props.publicParams,
       })
 
-      // 分页参数
-      if (props.showPagination) {
+      // 分页参数（嵌入式树表走全量 /tree，不能带 page 参数）
+      if (effectiveShowPagination.value) {
         if (props.listMethod === 'get') {
           params = {
             ...params,
@@ -165,8 +166,9 @@ export function applyAiCrudPagePart3(props, emit, deps = {}) {
         })
       }
       else {
-        // 解析 API
-        const { method, url } = parseApiConfig('list', props.api, props.listMethod)
+        // 嵌入式树表优先打 /tree，避免上游 props 未改写 list 时落到平铺 /page
+        const listApiKey = isEmbeddedTreeTable.value && props.apiConfig?.tree ? 'tree' : 'list'
+        const { method, url } = parseApiConfig(listApiKey, props.api, props.listMethod)
 
         // 确定使用哪种请求方法
         let requestMethod = method
@@ -221,6 +223,9 @@ export function applyAiCrudPagePart3(props, emit, deps = {}) {
       // 更新数据
       dataSource.value = list
       pagination.value.itemCount = total
+      if (isEmbeddedTreeTable.value && effectiveTableProps.value?.defaultExpandAll !== false) {
+        expandedRowKeys.value = collectEmbeddedTreeExpandKeys(list)
+      }
 
       emit('load-list-success', { list, total })
     }

@@ -1,0 +1,89 @@
+# 拆分任务
+
+- [x] 盘点目标类与相关现有 Spec、测试边界。
+- [x] 抽取 `BusinessFlowStartLockManager` 与 `RuntimeFieldMetadataCompiler`，保持入口构造签名。
+- [x] 完成首个切口的模块编译及定向回归，并记录结果。
+- [x] 将 Java 单类 1000 行目标写入项目开发规范和用户偏好。
+- [x] 提取业务流程状态修复与运行配置选择，补草稿流程终态回调、字段白名单、写入失败和既有幂等回归。
+- [x] 提取业务流程回调编排与表单上下文，补齐绑定后状态字段定向回归。
+- [x] 提取运行时关系解析、树配置与主子表配置外壳，补协议回归测试。
+- [x] 将主子表字段编译继续从入口迁出，补完整 JSON 快照及保存模式回归。
+- [x] 提取运行配置动作、关系查找与页面引用字段编译职责，补配置协议回归。
+- [x] 提取运行时表单容器选项编译职责，补优先级与默认值回归。
+- [x] 提取树字段选项源装饰，保留当前对象父级字段及已有选项源协议。
+- [x] 提取运行字段组件类型、记录选择器和标签伴随字段协议，补入口回归。
+- [x] 提取在线 DDL 白名单策略，使 `LowcodeDdlService` 低于 1000 行。
+- [x] 将业务流程编排器的运行视图组装迁出，使入口低于 1000 行。
+- [x] 将 Flowable 事件/通知监听器及监控服务的纯解析/渲染/视图职责迁出，使三个入口分别低于 1000 行。
+- [x] 提取 Flowable 模型 BPMN 文本规范化与部署预检，使 `FlowModelServiceImpl` 低于 1000 行，并补模型及版本定向回归。
+- [x] 提取运行时设计器布局块、表单规则和画布元数据读取，补配置协议回归。
+- [x] 提取 form-create 字段规则和必填验证映射，保持网格跨度计算时机并补定向回归。
+- [x] 提取运行时编辑字段编译与共享属性白名单，保持主子表复用及字段协议。
+- [x] 提取列表列渲染协议与子表标题处理，保持列 JSON 与操作列原状。
+- [x] 提取运行字段目录选择，使 `LowcodeRuntimeConfigBuilder` 降至 1000 行以内。
+- [x] 提取业务流程节点表单与字段权限归一化，保留流程配置所有权和运行时权限执行路径。
+- [x] 提取审批表单字段目录及控件类型推断，保留表单资产选择与事务路径。
+- [x] 提取代码应用 Provider 与配置元数据的表单资产合并，保留非公开字段和资产移除规则。
+- [x] 提取业务流程绑定配置编解码与默认值合成，保留租户查询和保存事务。
+- [x] 提取流程启动上下文 Assembler、调用方变量校验策略及记录字段兼容访问器，保留 Flowable 启动边界。
+- [x] 提取待办任务访问 Policy，集中任务身份、认领状态和请求上下文一致性校验。
+- [x] 提取审批子表权限 Policy，集中保存白名单、字段可见性、别名匹配和返回数据裁剪。
+- [x] 提取业务表单资产 Assembler，统一对象设计器、运行配置和字段注册表资产合成与回退。
+- [x] 提取应用页面表单 Resolver，以稳定 formKey 和两级短缓存解析应用设计快照。
+- [x] 成块提取任务表单字段 Policy、schema/layout Assembler、主子表 Assembler 和代码 Provider Coordinator，使 `BusinessFlowService` 单轮减少 1766 行。
+- [x] 提取节点表单 Resolver，集中 Flowable 表单 RPC 降级、运行时表单引用与应用页资产选择，使 `BusinessFlowService` 降至 3869 行。
+- [x] 提取运行上下文 Resolver 与业务身份 Codec，统一列表/启动/任务的对象身份规则，使 `BusinessFlowService` 降至 3431 行。
+- [x] 提取业务列表 Enricher，集中批量关联、分组查询和展示投影，使 `BusinessFlowService` 降至 3086 行。
+- [x] 提取流程任务事件 Coordinator，集中修改节点识别、驳回证据和运行态双状态切换，使 `BusinessFlowService` 降至 2834 行。
+- [x] 提取终态回调 Coordinator 与状态迁移 Strategy，集中幂等、业务回写、动作和事件发布，使 `BusinessFlowService` 降至 2488 行。
+- [x] 提取主流程启动 Coordinator 与绑定 Resolver，集中模型选择、锁、Flowable 调用、关联落库和状态写入，使 `BusinessFlowService` 降至 2165 行。
+- [x] 提取任务表单上下文 Coordinator 与请求 Profiler，集中表单分派、权限投影、打印身份和性能采集，使 `BusinessFlowService` 降至 1863 行。
+- [x] 提取任务命令 Coordinator、表单资产 Catalog 与绑定视图 Assembler，使 `BusinessFlowService` 降至 953 行。
+- [x] 提取动态 CRUD 唯一约束 Validator 与自动编码/单据号 Policy，使 `DynamicCrudService` 降至 5642 行。
+- [x] 提取动态 CRUD 树查询引擎，集中树配置、祖先补链、懒加载组装和 includeChildren 展开，使 `DynamicCrudService` 降至 4878 行。
+- [x] 提取动态字段值 Pipeline，集中金额、结构化值、加解密、虚拟公式、翻译和脱敏，使 `DynamicCrudService` 降至 4165 行。
+- [x] 提取运行时关系 Planner，集中模型引用、关系推断、Join 查询计划和子表行投影，使 `DynamicCrudService` 降至 3455 行。
+- [x] 提取动态写入字段 Policy，集中字段白名单、真实列映射、事务条件和存储公式准备，使 `DynamicCrudService` 降至 2974 行。
+- [x] 提取主子表持久化 Engine，集中详情外键修复、子表校验和 merge/replace 保存，使 `DynamicCrudService` 降至 2448 行。
+- [x] 提取审批节点可编辑数据 Coordinator，集中权限别名、行级动作门禁和受限主子表保存，使 `DynamicCrudService` 降至 2151 行。
+- [x] 提取普通 Join 跨表持久化 Engine，集中字段分流、关联值写入和子表 upsert，使 `DynamicCrudService` 降至 1955 行。
+- [x] 提取动态读模型 Coordinator，集中分页、导出、树、自定义查询、详情、打印与批量读取，使 `DynamicCrudService` 降至 1308 行。
+- [x] 提取动态写模型 Mutation Coordinator，集中表单/内部/命令新增更新、条件门禁与原子数值调整，使 `DynamicCrudService` 降至 770 行。
+- [x] 提取业务对象表单 Schema Assembler，集中默认表单、旧 Page Schema 与 form-create 规则迁移，使 `BusinessObjectDesignerService` 降至 3908 行。
+- [x] 提取业务对象运行时表单 Projector，集中字段设置、嵌套布局、动态可见性与弹窗/抽屉协议，使 `BusinessObjectDesignerService` 降至 3471 行。
+- [x] 提取业务对象视图 Schema Projector，集中搜索/列表/详情默认组装、字段清洗和页面区域投影，使 `BusinessObjectDesignerService` 降至 3131 行。
+- [x] 提取业务对象字段联动 Policy/Translator，集中旧联动兼容、治理规则合并和 cascade 元数据翻译，使 `BusinessObjectDesignerService` 降至 2979 行。
+- [x] 提取业务对象关系 Coordinator 与运行时关系 Projector，集中关系持久化、主子表外键补齐、modelRefs 投影和快照恢复，使 `BusinessObjectDesignerService` 降至 2151 行。
+- [x] 提取业务对象字段设计 Policy，集中运行时元数据保留与业务组件保护，并清理无调用的旧 Payload 降级链，使 `BusinessObjectDesignerService` 降至 1684 行。
+- [x] 提取历史 Page Schema Adapter，集中旧搜索/编辑/列表协议与区域别名迁移，并清理投影职责迁出后的无调用工具链，使 `BusinessObjectDesignerService` 降至 1160 行。
+- [x] 提取草稿 Schema Gateway，集中模型/运行配置加载、领域与数据源补全、校验和双表持久化；补齐前序抽取遗漏的方法边界后 `BusinessObjectDesignerService` 为 909 行，仍满足单类 1000 行目标。
+- [x] 提取 Flowable 流程图 Facade/Assembler，集中 BPMN 图片生成、节点/连线状态投影和人员批量展示，使 `FlowTaskServiceImpl` 降至 2848 行。
+- [x] 提取 Flowable 任务节点 Policy/Specification，集中动作许可、配置覆盖、必填变量、审批要点和退回目标判定，使 `FlowTaskServiceImpl` 降至 2449 行。
+- [x] 提取 Flowable 表单配置 Resolver，集中节点/模型/动态表单/实例快照的分层回退和数组字段权限 Schema 来源，使 `FlowTaskServiceImpl` 降至 2006 行。
+- [x] 提取 Flowable 任务/流程表单上下文 Coordinator，集中访问守卫、业务关联、定义定位、变量回退和动作视图组装，使 `FlowTaskServiceImpl` 降至 1717 行。
+- [x] 提取 Flowable 动态会签 Coordinator，以 Command + Strategy 分离候选人和多实例加签/减签，使 `FlowTaskServiceImpl` 降至 1499 行。
+- [x] 提取 Flowable 任务动作 Command Coordinator，固化授权、策略、引擎副作用、镜像回写和错误审计模板，使 `FlowTaskServiceImpl` 降至 958 行并满足单类 1000 行目标。
+- [x] 提取业务对象表单发布 Validator/Pipeline 与检查结果 Collector，集中组件树、表单治理、字段事件安全和视图投影校验，使 `BusinessObjectPublishService` 降至 2210 行。
+- [x] 提取业务对象页面/事务动作发布 Validator Chain 与目标 Catalog，集中页面引用、动作完整性和命令策略校验，使 `BusinessObjectPublishService` 降至 1680 行。
+- [x] 提取业务对象设计完整性与部署就绪两条 Validator Chain，分离关系/联动/单据/权限和入口/数据源/DDL 检查，使 `BusinessObjectPublishService` 降至 867 行并满足单类 1000 行目标。
+- [x] 提取动态 CRUD 查询条件 Compiler/Strategy，集中普通搜索、自定义条件、多值/区间运算和投影字段白名单，使 `DynamicCrudRepository` 降至 1884 行。
+- [x] 提取动态 CRUD Join Query Plan Compiler，并将子表文本聚合差异下沉到数据库方言 Strategy，使 `DynamicCrudRepository` 降至 1759 行。
+- [x] 提取动态表结构 Metadata Gateway，以 Cache-Aside 集中数据源级列、类型、字段映射和逻辑删除列缓存，使 `DynamicCrudRepository` 降至 1656 行。
+- [x] 提取动态写入 Policy/Strategy，集中租户、审计、逻辑删除字段和不可变字段处理，使 `DynamicCrudRepository` 降至 1456 行。
+- [x] 提取动态记录 Query Executor，集中详情、批量、行锁、按列、树节点和唯一性探测，使 `DynamicCrudRepository` 降至 1336 行。
+- [x] 提取动态变更 Command Executor，集中新增、更新、原子数值调整、单条/批量删除和审计执行模板，使 `DynamicCrudRepository` 降至 1165 行。
+- [x] 提取动态 SQL Support/Compiler，统一主键、分页方言、租户/逻辑删除谓词、Mutation SQL 和参数绑定，使 `DynamicCrudRepository` 降至 988 行并满足单类 1000 行目标。
+- [x] 提取用户组织/岗位/角色 Assignment Policy，集中租户归属、组织适用范围和用户类型×数据范围规则，使 `SysUserServiceImpl` 降至 1573 行。
+- [x] 提取用户管理 Access Policy，集中登录身份、权限通配符、租户选择、跨租户边界和自操作限制，使 `SysUserServiceImpl` 降至 1384 行。
+- [x] 提取用户关系生命周期 Coordinator，统一角色/组织/租户/岗位的校验、差异写入、级联清理和会话刷新，使 `SysUserServiceImpl` 降至 554 行并满足单类 1000 行目标。
+- [x] 提取低代码 AI 领域规划 Strategy 与字段模板 Catalog，集中对象推断、领域复用、命名策略和字段协议，使 `LowcodeAiGenerateService` 降至 917 行并满足单类 1000 行目标。
+- [x] 提取 Velocity 安全注解 Context Builder 与关联表/主子表/树元数据 Planner，使 `VelocityCodegenStrategy` 降至 993 行并满足单类 1000 行目标。
+- [x] 提取动态 Excel 值 Adapter/Pipeline，集中导入转换、字典映射、导出格式化和模板提示，使 `DynamicCrudExcelService` 降至 858 行并满足单类 1000 行目标。
+- [x] 提取业务流程画布 Graph Validator Strategy，集中节点注册、端口、连线和 DAG/可达性规则，使 `BusinessProcessSchemaValidator` 降至 930 行并满足单类 1000 行目标。
+- [x] 提取角色管理 Access Policy，集中权限通配符、租户/委派边界、系统角色维护、数据范围和组织归属规则，使 `SysRoleServiceImpl` 降至 974 行并满足单类 1000 行目标。
+- [x] 提取单据编号规则引擎，以 Interpreter Strategy 统一旧模板归一、预览、校验和运行时序列生成，使 `BusinessDocumentConfigService` 降至 871 行并满足单类 1000 行目标。
+- [x] 提取单据运行态 Action Policy/Projector，集中主流程、发起模式、状态准入及发起/待办/撤回按钮投影，使 `BusinessDocumentRuntimeService` 降至 867 行并满足单类 1000 行目标。
+- [x] 提取能力调用 Contract Policy/Builder，集中版本 Schema、策略覆盖、流程绑定、提交授权字段和请求/响应说明生成，使 `CapabilityCallGuideService` 降至 850 行并满足单类 1000 行目标。
+- [x] 提取应用树形页面 Projector，统一模型 TreeConfig、Page Zone 与 Builder 协议投影，使 `BusinessApplicationPageDesignService` 降至 874 行；后端生产类已无超过 1000 行的文件。
+- [ ] 完成业务流程服务级联调和运行配置真实页面验收。
+- [ ] 分阶段拆分动态 CRUD、设计态、发布、Flowable 任务/模型及业务动作/触发器；每阶段独立验证。

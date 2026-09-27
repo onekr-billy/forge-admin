@@ -2,6 +2,8 @@ package com.mdframe.forge.plugin.generator.service;
 
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
+import com.mdframe.forge.plugin.generator.service.lowcode.runtime.RuntimeDatabaseDialectFactory;
+import com.mdframe.forge.plugin.generator.service.lowcode.runtime.RuntimeJdbcTemplateProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -20,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -32,7 +35,7 @@ class DynamicCrudRepositoryTest {
 
     @Test
     void insertShouldAutoFillAuditFieldsWithoutOverridingExplicitValues() {
-        DynamicCrudRepository repository = spy(new DynamicCrudRepository(namedJdbcTemplate));
+        DynamicCrudRepository repository = repository();
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("name", "demo");
         data.put("create_by", 999L);
@@ -67,7 +70,7 @@ class DynamicCrudRepositoryTest {
 
     @Test
     void updateByIdShouldStripImmutableFieldsAndPreserveExplicitAuditValues() {
-        DynamicCrudRepository repository = spy(new DynamicCrudRepository(namedJdbcTemplate));
+        DynamicCrudRepository repository = repository();
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("id", 101L);
         data.put("tenant_id", 1L);
@@ -98,6 +101,11 @@ class DynamicCrudRepositoryTest {
         assertEquals(7L, params.getValue("tenantId"));
         assertNotNull(params.getValue("update_time"));
         assertEquals(false, params.hasValue("tenant_id"));
+    }
+
+    private DynamicCrudRepository repository() {
+        return spy(new DynamicCrudRepository(namedJdbcTemplate,
+                mock(RuntimeJdbcTemplateProvider.class), mock(RuntimeDatabaseDialectFactory.class)));
     }
 
 }

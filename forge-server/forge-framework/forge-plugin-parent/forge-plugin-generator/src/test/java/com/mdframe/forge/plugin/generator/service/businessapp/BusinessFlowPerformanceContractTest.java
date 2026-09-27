@@ -14,12 +14,14 @@ class BusinessFlowPerformanceContractTest {
 
     @Test
     void businessTaskContextMustReuseOneFlowFormSnapshot() throws IOException {
-        String source = serviceSource();
-        String method = method(source, "public BusinessTaskFormContextVO getTaskFormContext", "    /**", 1);
+        String source = Files.readString(resolveSource(
+                "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowTaskFormContextCoordinator.java"));
+        String method = method(source, "private BusinessTaskFormContextVO getActiveTaskFormContext", "    private BusinessTaskFormContextQueryDTO effectiveQuery", 1);
 
-        assertTrue(method.contains("Map<String, Object> taskFormInfo = loadTaskFormInfo"));
-        assertTrue(method.contains("validateTaskAccess(effectiveQuery, false, taskFormInfo)"));
-        assertTrue(method.contains("resolveTaskFormRuntimeContext(effectiveQuery, false, taskFormInfo)"));
+        assertTrue(method.contains("Map<String, Object> taskFormInfo = taskNodeFormResolver.loadTaskFormInfo"));
+        assertTrue(method.contains("taskAccessPolicy.validate("));
+        assertTrue(method.contains("runtimeContextResolver.resolveTask"));
+        assertTrue(method.contains("effectiveQuery, writeRequired, taskFormInfo"));
         assertTrue(method.contains("buildTaskFormContext(effectiveQuery, runtime, taskFormInfo"));
         assertTrue(method.contains("runtimeContextMs"));
         assertFalse(source.contains("flowClient.getTaskDetail("));
@@ -28,31 +30,48 @@ class BusinessFlowPerformanceContractTest {
     @Test
     void businessTaskContextMustReuseRuntimeConfigAndSlimFormAssets() throws IOException {
         String source = serviceSource();
+        String contextCoordinator = Files.readString(resolveSource(
+                "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowTaskFormContextCoordinator.java"));
+        String applicationPageResolver = Files.readString(resolveSource(
+                "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowApplicationPageFormResolver.java"));
+        String nodeFormResolver = Files.readString(resolveSource(
+                "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowTaskNodeFormResolver.java"));
+        String runtimeContextResolver = Files.readString(resolveSource(
+                "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowRuntimeContextResolver.java"));
+        String taskFormSchemaAssembler = Files.readString(resolveSource(
+                "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowTaskFormSchemaAssembler.java"));
 
-        assertTrue(source.contains("safeGetRuntimeConfig(runtime.configKey())"));
-        assertTrue(source.contains("slimTaskFormAssets("));
-        assertTrue(source.contains("applicationPageFormAssetCache"));
-        assertTrue(source.contains("[task-form-context]"));
-        assertTrue(source.contains("loadInAppBuilder("));
-        assertTrue(source.contains("selectById(runtimeConfig, runtime.recordId())"));
-        assertTrue(source.contains("runtime.publishedConfig()"));
-        assertTrue(source.contains("runtime.businessObject()"));
-        assertTrue(source.contains("resolveBusinessFormSchema(object, formKey, runtime.configKey(), runtimeConfig)"));
-        assertTrue(source.contains("ensureBusinessBinding(bindingConfig, businessContext.runtimeConfig(), businessContext.documentConfig())"));
-        assertTrue(source.contains("processFormRpc=skip(queryOrVarFormKey)"));
-        assertTrue(source.contains("loadCachedInAppBuilder("));
-        assertTrue(source.contains("pageAssetMs"));
-        assertTrue(source.contains("businessContextMs"));
-        assertTrue(source.contains("collectTaskFormAssets=skip(appFormKey)"));
-        assertTrue(source.contains("parseApplicationPageFormKey("));
-        assertTrue(source.contains("findApplicationFormAsset("));
-        assertFalse(source.contains("appendRuntimeChildFieldCatalog(StringUtils.trimToNull(objectRef.getString(\"configKey\")), fields)"));
+        assertTrue(contextCoordinator.contains("taskFormSchemaAssembler.safeGetRuntimeConfig(runtime.configKey())"));
+        assertTrue(taskFormSchemaAssembler.contains("slimTaskFormAssets("));
+        assertTrue(source.contains("taskFormSchemaAssembler::applyRuntimeCrudFormLayout"));
+        assertTrue(source.contains("applicationPageFormResolver"));
+        assertTrue(applicationPageResolver.contains("pageAssetCache"));
+        assertTrue(contextCoordinator.contains("[task-form-context]"));
+        assertTrue(applicationPageResolver.contains("loadInAppBuilder("));
+        assertTrue(contextCoordinator.contains("selectById(runtimeConfig, runtime.recordId())"));
+        assertTrue(contextCoordinator.contains("runtime.publishedConfig()"));
+        assertTrue(contextCoordinator.contains("runtime.businessObject()"));
+        assertTrue(contextCoordinator.contains(
+                "formSchemaResolver.resolve(\n                object, formKey, runtime.configKey(), runtimeConfig)"));
+        assertTrue(runtimeContextResolver.contains("BusinessFlowBindingCodec.ensureBusinessBinding("));
+        assertTrue(runtimeContextResolver.contains(
+                "bindingConfig, businessContext.runtimeConfig(), businessContext.documentConfig())"));
+        assertTrue(nodeFormResolver.contains("processFormRpc=skip(queryOrVarFormKey)"));
+        assertTrue(applicationPageResolver.contains("loadCachedInAppBuilder("));
+        assertTrue(runtimeContextResolver.contains("pageAssetMs"));
+        assertTrue(runtimeContextResolver.contains("businessContextMs"));
+        assertTrue(nodeFormResolver.contains("collectTaskFormAssets=skip(appFormKey)"));
+        assertTrue(applicationPageResolver.contains("parseApplicationPageFormKey("));
+        assertTrue(applicationPageResolver.contains("findApplicationFormAsset("));
+        assertFalse(applicationPageResolver.contains(
+                "appendRuntimeChildFieldCatalog(StringUtils.trimToNull(objectRef.getString(\"configKey\")), fields)"));
     }
 
     @Test
     void flowNodeFormInfoShouldSkipSecondRpcWhenFormKeyPresent() throws IOException {
-        String source = serviceSource();
-        String method = method(source, "private boolean isCompleteFlowNodeFormInfo", "    private Map<String, Object> loadTaskFormInfo", 0);
+        String source = Files.readString(resolveSource(
+                "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowTaskNodeFormResolver.java"));
+        String method = method(source, "private boolean isCompleteFlowNodeFormInfo", "    Map<String, Object> loadTaskFormInfo", 0);
         assertTrue(method.contains("formInfo.get(\"formKey\")"));
         assertTrue(method.contains("formInfo.get(\"formRef\") instanceof Map"));
         assertTrue(method.contains("resolveRuntimeBusinessFormRef(formInfo)"));
@@ -61,8 +80,10 @@ class BusinessFlowPerformanceContractTest {
     }
     @Test
     void businessTaskActionMustPersistSubmittedFormDataBeforeCallingFlow() throws IOException {
-        String source = serviceSource();
-        String method = method(source, "public BusinessFlowRuntimeVO completeBusinessTask", "    /**", 1);
+        String source = Files.readString(resolveSource(
+                "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowTaskCommandCoordinator.java"));
+        String method = method(source, "BusinessFlowRuntimeVO completeBusinessTask",
+                "    BusinessFlowRuntimeVO recoverCapabilityTaskAction", 0);
 
         assertTrue(method.contains("dto.getData() != null && !dto.getData().isEmpty()"));
         assertTrue(method.contains("persistTaskFormData("));
@@ -72,25 +93,29 @@ class BusinessFlowPerformanceContractTest {
 
     @Test
     void listDisplayMustReuseRuntimeObjectMetadata() throws IOException {
-        String source = serviceSource();
+        String source = Files.readString(resolveSource(
+                "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowListDisplayEnricher.java"));
 
         assertTrue(source.contains("Map<String, AiBusinessObject> objectLookupCache"));
         assertTrue(source.contains("context.businessObject() == null"));
-        assertTrue(source.contains("toBusinessObjectVO(context.businessObject())"));
+        assertTrue(source.contains("businessObjectConverter.apply(context.businessObject())"));
     }
 
     @Test
     void documentFlowStartMustReusePreloadedValidationAndLatestLink() throws IOException {
-        String source = serviceSource();
-        String method = method(source, "private BusinessFlowRuntimeVO startDocumentFlowLocked", "    private BusinessFlowRuntimeVO executeWithFlowStartLock", 1);
+        String source = Files.readString(resolveSource(
+                "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowStartCoordinator.java"));
+        String method = method(source, "private BusinessFlowRuntimeVO startLocked", "    private void validateRequest", 1);
 
         assertEquals(1, countOccurrences(method, "flowInstanceLinkMapper.selectLatestByBusinessKey"));
         assertFalse(method.contains("flowInstanceLinkMapper.selectRunningByBusinessKey"));
-        assertTrue(method.contains("documentConfigService.toVO(documentConfig, runtimeConfig, binding)"));
-        assertTrue(method.contains("documentRuntimeService.validateStartAllowed("));
+        assertTrue(source.contains("documentConfigService.toVO("));
+        assertTrue(source.contains("context.documentConfig(), context.runtimeConfig(), binding"));
+        assertTrue(source.contains("documentRuntimeService.validateStartAllowed("));
         assertTrue(method.contains("resolveFlowBusinessKeyForStart(businessKey, latestLink)"));
-        assertTrue(method.contains("resolveNextRoundNo(latestLink)"));
-        assertTrue(method.contains("ensureBusinessBinding(bindingConfig, runtimeConfig, documentConfig)"));
+        assertTrue(source.contains("resolveNextRoundNo(latestLink)"));
+        assertTrue(method.contains("BusinessFlowBindingCodec.ensureBusinessBinding("));
+        assertTrue(method.contains("bindingConfig, context.runtimeConfig(), context.documentConfig())"));
     }
 
     private String serviceSource() throws IOException {

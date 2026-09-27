@@ -40,6 +40,15 @@ public interface RuntimeDatabaseDialect {
 
     String paginate(String sql, long offset, long limit);
 
+    /**
+     * 将一对多子表的文本列聚合为单个展示值。
+     * 方言负责数据库差异，调用方只提供已经完成安全引用的列名。
+     */
+    default String stringAggregate(String column, String orderColumn, String delimiter) {
+        return "GROUP_CONCAT(" + column + " ORDER BY " + orderColumn
+            + " SEPARATOR '" + delimiter.replace("'", "''") + "')";
+    }
+
     default boolean supportsDdl() {
         return true;
     }

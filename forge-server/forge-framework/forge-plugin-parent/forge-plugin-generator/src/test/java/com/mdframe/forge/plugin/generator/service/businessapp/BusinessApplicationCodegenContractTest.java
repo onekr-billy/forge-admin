@@ -50,6 +50,7 @@ class BusinessApplicationCodegenContractTest {
     @DisplayName("现有 Velocity 模板生成树形主子页面和 Mapper XML 查询")
     void velocityTemplatesCoverApplicationLayouts() throws Exception {
         String strategy = readSource("codegen/VelocityCodegenStrategy.java");
+        String relationPlanner = readSource("codegen/VelocityRelatedTablePlanner.java");
         String serviceTemplate = readResource("templates/vm/serviceImpl.java.vm");
         String mapperTemplate = readResource("templates/vm/mapper.xml.vm");
         String queryTemplate = readResource("templates/vm/query.java.vm");
@@ -58,7 +59,7 @@ class BusinessApplicationCodegenContractTest {
         assertTrue(strategy.contains("isLeftTreeLayout"));
         assertTrue(strategy.contains("isMasterDetailLayout"));
         assertTrue(strategy.contains("masterDetailChildren"));
-        assertTrue(strategy.contains("appendPageSchemaMasterDetailChildren"));
+        assertTrue(relationPlanner.contains("appendPageSchemaMasterDetailChildren"));
         assertTrue(strategy.contains("未解析到有效子表关系"));
         assertTrue(strategy.contains("pageSchema == null ? null : pageSchema.getLayoutType()"));
         assertTrue(strategy.contains("public static class RelatedTableMeta"));

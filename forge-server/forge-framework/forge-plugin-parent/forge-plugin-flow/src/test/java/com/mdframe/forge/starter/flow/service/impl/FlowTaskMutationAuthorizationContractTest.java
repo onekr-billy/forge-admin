@@ -14,19 +14,25 @@ class FlowTaskMutationAuthorizationContractTest {
     void highImpactTaskActionsMustCheckMutationActorBeforeFlowableSideEffects() throws IOException {
         String source = Files.readString(Path.of(
                 "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskServiceImpl.java"));
-        int delegateStart = source.indexOf("public void delegate(String taskId");
-        int terminateStart = source.indexOf("public void terminateTask(String taskId");
+        String coordinator = Files.readString(Path.of(
+                "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskActionCoordinator.java"));
+        assertTrue(source.contains("this::assertTaskMutationActor"));
+        assertTrue(source.contains("this::validateReassignTarget"));
+        int delegateStart = coordinator.indexOf("void delegate(String taskId");
+        int terminateStart = coordinator.indexOf("void terminateTask(String taskId");
         assertTrue(delegateStart >= 0 && terminateStart > delegateStart);
-        assertTrue(source.substring(delegateStart, terminateStart).contains("assertTaskMutationActor"));
-        assertTrue(source.substring(delegateStart, terminateStart).contains("validateReassignTarget(targetUserId.trim())"));
-        int terminateEnd = source.indexOf("private Map<String, Object> mergeActionVariables", terminateStart);
-        assertTrue(source.substring(terminateStart, terminateEnd).contains("assertTaskMutationActor"));
+        assertTrue(coordinator.substring(delegateStart, terminateStart).contains("mutationActorGuard.verify"));
+        assertTrue(coordinator.substring(delegateStart, terminateStart).contains("targetUserValidator.accept"));
+        int terminateEnd = coordinator.indexOf("private FlowTask authorizeTaskAction", terminateStart);
+        assertTrue(coordinator.substring(terminateStart, terminateEnd).contains("mutationActorGuard.verify"));
     }
 
     @Test
     void visibleHistoryAndTaskFormMustReuseTenantBoundBusinessLookup() throws IOException {
         String source = Files.readString(Path.of(
                 "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskServiceImpl.java"));
+        String formCoordinator = Files.readString(Path.of(
+                "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskFormContextCoordinator.java"));
         int historyStart = source.indexOf("public List<Map<String, Object>> getProcessHistory");
         int formStart = source.indexOf("public TaskFormInfo getTaskFormInfo");
         assertTrue(historyStart >= 0 && formStart >= 0 && formStart < historyStart);
@@ -34,17 +40,19 @@ class FlowTaskMutationAuthorizationContractTest {
         assertTrue(history.contains("flowAccessGuard.requireProcessVisible"));
         assertTrue(history.contains("FlowBusiness business = flowAccessGuard.requireProcessVisible"));
         assertTrue(history.contains("selectByProcessInstanceIdAndTenantId") || !history.contains("selectByProcessInstanceId(processInstanceId)"));
-        String form = source.substring(formStart, historyStart);
-        assertTrue(form.contains("flowAccessGuard.requireTaskVisible"));
-        assertTrue(form.contains("selectByProcessInstanceIdAndTenantId"));
+        assertTrue(formCoordinator.contains("flowAccessGuard.requireTaskVisible"));
+        assertTrue(formCoordinator.contains("selectByProcessInstanceIdAndTenantId"));
     }
 
     @Test
     void processDetailsMustCapHistoricalCollections() throws IOException {
         String source = Files.readString(Path.of(
                 "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskServiceImpl.java"));
+        String diagramService = Files.readString(Path.of(
+                "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowProcessDiagramService.java"));
         assertTrue(source.contains("MAX_DETAIL_HISTORY_ITEMS = 1000"));
-        assertTrue(source.contains("listPage(0, MAX_DETAIL_HISTORY_ITEMS)"));
+        assertTrue(diagramService.contains("MAX_DETAIL_HISTORY_ITEMS = 1000"));
+        assertTrue(diagramService.contains("listPage(0, MAX_DETAIL_HISTORY_ITEMS)"));
         assertTrue(source.contains("selectHistoryTasks"));
         assertTrue(source.contains("Math.min(pageSize, MAX_DETAIL_HISTORY_ITEMS)"));
     }
@@ -62,14 +70,22 @@ class FlowTaskMutationAuthorizationContractTest {
     void ignoreTenantFormAndBusinessLookupsMustCarryTenantPredicates() throws IOException {
         String source = Files.readString(Path.of(
                 "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskServiceImpl.java"));
-        assertTrue(source.contains("selectByProcessInstanceIdAndTenantIdForUpdate(\n                    task.getProcessInstanceId(), tenantId)"));
-        assertTrue(source.contains("selectByProcessInstanceIdAndTenantId(processInstanceId, tenantId)"));
-        assertTrue(source.contains("selectByBusinessKeyAndTenantId(tenantId, businessKey)"));
-        assertTrue(source.contains("selectByIdOrTaskIdAndTenant(taskId, tenantId)"));
+        String formResolver = Files.readString(Path.of(
+                "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskFormConfigurationResolver.java"));
+        String formCoordinator = Files.readString(Path.of(
+                "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskFormContextCoordinator.java"));
+        String actionCoordinator = Files.readString(Path.of(
+                "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskActionCoordinator.java"));
+        assertTrue(actionCoordinator.contains(
+                "selectByProcessInstanceIdAndTenantIdForUpdate(\n                task.getProcessInstanceId(), tenantId)"));
+        assertTrue(formCoordinator.contains("selectByProcessInstanceIdAndTenantId(processInstanceId, tenantId)"));
+        assertTrue(formCoordinator.contains("selectByBusinessKeyAndTenantId(tenantId, businessKey)"));
+        assertTrue(formCoordinator.contains("selectByIdOrTaskIdAndTenant(taskId, tenantId)"));
         assertTrue(!source.contains("flowBusinessMapper.selectByProcessInstanceId(task.getProcessInstanceId())"));
-        assertTrue(!source.contains("flowBusinessMapper.selectByProcessInstanceId(processInstanceId)"));
-        assertTrue(!source.contains("flowBusinessMapper.selectByBusinessKey(businessKey)"));
-        assertTrue(source.contains("selectByProcessInstanceIdAndTenantId(\n                    processInstanceId, tenantId)"));
+        assertTrue(!formCoordinator.contains("flowBusinessMapper.selectByProcessInstanceId(processInstanceId)"));
+        assertTrue(!formCoordinator.contains("flowBusinessMapper.selectByBusinessKey(businessKey)"));
+        assertTrue(formResolver.contains(
+                "selectByProcessInstanceIdAndTenantId(\n                    processInstanceId, tenantId)"));
     }
 
     @Test

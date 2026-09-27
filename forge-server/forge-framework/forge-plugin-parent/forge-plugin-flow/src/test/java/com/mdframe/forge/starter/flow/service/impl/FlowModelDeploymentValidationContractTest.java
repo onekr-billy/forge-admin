@@ -14,6 +14,8 @@ class FlowModelDeploymentValidationContractTest {
     void deploymentMustValidateExecutableBpmnStructureBeforeDeploying() throws IOException {
         String source = Files.readString(Path.of(
                 "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowModelServiceImpl.java"));
+        String validationSource = Files.readString(Path.of(
+                "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowModelBpmnPreflight.java"));
         int deployStart = source.indexOf("public String deployModel(String id, String changeDescription)");
         int repositoryStart = source.indexOf("if (repositoryService == null)", deployStart);
         assertTrue(deployStart >= 0 && repositoryStart > deployStart);
@@ -21,11 +23,11 @@ class FlowModelDeploymentValidationContractTest {
         assertTrue(preflight.contains("validateSequenceFlowRefs"));
         assertTrue(preflight.contains("validateBpmnStructure"));
         assertTrue(preflight.contains("validateExecutableNodesAndGatewayConditions"));
-        assertTrue(source.contains("缺少开始节点"));
-        assertTrue(source.contains("缺少结束节点"));
-        assertTrue(source.contains("悬空连线"));
-        assertTrue(source.contains("暂不支持的执行类型"));
-        assertTrue(source.contains("未配置处理人、候选用户或候选组"));
-        assertTrue(source.contains("缺少条件表达式或默认分支"));
+        assertTrue(validationSource.contains("缺少开始节点"));
+        assertTrue(validationSource.contains("缺少结束节点"));
+        assertTrue(validationSource.contains("悬空连线"));
+        assertTrue(validationSource.contains("暂不支持的执行类型"));
+        assertTrue(validationSource.contains("未配置处理人、候选用户或候选组"));
+        assertTrue(validationSource.contains("缺少条件表达式或默认分支"));
     }
 }

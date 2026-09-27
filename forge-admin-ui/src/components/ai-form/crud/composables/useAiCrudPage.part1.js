@@ -671,6 +671,68 @@ export function applyAiCrudPagePart1(props, emit, deps = {}) {
 
   const resolvedResizable = computed(() => props.tableProps?.resizable ?? props.resizable)
 
+  /** 嵌入式树表：列表内父子展开（非左树右表）。 */
+  function resolveEmbeddedTreeConfig() {
+    const direct = props.treeConfig
+    if (direct && typeof direct === 'object' && Object.keys(direct).length)
+      return direct
+    const fromOptions = props.options?.treeConfig
+    if (fromOptions && typeof fromOptions === 'object' && Object.keys(fromOptions).length)
+      return fromOptions
+    if (props.apiConfig?.tree || String(props.apiConfig?.list || '').includes('/tree')) {
+      return {
+        enabled: true,
+        childrenField: 'children',
+        keyField: typeof props.rowKey === 'string' ? props.rowKey : 'id',
+      }
+    }
+    return null
+  }
+
+  const isEmbeddedTreeTable = computed(() => {
+    const treeConfig = resolveEmbeddedTreeConfig()
+    if (!treeConfig)
+      return false
+    if (treeConfig.enabled === false || treeConfig.enabled === 0 || treeConfig.enabled === '0' || treeConfig.enabled === 'false')
+      return false
+    const layoutType = String(props.layoutType || props.options?.layoutType || 'simple-crud')
+    return layoutType !== 'tree-crud'
+  })
+
+  const embeddedTreeChildrenField = computed(() => resolveEmbeddedTreeConfig()?.childrenField || 'children')
+
+  const effectiveShowPagination = computed(() => (isEmbeddedTreeTable.value ? false : props.showPagination !== false))
+
+  const effectiveTableProps = computed(() => {
+    const base = props.tableProps && typeof props.tableProps === 'object' ? { ...props.tableProps } : {}
+    if (!isEmbeddedTreeTable.value)
+      return base
+    const loadMode = resolveEmbeddedTreeConfig()?.loadMode === 'lazy' ? 'lazy' : 'full'
+    return {
+      ...base,
+      childrenKey: embeddedTreeChildrenField.value,
+      defaultExpandAll: loadMode !== 'lazy' && base.defaultExpandAll !== false,
+      ...(typeof base.onLoad === 'function' ? { onLoad: base.onLoad } : {}),
+    }
+  })
+
+  function collectEmbeddedTreeExpandKeys(nodes = [], acc = []) {
+    const childrenField = embeddedTreeChildrenField.value
+    const keyField = resolveEmbeddedTreeConfig()?.keyField || (typeof props.rowKey === 'string' ? props.rowKey : 'id')
+    ;(Array.isArray(nodes) ? nodes : []).forEach((node) => {
+      if (!node || typeof node !== 'object')
+        return
+      const children = node[childrenField]
+      if (!Array.isArray(children) || !children.length)
+        return
+      const key = node[keyField] ?? node.key ?? node.id
+      if (key !== undefined && key !== null && key !== '')
+        acc.push(key)
+      collectEmbeddedTreeExpandKeys(children, acc)
+    })
+    return acc
+  }
+
   const inlineSwitchUpdatingMap = ref({})
 
   /**
@@ -765,7 +827,7 @@ export function applyAiCrudPagePart1(props, emit, deps = {}) {
    * 分页配置
    */
   const paginationConfig = computed(() => {
-    if (!props.showPagination) {
+    if (!effectiveShowPagination.value) {
       return false
     }
 
@@ -1854,6 +1916,7 @@ export function applyAiCrudPagePart1(props, emit, deps = {}) {
     offlineReplayLoading, commandActionTitle, commandActionFormSchema, commandActionFormContext, childToolbarActionTitle, childToolbarQuantityLabel, childToolbarItemOptions, childToolbarQuantityMax,
     visibleToolbarActions, visibleDetailActions, visibleFormActions, maxActionButtons, rowKeyFn, tableRowKeyFn, resolvedCustomQueryConfigKey, toolbarOverflowOptions,
     toolbarDropdownOptions, activeSourceColumns, formContext, normalizedExpandConfig, hasExpandConfig, resolvedResizable, inlineSwitchUpdatingMap, tableColumns,
+    isEmbeddedTreeTable, resolveEmbeddedTreeConfig, embeddedTreeChildrenField, effectiveShowPagination, effectiveTableProps, collectEmbeddedTreeExpandKeys,
     paginationConfig, searchSlots, tableSlots, formSlots, isDetailMode, resolvedFormOpenMode, usesInlineFormWorkspace, isTabWorkspaceMode,
     inlineWorkspaceVisible, showInlineListPane, showInlineFormWorkspacePane, tiledEditGridCols, activeInlineFormTab, activeInlineFormTitle, inlineFormModeLabel, showInlineFormModeTag,
     resolvedTabWorkspace, activeModalWidth, detailFlowTimelineVisible, detailFlowDiagramVisible, showDetailFlowTabs, dataAuditMeta, showDataChangeLogTab, showDetailExtraTabs,

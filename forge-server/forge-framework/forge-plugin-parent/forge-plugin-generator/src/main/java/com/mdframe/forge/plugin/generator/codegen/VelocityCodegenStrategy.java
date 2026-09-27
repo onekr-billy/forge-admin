@@ -8,9 +8,7 @@ import com.mdframe.forge.plugin.generator.domain.entity.GenTable;
 import com.mdframe.forge.plugin.generator.domain.entity.GenTableColumn;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeFieldSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeModelSchema;
-import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageModelRef;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageSchema;
-import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeRelationSchema;
 import com.mdframe.forge.plugin.generator.mapper.GenTableColumnMapper;
 import com.mdframe.forge.plugin.generator.service.lowcode.GeneratedLowcodeRuntimeConfigBuilder;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeProtocolSnapshotBuilder;
@@ -54,9 +52,6 @@ public class VelocityCodegenStrategy implements CodegenStrategy {
     private static final String DEFAULT_PACKAGE = "com.mdframe.forge";
     /** 默认作者 */
     private static final String DEFAULT_AUTHOR = "Forge Generator";
-    /** 可直接生成主子表聚合保存逻辑的关系类型。 */
-    private static final Set<String> MASTER_DETAIL_RELATION_TYPES = Set.of(
-            "CHILD_LIST", "DETAIL", "ONE_TO_MANY");
     /** 生成产物中不允许残留的 Velocity 引用。 */
     private static final Pattern UNRESOLVED_VELOCITY_REFERENCE = Pattern.compile(
             "\\$\\{(?:packageName|moduleName|className|classname|businessName|functionName|author|date|datetime|"
@@ -388,7 +383,7 @@ public class VelocityCodegenStrategy implements CodegenStrategy {
     }
 
     /** order/manage → manage（最后一段作为业务名） */
-    private String resolveBusinessName(String businessPath) {
+    String resolveBusinessName(String businessPath) {
         String[] parts = businessPath.split("/");
         return parts[parts.length - 1];
     }
@@ -464,7 +459,7 @@ public class VelocityCodegenStrategy implements CodegenStrategy {
         }
     }
 
-    private String toColumnType(LowcodeFieldSchema field) {
+    String toColumnType(LowcodeFieldSchema field) {
         String dataType = StringUtils.defaultIfBlank(field.getDataType(), "varchar").toLowerCase(Locale.ROOT);
         Integer length = field.getLength();
         Integer precision = field.getPrecision();
@@ -481,7 +476,7 @@ public class VelocityCodegenStrategy implements CodegenStrategy {
         };
     }
 
-    private String toJavaType(String dataType) {
+    String toJavaType(String dataType) {
         String type = StringUtils.defaultIfBlank(dataType, "varchar").toLowerCase(Locale.ROOT);
         return switch (type) {
             case "bigint" -> "Long";
@@ -493,7 +488,7 @@ public class VelocityCodegenStrategy implements CodegenStrategy {
         };
     }
 
-    private String toHtmlType(String componentType, String dataType) {
+    String toHtmlType(String componentType, String dataType) {
         String component = StringUtils.defaultString(componentType);
         if ("textarea".equals(component)) {
             return "textarea";
@@ -525,128 +520,18 @@ public class VelocityCodegenStrategy implements CodegenStrategy {
      * 解析 encryptConfig / dictConfig / desensitizeConfig / transConfig，
      * 生成 Velocity 上下文中的注解控制布尔值和字段集合。
      */
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> resolveAnnotationFlags(AiCrudConfig config, List<GenTableColumn> columns) {
-        Map<String, Object> flags = new LinkedHashMap<>();
-
-        // ── 字典配置 ──────────────────────────────────────────────────────────
-        boolean hasDictConfig = false;
-        Set<String> dictFields = new LinkedHashSet<>();
-        if (StringUtils.isNotBlank(config.getDictConfig()) && StringUtils.isNotBlank(config.getColumnsSchema())) {
-            try {
-                // 建立 dictType -> javaField 反查 Map（从 columnsSchema + editSchema）
-                Map<String, String> dictTypeToField = new LinkedHashMap<>();
-                for (String schemaJson : new String[]{config.getColumnsSchema(), config.getEditSchema()}) {
-                    if (StringUtils.isBlank(schemaJson)) continue;
-                    List<Map<String, Object>> schemaList = objectMapper.readValue(schemaJson, new TypeReference<>() {});
-                    for (Map<String, Object> col : schemaList) {
-                        Object dtObj = col.get("dictType");
-                        Object fObj = col.get("field") != null ? col.get("field")
-                                : col.get("dataIndex") != null ? col.get("dataIndex") : col.get("key");
-                        if (dtObj != null && fObj != null) {
-                            dictTypeToField.putIfAbsent(String.valueOf(dtObj), String.valueOf(fObj));
-                        }
-                    }
-                }
-                // dictConfig 格式： [{dictType: "sys_status", dictName: "...", items: [...]}]
-                List<Map<String, Object>> dictList = objectMapper.readValue(
-                        config.getDictConfig(), new TypeReference<>() {});
-                for (Map<String, Object> item : dictList) {
-                    String dictType = (String) item.get("dictType");
-                    if (StringUtils.isBlank(dictType)) continue;
-                    String field = dictTypeToField.get(dictType);
-                    if (StringUtils.isNotBlank(field)) {
-                        dictFields.add(field);
-                        hasDictConfig = true;
-                        final String finalDictType = dictType;
-                        final String finalField = field;
-                        columns.stream()
-                                .filter(c -> finalField.equals(c.getJavaField()))
-                                .findFirst()
-                                .ifPresent(c -> c.setDictType(finalDictType));
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("[VelocityCodegenStrategy] 解析 dictConfig 失败", e);
-            }
-        }
-        flags.put("hasDictConfig", hasDictConfig);
-        flags.put("hasDictTrans", hasDictConfig || GenUtils.hasDictTrans(columns));
-        flags.put("dictFields", dictFields);
-
-        // ── 加解密配置 ────────────────────────────────────────────────────────
-        boolean hasEncrypt = false;
-        boolean enableDecrypt = false;
-        boolean enableEncrypt = false;
-        if (StringUtils.isNotBlank(config.getEncryptConfig())) {
-            try {
-                Map<String, Object> encConf = objectMapper.readValue(
-                        config.getEncryptConfig(), new TypeReference<>() {});
-                // 格式：{enableEncrypt: true, enableDecrypt: true, operations: [...]}
-                Object encryptVal = encConf.get("enableEncrypt");
-                Object decryptVal = encConf.get("enableDecrypt");
-                enableEncrypt = Boolean.TRUE.equals(encryptVal) || "true".equals(String.valueOf(encryptVal));
-                enableDecrypt = Boolean.TRUE.equals(decryptVal) || "true".equals(String.valueOf(decryptVal));
-                hasEncrypt = enableEncrypt || enableDecrypt;
-            } catch (Exception e) {
-                log.warn("[VelocityCodegenStrategy] 解析 encryptConfig 失败", e);
-            }
-        }
-        flags.put("hasEncrypt", hasEncrypt);
-        flags.put("enableDecrypt", enableDecrypt);
-        flags.put("enableEncrypt", enableEncrypt);
-
-        // ── 脱敏配置 ──────────────────────────────────────────────────────────
-        // 前端保存格式： {"phone": {"type": "PHONE", "label": "..."}, "idCard": {...}}
-        // 直接回写到列对象的 desensitizeType 字段（与 dictType 同等模式）
-        columns.forEach(column -> column.setDesensitizeType(
-                normalizeDesensitizeType(column.getDesensitizeType())));
-        if (StringUtils.isNotBlank(config.getDesensitizeConfig())) {
-            try {
-                Map<String, Object> desMap = objectMapper.readValue(
-                        config.getDesensitizeConfig(), new TypeReference<>() {});
-                for (Map.Entry<String, Object> entry : desMap.entrySet()) {
-                    String field = entry.getKey();
-                    Object val = entry.getValue();
-                    String strategy = null;
-                    if (val instanceof Map) {
-                        Object typeVal = ((Map<?, ?>) val).get("type");
-                        if (typeVal != null) strategy = String.valueOf(typeVal);
-                    } else if (val instanceof String) {
-                        strategy = (String) val;
-                    }
-                    if (StringUtils.isNotBlank(field)) {
-                        final String finalField = field;
-                        final String finalStrategy = normalizeDesensitizeType(strategy);
-                        columns.stream()
-                                .filter(c -> finalField.equals(c.getJavaField()))
-                                .findFirst()
-                                .ifPresent(c -> c.setDesensitizeType(finalStrategy));
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("[VelocityCodegenStrategy] 解析 desensitizeConfig 失败", e);
-            }
-        }
-        boolean hasDesensitize = columns.stream()
-                .anyMatch(column -> StringUtils.isNotBlank(column.getDesensitizeType()));
-        flags.put("hasDesensitize", hasDesensitize);
-
-        return flags;
+    private Map<String, Object> resolveAnnotationFlags(AiCrudConfig config,
+                                                       List<GenTableColumn> columns) {
+        return annotationContextBuilder().build(config, columns);
     }
 
-    private String normalizeDesensitizeType(String value) {
-        String normalized = StringUtils.trimToNull(value);
-        if (normalized == null) {
-            return null;
-        }
-        normalized = normalized.toUpperCase(Locale.ROOT);
-        return "NONE".equals(normalized) ? null : normalized;
+    String normalizeDesensitizeType(String value) {
+        return annotationContextBuilder().normalizeDesensitizeType(value);
     }
 
-    // ───────────────────────────────────────────────────────────────────────────
-    // 模板渲染
-    // ───────────────────────────────────────────────────────────────────────────
+    private VelocityAnnotationContextBuilder annotationContextBuilder() {
+        return new VelocityAnnotationContextBuilder(objectMapper);
+    }
 
     private void renderTo(Map<String, String> files, String templatePath,
                           VelocityContext ctx, String outputPath) {
@@ -697,7 +582,7 @@ public class VelocityCodegenStrategy implements CodegenStrategy {
 
     /** 从 config.options JSON 中读取指定 key，不存在时返回 defaultValue */
     @SuppressWarnings("unchecked")
-    private String readOption(AiCrudConfig config, String key, String defaultValue) {
+    String readOption(AiCrudConfig config, String key, String defaultValue) {
         if (StringUtils.isBlank(config.getOptions())) return defaultValue;
         try {
             Map<String, Object> opts = objectMapper.readValue(config.getOptions(), new TypeReference<>() {});
@@ -722,7 +607,7 @@ public class VelocityCodegenStrategy implements CodegenStrategy {
         return Boolean.parseBoolean(value);
     }
 
-    private List<String> resolveStripTablePrefixes(AiCrudConfig config) {
+    List<String> resolveStripTablePrefixes(AiCrudConfig config) {
         Object value = readRawOption(config, "stripTablePrefixes");
         return LowcodeCodegenOptionUtils.resolveStripTablePrefixes(
                 null, value, LowcodeCodegenOptionUtils.DEFAULT_STRIP_TABLE_PREFIXES);
@@ -761,308 +646,35 @@ public class VelocityCodegenStrategy implements CodegenStrategy {
                                                       GenTable mainTable,
                                                       String moduleName,
                                                       String businessPath) {
-        if (pageSchema == null || pageSchema.getModelRefs() == null || pageSchema.getModelRefs().isEmpty()) {
-            return new ArrayList<>();
-        }
-        List<RelatedTableMeta> result = new ArrayList<>();
-        Set<String> seenTables = new LinkedHashSet<>();
-        for (LowcodePageModelRef ref : pageSchema.getModelRefs()) {
-            if (ref == null || Boolean.TRUE.equals(ref.getPrimary()) || StringUtils.isBlank(ref.getTableName())) {
-                continue;
-            }
-            if (StringUtils.equals(ref.getTableName(), config.getTableName()) || !seenTables.add(ref.getTableName())) {
-                continue;
-            }
-            GenTable table = new GenTable();
-            table.setTableName(ref.getTableName());
-            table.setTableComment(StringUtils.defaultIfBlank(ref.getModelName(), ref.getTableName()));
-            table.setFunctionName(table.getTableComment());
-            String className = LowcodeCodegenOptionUtils.buildClassName(
-                    ref.getTableName(), readOption(config, "entityPrefix", ""),
-                    resolveStripTablePrefixes(config));
-            table.setClassName(className);
-            table.setBusinessName(resolveBusinessName(businessPath));
-            table.setPackageName(mainTable.getPackageName());
-            table.setModuleName(moduleName);
-            table.setAuthor(mainTable.getAuthor());
-            List<GenTableColumn> refColumns = buildColumnsFromModelRef(ref);
-            table.setColumns(refColumns);
-            table.setPkColumn(GenUtils.getPkColumn(refColumns));
-
-            RelatedTableMeta meta = new RelatedTableMeta();
-            meta.setModelCode(ref.getModelCode());
-            meta.setKey(StringUtils.defaultIfBlank(ref.getModelCode(), className));
-            meta.setModelName(ref.getModelName());
-            meta.setTableName(ref.getTableName());
-            meta.setClassName(className);
-            meta.setVariableName(StringUtils.uncapitalize(className));
-            meta.setMapperVarName(StringUtils.uncapitalize(className) + "Mapper");
-            meta.setTable(table);
-            meta.setColumns(refColumns);
-            meta.setPkColumn(table.getPkColumn());
-            meta.setHasLogicDelete(hasColumn(refColumns, "del_flag"));
-            meta.setUniqueDeleteMarker(meta.getPkColumn() != null
-                    && "Long".equals(meta.getPkColumn().getJavaType())
-                    && refColumns.stream().anyMatch(column -> "del_flag".equals(column.getColumnName())
-                    && "Long".equals(column.getJavaType())));
-            result.add(meta);
-        }
-        return result;
+        return relatedTablePlanner().buildRelatedTables(
+                config, pageSchema, mainTable, moduleName, businessPath);
     }
 
-    private List<GenTableColumn> buildColumnsFromModelRef(LowcodePageModelRef ref) {
-        if (ref.getFields() == null || ref.getFields().isEmpty()) {
-            return new ArrayList<>();
-        }
-        List<GenTableColumn> columns = new ArrayList<>();
-        int sort = 0;
-        for (Map<String, Object> fieldMap : ref.getFields()) {
-            String sourceField = StringUtils.firstNonBlank(text(fieldMap.get("sourceField")),
-                    text(fieldMap.get("field")), text(fieldMap.get("fieldRef")));
-            if (StringUtils.isBlank(sourceField)) {
-                continue;
-            }
-            String columnName = StringUtils.defaultIfBlank(text(fieldMap.get("columnName")), camelToSnake(sourceField));
-            GenTableColumn column = new GenTableColumn();
-            column.setColumnName(columnName);
-            column.setColumnComment(StringUtils.firstNonBlank(text(fieldMap.get("rawLabel")),
-                    text(fieldMap.get("label")), sourceField));
-            LowcodeFieldSchema lowcodeField = new LowcodeFieldSchema();
-            lowcodeField.setDataType(text(fieldMap.get("dataType")));
-            lowcodeField.setLength(integerValue(fieldMap.get("length")));
-            lowcodeField.setPrecision(integerValue(fieldMap.get("precision")));
-            column.setColumnType(toColumnType(lowcodeField));
-            column.setJavaType(toJavaType(text(fieldMap.get("dataType"))));
-            column.setJavaField(sourceField);
-            boolean primaryKey = booleanValue(fieldMap.get("primaryKey")) || "id".equals(sourceField) || "id".equals(columnName);
-            boolean readonly = booleanValue(fieldMap.get("readonly"));
-            column.setIsPk(primaryKey ? 1 : 0);
-            column.setIsIncrement(booleanValue(fieldMap.get("autoIncrement")) || primaryKey ? 1 : 0);
-            column.setIsRequired(booleanValue(fieldMap.get("required")) ? 1 : 0);
-            column.setIsInsert(!primaryKey && !readonly ? 1 : 0);
-            column.setIsEdit(!primaryKey && !readonly ? 1 : 0);
-            column.setIsList(booleanValueDefault(fieldMap.get("listVisible"), true) ? 1 : 0);
-            column.setIsQuery(booleanValue(fieldMap.get("searchable")) ? 1 : 0);
-            column.setQueryType(StringUtils.defaultIfBlank(text(fieldMap.get("queryType")), "EQ").toUpperCase(Locale.ROOT));
-            column.setHtmlType(toHtmlType(text(fieldMap.get("componentType")), text(fieldMap.get("dataType"))));
-            column.setDictType(StringUtils.trimToNull(text(fieldMap.get("dictType"))));
-            column.setDesensitizeType(normalizeDesensitizeType(text(fieldMap.get("sensitiveType"))));
-            column.setSort(sort++);
-            columns.add(column);
-        }
-        return columns;
-    }
-
-    private List<RelatedTableMeta> buildMasterDetailChildren(Map<String, Object> masterDetailConfig,
-                                                             List<RelatedTableMeta> relatedTables,
-                                                             GenTable mainTable,
-                                                             LowcodePageSchema pageSchema) {
-        List<RelatedTableMeta> result = buildConfiguredMasterDetailChildren(
-                masterDetailConfig, relatedTables, mainTable);
-        appendPageSchemaMasterDetailChildren(result, relatedTables, mainTable, pageSchema);
-        return result;
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<RelatedTableMeta> buildConfiguredMasterDetailChildren(Map<String, Object> masterDetailConfig,
-                                                                       List<RelatedTableMeta> relatedTables,
-                                                                       GenTable mainTable) {
-        Object childrenObj = masterDetailConfig.get("children");
-        if (!(childrenObj instanceof List<?> childrenList)) {
-            return new ArrayList<>();
-        }
-        List<RelatedTableMeta> result = new ArrayList<>();
-        for (Object childObj : childrenList) {
-            if (!(childObj instanceof Map<?, ?> rawChild)) {
-                continue;
-            }
-            Map<String, Object> child = (Map<String, Object>) rawChild;
-            RelatedTableMeta meta = findRelatedTable(relatedTables, text(child.get("modelCode")), text(child.get("tableName")));
-            if (meta == null) {
-                continue;
-            }
-            configureMasterDetailChild(
-                    meta,
-                    StringUtils.firstNonBlank(text(child.get("key")), text(child.get("modelCode")), meta.getKey()),
-                    StringUtils.defaultIfBlank(text(child.get("sourceField")), "parentId"),
-                    StringUtils.defaultIfBlank(text(child.get("targetField")), defaultMainKeyField(mainTable)),
-                    mainTable);
-            result.add(meta);
-        }
-        return result;
-    }
-
-    /**
-     * 运行配置中的 masterDetailConfig 属于派生数据，旧草稿或局部保存时可能为空。
-     * 页面模型引用保留了真实的主子对象及主外键关系，可作为代码生成的稳定兜底来源。
-     */
-    private void appendPageSchemaMasterDetailChildren(List<RelatedTableMeta> result,
-                                                       List<RelatedTableMeta> relatedTables,
-                                                       GenTable mainTable,
-                                                       LowcodePageSchema pageSchema) {
-        if (pageSchema == null || pageSchema.getModelRefs() == null || pageSchema.getModelRefs().isEmpty()) {
-            return;
-        }
-        LowcodePageModelRef primaryRef = resolvePrimaryModelRef(pageSchema);
-        String primaryModelCode = StringUtils.firstNonBlank(
-                pageSchema.getPrimaryModelCode(), primaryRef == null ? null : primaryRef.getModelCode());
-        for (LowcodePageModelRef childRef : pageSchema.getModelRefs()) {
-            if (childRef == null || Boolean.TRUE.equals(childRef.getPrimary())) {
-                continue;
-            }
-            RelatedTableMeta meta = findRelatedTable(
-                    relatedTables, childRef.getModelCode(), childRef.getTableName());
-            if (meta == null || result.contains(meta)) {
-                continue;
-            }
-            MasterDetailFieldPair fieldPair = resolveMasterDetailFieldPair(
-                    primaryModelCode, primaryRef, childRef);
-            if (fieldPair == null) {
-                continue;
-            }
-            configureMasterDetailChild(
-                    meta,
-                    StringUtils.defaultIfBlank(childRef.getModelCode(), meta.getKey()),
-                    fieldPair.getChildField(),
-                    fieldPair.getMainField(),
-                    mainTable);
-            result.add(meta);
-        }
-    }
-
-    private LowcodePageModelRef resolvePrimaryModelRef(LowcodePageSchema pageSchema) {
-        String primaryModelCode = pageSchema.getPrimaryModelCode();
-        return pageSchema.getModelRefs().stream()
-                .filter(Objects::nonNull)
-                .filter(ref -> Boolean.TRUE.equals(ref.getPrimary())
-                        || StringUtils.equals(primaryModelCode, ref.getModelCode()))
-                .findFirst()
-                .orElse(null);
-    }
-
-    private MasterDetailFieldPair resolveMasterDetailFieldPair(String primaryModelCode,
-                                                               LowcodePageModelRef primaryRef,
-                                                               LowcodePageModelRef childRef) {
-        if (StringUtils.isBlank(primaryModelCode) || StringUtils.isBlank(childRef.getModelCode())) {
-            return null;
-        }
-        if (childRef.getRelations() != null) {
-            for (LowcodeRelationSchema relation : childRef.getRelations()) {
-                if (isMasterDetailRelation(relation)
-                        && StringUtils.equals(primaryModelCode, relation.getTargetObjectCode())
-                        && StringUtils.isNoneBlank(relation.getSourceField(), relation.getTargetField())) {
-                    return new MasterDetailFieldPair(relation.getSourceField(), relation.getTargetField());
-                }
-            }
-        }
-        if (primaryRef != null && primaryRef.getRelations() != null) {
-            for (LowcodeRelationSchema relation : primaryRef.getRelations()) {
-                if (isMasterDetailRelation(relation)
-                        && StringUtils.equals(childRef.getModelCode(), relation.getTargetObjectCode())
-                        && StringUtils.isNoneBlank(relation.getSourceField(), relation.getTargetField())) {
-                    return new MasterDetailFieldPair(relation.getTargetField(), relation.getSourceField());
-                }
-            }
-        }
-        return null;
-    }
-
-    private boolean isMasterDetailRelation(LowcodeRelationSchema relation) {
-        return relation != null && MASTER_DETAIL_RELATION_TYPES.contains(
-                StringUtils.defaultString(relation.getRelationType()).toUpperCase(Locale.ROOT));
-    }
-
-    private void configureMasterDetailChild(RelatedTableMeta meta,
-                                            String childKey,
-                                            String childFkField,
-                                            String mainField,
-                                            GenTable mainTable) {
-        meta.setMasterDetailChild(true);
-        meta.setChildKey(StringUtils.defaultIfBlank(childKey, meta.getKey()));
-        meta.setChildFkField(normalizeJavaField(childFkField));
-        meta.setChildFkFieldCap(capJavaField(meta.getChildFkField()));
-        meta.setChildFkColumn(resolveColumnName(meta.getColumns(), meta.getChildFkField()));
-        meta.setMainField(normalizeJavaField(StringUtils.defaultIfBlank(mainField, defaultMainKeyField(mainTable))));
-        meta.setMainFieldCap(capJavaField(meta.getMainField()));
-        meta.setMainColumn(resolveColumnName(mainTable.getColumns(), meta.getMainField()));
-    }
-
-    private String defaultMainKeyField(GenTable mainTable) {
-        return mainTable.getPkColumn() == null ? "id" : mainTable.getPkColumn().getJavaField();
+    private List<RelatedTableMeta> buildMasterDetailChildren(
+            Map<String, Object> masterDetailConfig,
+            List<RelatedTableMeta> relatedTables,
+            GenTable mainTable,
+            LowcodePageSchema pageSchema) {
+        return relatedTablePlanner().buildMasterDetailChildren(
+                masterDetailConfig, relatedTables, mainTable, pageSchema);
     }
 
     private TreeCodegenMeta buildTreeMeta(GenTable mainTable,
                                           List<RelatedTableMeta> relatedTables,
                                           Map<String, Object> treeConfig) {
-        if (treeConfig == null || treeConfig.isEmpty()) {
-            return null;
-        }
-        String sourceTableName = text(treeConfig.get("sourceTableName"));
-        String sourceModelCode = text(treeConfig.get("sourceModelCode"));
-        RelatedTableMeta sourceMeta = findRelatedTable(relatedTables, sourceModelCode, sourceTableName);
-        boolean separateSource = sourceMeta != null
-                && !StringUtils.equals(sourceMeta.getTableName(), mainTable.getTableName());
-        List<GenTableColumn> sourceColumns = separateSource ? sourceMeta.getColumns() : mainTable.getColumns();
-
-        TreeCodegenMeta meta = new TreeCodegenMeta();
-        meta.setSeparateSource(separateSource);
-        meta.setSourceModelCode(sourceModelCode);
-        meta.setSourceTableName(StringUtils.defaultIfBlank(sourceTableName, mainTable.getTableName()));
-        meta.setClassName(separateSource ? sourceMeta.getClassName() : mainTable.getClassName());
-        meta.setMapperVarName(separateSource ? sourceMeta.getMapperVarName() : StringUtils.uncapitalize(mainTable.getClassName()) + "Mapper");
-        meta.setKeyField(normalizeJavaField(StringUtils.defaultIfBlank(text(treeConfig.get("keyField")), "id")));
-        meta.setParentField(normalizeJavaField(StringUtils.defaultIfBlank(text(treeConfig.get("parentField")), "parentId")));
-        meta.setLabelField(normalizeJavaField(StringUtils.defaultIfBlank(text(treeConfig.get("labelField")), "name")));
-        meta.setFilterField(normalizeJavaField(StringUtils.defaultIfBlank(text(treeConfig.get("filterField")), meta.getParentField())));
-        meta.setTargetField(normalizeJavaField(StringUtils.defaultIfBlank(text(treeConfig.get("targetField")), meta.getKeyField())));
-        meta.setChildrenField(normalizeJavaField(StringUtils.defaultIfBlank(text(treeConfig.get("childrenField")), "children")));
-        meta.setLoadMode(StringUtils.defaultIfBlank(text(treeConfig.get("loadMode")), "full"));
-        meta.setKeyFieldCap(capJavaField(meta.getKeyField()));
-        meta.setParentFieldCap(capJavaField(meta.getParentField()));
-        meta.setLabelFieldCap(capJavaField(meta.getLabelField()));
-        meta.setFilterFieldCap(capJavaField(meta.getFilterField()));
-        meta.setTargetFieldCap(capJavaField(meta.getTargetField()));
-        meta.setChildrenFieldCap(capJavaField(meta.getChildrenField()));
-        meta.setKeyColumn(resolveColumnName(sourceColumns, meta.getKeyField()));
-        meta.setParentColumn(resolveColumnName(sourceColumns, meta.getParentField()));
-        meta.setTargetColumn(resolveColumnName(sourceColumns, meta.getTargetField()));
-        if (sourceMeta != null) {
-            sourceMeta.setTreeSource(true);
-            sourceMeta.setTreeChildrenField(meta.getChildrenField());
-        }
-        return meta;
+        return relatedTablePlanner().buildTreeMeta(mainTable, relatedTables, treeConfig);
     }
 
-    private List<RelatedTableMeta> resolveInjectedRelatedTables(TreeCodegenMeta treeMeta,
-                                                                List<RelatedTableMeta> relatedTables,
-                                                                List<RelatedTableMeta> masterDetailChildren) {
-        Map<String, RelatedTableMeta> result = new LinkedHashMap<>();
-        if (treeMeta != null && treeMeta.isSeparateSource()) {
-            for (RelatedTableMeta relatedTable : relatedTables) {
-                if (StringUtils.equals(relatedTable.getClassName(), treeMeta.getClassName())) {
-                    result.put(relatedTable.getClassName(), relatedTable);
-                }
-            }
-        }
-        for (RelatedTableMeta child : masterDetailChildren) {
-            result.put(child.getClassName(), child);
-        }
-        return new ArrayList<>(result.values());
+    private List<RelatedTableMeta> resolveInjectedRelatedTables(
+            TreeCodegenMeta treeMeta,
+            List<RelatedTableMeta> relatedTables,
+            List<RelatedTableMeta> masterDetailChildren) {
+        return relatedTablePlanner().resolveInjectedRelatedTables(
+                treeMeta, relatedTables, masterDetailChildren);
     }
 
-    private RelatedTableMeta findRelatedTable(List<RelatedTableMeta> relatedTables, String modelCode, String tableName) {
-        if (relatedTables == null || relatedTables.isEmpty()) {
-            return null;
-        }
-        for (RelatedTableMeta relatedTable : relatedTables) {
-            if (StringUtils.isNotBlank(modelCode) && StringUtils.equals(modelCode, relatedTable.getModelCode())) {
-                return relatedTable;
-            }
-            if (StringUtils.isNotBlank(tableName) && StringUtils.equals(tableName, relatedTable.getTableName())) {
-                return relatedTable;
-            }
-        }
-        return null;
+    private VelocityRelatedTablePlanner relatedTablePlanner() {
+        return new VelocityRelatedTablePlanner(this);
     }
 
     private void renderRelatedTableFiles(Map<String, String> files,
@@ -1245,11 +857,11 @@ public class VelocityCodegenStrategy implements CodegenStrategy {
         }
     }
 
-    private String text(Object value) {
+    String text(Object value) {
         return value == null ? null : String.valueOf(value);
     }
 
-    private Integer integerValue(Object value) {
+    Integer integerValue(Object value) {
         if (value instanceof Number number) {
             return number.intValue();
         }
@@ -1263,18 +875,18 @@ public class VelocityCodegenStrategy implements CodegenStrategy {
         return null;
     }
 
-    private boolean booleanValue(Object value) {
+    boolean booleanValue(Object value) {
         return Boolean.TRUE.equals(value) || "true".equalsIgnoreCase(String.valueOf(value));
     }
 
-    private boolean booleanValueDefault(Object value, boolean defaultValue) {
+    boolean booleanValueDefault(Object value, boolean defaultValue) {
         if (value == null) {
             return defaultValue;
         }
         return booleanValue(value);
     }
 
-    private String resolveColumnName(List<GenTableColumn> columns, String javaField) {
+    String resolveColumnName(List<GenTableColumn> columns, String javaField) {
         if (StringUtils.isBlank(javaField) || columns == null) {
             return camelToSnake(javaField);
         }
@@ -1286,12 +898,12 @@ public class VelocityCodegenStrategy implements CodegenStrategy {
                 .orElse(camelToSnake(javaField));
     }
 
-    private boolean hasColumn(List<GenTableColumn> columns, String columnName) {
+    boolean hasColumn(List<GenTableColumn> columns, String columnName) {
         return columns != null && columns.stream()
                 .anyMatch(column -> StringUtils.equalsIgnoreCase(columnName, column.getColumnName()));
     }
 
-    private String capJavaField(String javaField) {
+    String capJavaField(String javaField) {
         String field = normalizeJavaField(javaField);
         if (StringUtils.isBlank(field)) {
             return field;
@@ -1299,7 +911,7 @@ public class VelocityCodegenStrategy implements CodegenStrategy {
         return Character.toUpperCase(field.charAt(0)) + field.substring(1);
     }
 
-    private String normalizeJavaField(String field) {
+    String normalizeJavaField(String field) {
         if (StringUtils.isBlank(field)) {
             return field;
         }
@@ -1318,7 +930,7 @@ public class VelocityCodegenStrategy implements CodegenStrategy {
         return Character.toLowerCase(pascal.charAt(0)) + pascal.substring(1);
     }
 
-    private String camelToSnake(String value) {
+    String camelToSnake(String value) {
         if (StringUtils.isBlank(value)) {
             return value;
         }
@@ -1326,20 +938,6 @@ public class VelocityCodegenStrategy implements CodegenStrategy {
         return normalized
                 .replaceAll("([a-z0-9])([A-Z])", "$1_$2")
                 .toLowerCase(Locale.ROOT);
-    }
-
-    private String buildConfigJson(AiCrudConfig config) throws Exception {
-        Map<String, Object> map = new LinkedHashMap<>();
-        map.put("configKey", config.getConfigKey());
-        map.put("tableName", config.getTableName());
-        map.put("tableComment", config.getTableComment());
-        map.put("layoutType", config.getLayoutType());
-        map.put("searchSchema", parseJsonArray(config.getSearchSchema()));
-        map.put("columnsSchema", parseJsonArray(config.getColumnsSchema()));
-        map.put("editSchema", parseJsonArray(config.getEditSchema()));
-        map.put("apiConfig", parseJsonObject(config.getApiConfig()));
-        map.put("options", parseJsonObject(config.getOptions()));
-        return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(map);
     }
 
     @Data
@@ -1366,12 +964,6 @@ public class VelocityCodegenStrategy implements CodegenStrategy {
         private String mainColumn;
         private boolean hasLogicDelete;
         private boolean uniqueDeleteMarker;
-    }
-
-    @Data
-    private static class MasterDetailFieldPair {
-        private final String childField;
-        private final String mainField;
     }
 
     @Data

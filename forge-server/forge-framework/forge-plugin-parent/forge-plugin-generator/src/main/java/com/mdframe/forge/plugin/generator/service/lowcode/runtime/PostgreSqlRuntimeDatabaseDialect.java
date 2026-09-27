@@ -106,6 +106,12 @@ public class PostgreSqlRuntimeDatabaseDialect implements RuntimeDatabaseDialect 
     }
 
     @Override
+    public String stringAggregate(String column, String orderColumn, String delimiter) {
+        return "string_agg(" + column + "::text, '" + delimiter.replace("'", "''")
+            + "' ORDER BY " + orderColumn + ")";
+    }
+
+    @Override
     public String resolveSqlType(String dataType, int length, String decimalPrecision) {
         return switch (dataType) {
             case "varchar" -> "varchar(" + length + ")";

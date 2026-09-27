@@ -17,7 +17,7 @@ class FlowProcessDiagramSequenceContractTest {
         String sequenceDto = Files.readString(Path.of(
                 "src/main/java/com/mdframe/forge/starter/flow/dto/ProcessSequenceFlowInfo.java"));
         String service = Files.readString(Path.of(
-                "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskServiceImpl.java"));
+                "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowProcessDiagramService.java"));
         assertTrue(dto.contains("sequenceFlows"));
         assertTrue(dto.contains("sequenceFlowStatusAvailable"));
         assertTrue(dto.contains("sequenceFlowStatusMessage"));

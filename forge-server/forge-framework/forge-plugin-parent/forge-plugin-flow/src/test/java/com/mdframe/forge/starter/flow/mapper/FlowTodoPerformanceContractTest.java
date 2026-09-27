@@ -28,7 +28,7 @@ class FlowTodoPerformanceContractTest {
         String dto = Files.readString(resolveModuleFile(
                 "src/main/java/com/mdframe/forge/starter/flow/dto/TaskFormInfo.java"));
         String service = Files.readString(resolveModuleFile(
-                "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskServiceImpl.java"));
+                "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskFormContextCoordinator.java"));
 
         assertTrue(dto.contains("private Integer status;"));
         assertTrue(dto.contains("private String assignee;"));

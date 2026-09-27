@@ -1,19 +1,11 @@
 package com.mdframe.forge.plugin.generator.service.businessapp;
 
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
-import com.mdframe.forge.plugin.generator.mapper.AiCrudConfigMapper;
-import com.mdframe.forge.plugin.generator.mapper.BusinessBindingMapper;
-import com.mdframe.forge.plugin.generator.mapper.BusinessFlowInstanceLinkMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
-import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFieldVO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.context.ApplicationEventPublisher;
-
-import java.lang.reflect.Method;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,32 +19,25 @@ import static org.mockito.Mockito.when;
 @DisplayName("审批子表字段控件类型补齐")
 class BusinessFlowServiceChildFieldControlTest {
 
-    private BusinessFlowService service;
+    private BusinessFlowTaskChildAssembler assembler;
     private BusinessFieldDesignService fieldDesignService;
     private BusinessObjectMapper businessObjectMapper;
-    private Method mergeFormDesignerChildrenWithPublished;
 
     @BeforeEach
-    void setUp() throws Exception {
+    void setUp() {
         fieldDesignService = mock(BusinessFieldDesignService.class);
         businessObjectMapper = mock(BusinessObjectMapper.class);
-        service = new BusinessFlowService(
-                mock(BusinessBindingMapper.class),
-                mock(BusinessFlowInstanceLinkMapper.class),
-                mock(AiCrudConfigMapper.class),
-                businessObjectMapper,
-                mock(BusinessDocumentConfigService.class),
-                mock(BusinessDocumentRuntimeService.class),
-                mock(DynamicCrudService.class),
+        BusinessFlowFormAssetAssembler formAssetAssembler = new BusinessFlowFormAssetAssembler(
                 fieldDesignService,
-                mock(BusinessFlowVariableResolver.class),
-                mock(BusinessCodeFormProviderRegistry.class),
-                mock(ApplicationEventPublisher.class),
-                mock(ObjectProvider.class),
-                mock(ObjectProvider.class));
-        mergeFormDesignerChildrenWithPublished = BusinessFlowService.class.getDeclaredMethod(
-                "mergeFormDesignerChildrenWithPublished", List.class, Map.class);
-        mergeFormDesignerChildrenWithPublished.setAccessible(true);
+                (fields, layout) -> fields,
+                (options, fields) -> { });
+        assembler = new BusinessFlowTaskChildAssembler(
+                new BusinessFlowTaskChildPolicy(),
+                new BusinessFlowTaskFormPolicy(),
+                businessObjectMapper,
+                fieldDesignService,
+                formAssetAssembler,
+                () -> 1L);
 
         AiBusinessObject childObject = new AiBusinessObject();
         childObject.setId(20L);
@@ -121,10 +106,7 @@ class BusinessFlowServiceChildFieldControlTest {
                 new com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectVO();
         object.setId(10L);
 
-        Method enrich = BusinessFlowService.class.getDeclaredMethod("enrichTaskMainFieldsFromObjectRegistry",
-                List.class, com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectVO.class);
-        enrich.setAccessible(true);
-        enrich.invoke(service, List.of(reference, plainInput), object);
+        assembler.enrichTaskMainFieldsFromObjectRegistry(List.of(reference, plainInput), object);
 
         assertEquals("customer", reference.get("referenceObjectCode"));
         assertEquals("customerName", reference.get("referenceDisplayField"));
@@ -134,11 +116,9 @@ class BusinessFlowServiceChildFieldControlTest {
         assertEquals(null, plainInput.get("dictType"));
     }
 
-    @SuppressWarnings("unchecked")
     private List<Map<String, Object>> merge(List<Map<String, Object>> formChildren,
-                                            Map<String, Map<String, Object>> publishedByKey) throws Exception {
-        return (List<Map<String, Object>>) mergeFormDesignerChildrenWithPublished.invoke(
-                service, formChildren, publishedByKey);
+                                            Map<String, Map<String, Object>> publishedByKey) {
+        return assembler.mergeFormDesignerChildrenWithPublished(formChildren, publishedByKey);
     }
 
     @SuppressWarnings("unchecked")

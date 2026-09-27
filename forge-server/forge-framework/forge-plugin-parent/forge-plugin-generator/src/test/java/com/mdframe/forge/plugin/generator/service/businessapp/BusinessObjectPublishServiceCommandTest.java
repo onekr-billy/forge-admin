@@ -5,11 +5,9 @@ import com.mdframe.forge.plugin.generator.constant.BusinessPublishCheckLevel;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessPublishCheckItemVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectRelationVO;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -22,20 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class BusinessObjectPublishServiceCommandTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private BusinessObjectPublishService service;
-    private Method checkTransactionalActions;
-
-    @BeforeEach
-    void setUp() throws Exception {
-        service = new BusinessObjectPublishService(
-                null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, objectMapper);
-        checkTransactionalActions = BusinessObjectPublishService.class.getDeclaredMethod(
-                "checkTransactionalActions",
-                BusinessObjectDesignerService.DesignerContext.class,
-                List.class);
-        checkTransactionalActions.setAccessible(true);
-    }
+    private final BusinessObjectPagePublishValidator validator =
+            new BusinessObjectPagePublishValidator(objectMapper, null);
 
     @Test
     @DisplayName("合法本地事务命令通过专项协议检查")
@@ -173,7 +159,7 @@ class BusinessObjectPublishServiceCommandTest {
         context.setObject(object);
         context.setRelations(relations);
         List<BusinessPublishCheckItemVO> items = new ArrayList<>();
-        checkTransactionalActions.invoke(service, context, items);
+        validator.validateTransactionalActions(context, items);
         return items;
     }
 

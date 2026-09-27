@@ -217,6 +217,24 @@ export const aiCrudPageProps = {
   },
 
   /**
+   * 运行配置 options（含 treeConfig / layoutType），嵌入式树表兜底读取。
+   * @type {object}
+   */
+  options: {
+    type: Object,
+    default: () => ({}),
+  },
+
+  /**
+   * 页面布局类型。tree-crud 为左树右表；其它 + treeConfig 为嵌入式树表。
+   * @type {string}
+   */
+  layoutType: {
+    type: String,
+    default: 'simple-crud',
+  },
+
+  /**
    * 是否显示树形表“添加下级”操作。左树右表筛选场景默认不需要。
    * @type {boolean}
    */

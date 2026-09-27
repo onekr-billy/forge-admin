@@ -138,6 +138,12 @@ public class OracleRuntimeDatabaseDialect implements RuntimeDatabaseDialect {
     }
 
     @Override
+    public String stringAggregate(String column, String orderColumn, String delimiter) {
+        return "LISTAGG(" + column + ", '" + delimiter.replace("'", "''")
+            + "') WITHIN GROUP (ORDER BY " + orderColumn + ")";
+    }
+
+    @Override
     public String resolveSqlType(String dataType, int length, String decimalPrecision) {
         return switch (dataType) {
             case "varchar" -> "VARCHAR2(" + length + " CHAR)";

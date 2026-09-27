@@ -15,6 +15,9 @@ import com.mdframe.forge.plugin.generator.dto.DynamicCrudImportResult;
 import com.mdframe.forge.plugin.generator.dto.DynamicCrudQuery;
 import com.mdframe.forge.plugin.generator.enums.DynamicCrudExportStatus;
 import com.mdframe.forge.plugin.generator.mapper.AiCrudExportTaskMapper;
+import com.mdframe.forge.plugin.generator.service.excel.DynamicCrudExcelColumn;
+import com.mdframe.forge.plugin.generator.service.excel.DynamicCrudExcelRow;
+import com.mdframe.forge.plugin.generator.service.excel.DynamicCrudExcelValueAdapter;
 import com.mdframe.forge.starter.core.domain.PageQuery;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
@@ -22,7 +25,6 @@ import com.mdframe.forge.starter.datascope.context.DataScopeContext;
 import com.mdframe.forge.starter.datascope.service.IDataScopeService;
 import com.mdframe.forge.starter.excel.core.ExcelImportTemplateWriter;
 import com.mdframe.forge.starter.excel.model.ExcelColumnConfig;
-import com.mdframe.forge.starter.excel.model.ImportTemplateColumn;
 import com.mdframe.forge.starter.excel.spi.ExcelConfigProvider;
 import com.mdframe.forge.starter.file.core.FileManager;
 import com.mdframe.forge.starter.file.model.FileMetadata;
@@ -33,8 +35,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
-import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -42,20 +42,12 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Instant;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -83,13 +75,9 @@ public class DynamicCrudExcelService {
     private static final String CONFIG_ASYNC_THRESHOLD = "sys.export.async.threshold";
     private static final String CONFIG_BATCH_SIZE = "sys.export.batch.size";
     private static final String CONFIG_FILE_KEEP_HOURS = "sys.export.file.keepHours";
-    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-    private static final DateTimeFormatter DATETIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm:ss");
-
     private final DynamicCrudService dynamicCrudService;
     private final ObjectMapper objectMapper;
-    private final NamedParameterJdbcTemplate namedJdbcTemplate;
+    private final DynamicCrudExcelValueAdapter excelValueAdapter;
     private final ObjectProvider<ExcelConfigProvider> excelConfigProvider;
     private final ObjectProvider<DynamicCrudAsyncExportWorker> asyncExportWorker;
     private final AiCrudExportTaskMapper exportTaskMapper;
@@ -98,7 +86,7 @@ public class DynamicCrudExcelService {
 
     public DynamicCrudExportResult exportExcel(String configKey, DynamicCrudQuery query, HttpServletResponse response) {
         AiCrudConfig config = dynamicCrudService.getRuntimeConfig(configKey);
-        List<ExcelColumnMeta> columns = resolveExportColumns(config);
+        List<DynamicCrudExcelColumn> columns = resolveExportColumns(config);
         if (columns.isEmpty()) {
             throw new BusinessException("没有可导出的字段");
         }
@@ -121,7 +109,7 @@ public class DynamicCrudExcelService {
         List<Map<String, Object>> rows = dynamicCrudService.selectExportPageRows(configKey, query, 1, pageSize, dataScopeContext);
         List<List<String>> headers = buildHeaders(columns);
         List<List<Object>> data = rows.stream()
-                .map(row -> buildExportRow(row, columns))
+                .map(row -> excelValueAdapter.buildExportRow(row, columns))
                 .toList();
 
         writeWorkbook(response, buildFileName(config, "导出数据"), "数据", headers, data);
@@ -130,7 +118,7 @@ public class DynamicCrudExcelService {
 
     public void downloadImportTemplate(String configKey, HttpServletResponse response) {
         AiCrudConfig config = dynamicCrudService.getRuntimeConfig(configKey);
-        List<ExcelColumnMeta> columns = resolveImportColumns(config);
+        List<DynamicCrudExcelColumn> columns = resolveImportColumns(config);
         if (columns.isEmpty()) {
             throw new BusinessException("没有可导入的字段");
         }
@@ -176,7 +164,7 @@ public class DynamicCrudExcelService {
         try {
             markTaskRunning(taskId);
             AiCrudConfig config = dynamicCrudService.getRuntimeConfig(configKey);
-            List<ExcelColumnMeta> columns = resolveExportColumns(config);
+            List<DynamicCrudExcelColumn> columns = resolveExportColumns(config);
             if (columns.isEmpty()) {
                 throw new BusinessException("没有可导出的字段");
             }
@@ -228,7 +216,7 @@ public class DynamicCrudExcelService {
         }
 
         AiCrudConfig config = dynamicCrudService.getRuntimeConfig(configKey);
-        List<ExcelColumnMeta> columns = resolveImportColumns(config);
+        List<DynamicCrudExcelColumn> columns = resolveImportColumns(config);
         if (columns.isEmpty()) {
             throw new BusinessException("没有可导入的字段");
         }
@@ -242,12 +230,13 @@ public class DynamicCrudExcelService {
             return finishFailure(result);
         }
 
-        Map<Integer, ExcelColumnMeta> headerMapping = buildHeaderMapping(readResult, columns, result);
+        Map<Integer, DynamicCrudExcelColumn> headerMapping = buildHeaderMapping(readResult, columns, result);
         if (!result.getErrors().isEmpty()) {
             return finishFailure(result);
         }
 
-        List<Map<String, Object>> importRows = buildImportRows(readResult.getRows(), headerMapping, result);
+        List<Map<String, Object>> importRows = excelValueAdapter.buildImportRows(
+                readResult.getRows(), headerMapping, result);
         if (!result.getErrors().isEmpty()) {
             return finishFailure(result);
         }
@@ -270,108 +259,6 @@ public class DynamicCrudExcelService {
         return result;
     }
 
-    private List<Map<String, Object>> buildImportRows(List<ExcelRow> rows,
-                                                      Map<Integer, ExcelColumnMeta> headerMapping,
-                                                      DynamicCrudImportResult result) {
-        List<Map<String, Object>> importRows = new ArrayList<>();
-        for (ExcelRow excelRow : rows) {
-            if (isBlankRow(excelRow.getValues())) {
-                continue;
-            }
-
-            Map<String, Object> data = new LinkedHashMap<>();
-            for (Map.Entry<Integer, ExcelColumnMeta> entry : headerMapping.entrySet()) {
-                Object rawValue = excelRow.getValues().get(entry.getKey());
-                ExcelColumnMeta meta = entry.getValue();
-                Object normalizedValue = normalizeCellValue(rawValue);
-
-                if (isEmptyValue(normalizedValue)) {
-                    if (meta.isRequired()) {
-                        result.addError(excelRow.getRowNum(), meta.getField(), meta.getLabel(), rawValue,
-                                meta.getLabel() + "不能为空");
-                    }
-                    continue;
-                }
-
-                try {
-                    Object convertedValue = convertImportValue(meta, normalizedValue);
-                    data.put(meta.getField(), convertedValue);
-                } catch (Exception e) {
-                    result.addError(excelRow.getRowNum(), meta.getField(), meta.getLabel(), rawValue, e.getMessage());
-                }
-            }
-
-            if (!data.isEmpty()) {
-                importRows.add(data);
-            }
-        }
-        return importRows;
-    }
-
-    private Object convertImportValue(ExcelColumnMeta meta, Object value) {
-        Object convertedValue = value;
-        if (StringUtils.isNotBlank(meta.getDictType())) {
-            String dictValue = resolveDictValue(meta.getDictType(), toCellText(value));
-            if (dictValue == null) {
-                throw new BusinessException("无法识别字典值: " + toCellText(value));
-            }
-            convertedValue = dictValue;
-        }
-
-        return convertByDataType(meta, convertedValue);
-    }
-
-    private Object convertByDataType(ExcelColumnMeta meta, Object value) {
-        String dataType = StringUtils.defaultIfBlank(meta.getDataType(), "").toLowerCase(Locale.ROOT);
-        String componentType = StringUtils.defaultIfBlank(meta.getType(), "").toLowerCase(Locale.ROOT);
-
-        if (Set.of("int", "tinyint").contains(dataType)) {
-            return Integer.valueOf(toNumberText(value));
-        }
-        if ("bigint".equals(dataType)) {
-            return Long.valueOf(toNumberText(value));
-        }
-        if ("decimal".equals(dataType) || "number".equals(componentType) || "inputnumber".equals(componentType)) {
-            return new BigDecimal(toNumberText(value));
-        }
-        if ("date".equals(dataType) || "date".equals(componentType)) {
-            return formatDateValue(value);
-        }
-        if ("datetime".equals(dataType) || "datetime".equals(componentType)) {
-            return formatDateTimeValue(value);
-        }
-        if ("time".equals(dataType) || "time".equals(componentType)) {
-            return formatTimeValue(value);
-        }
-        return value;
-    }
-
-    private String resolveDictValue(String dictType, String labelOrValue) {
-        if (StringUtils.isBlank(dictType) || StringUtils.isBlank(labelOrValue)) {
-            return null;
-        }
-
-        StringBuilder sql = new StringBuilder("""
-                SELECT dict_value
-                FROM sys_dict_data
-                WHERE dict_type = :dictType
-                  AND (dict_label = :value OR dict_value = :value)
-                """);
-        MapSqlParameterSource params = new MapSqlParameterSource()
-                .addValue("dictType", dictType)
-                .addValue("value", labelOrValue);
-
-        Long tenantId = TenantContextHolder.getTenantId();
-        if (tenantId != null) {
-            sql.append(" AND tenant_id = :tenantId");
-            params.addValue("tenantId", tenantId);
-        }
-        sql.append(" ORDER BY CASE WHEN dict_label = :value THEN 0 ELSE 1 END, dict_sort ASC LIMIT 1");
-
-        List<String> values = namedJdbcTemplate.queryForList(sql.toString(), params, String.class);
-        return values.isEmpty() ? null : values.get(0);
-    }
-
     private ExcelReadResult readExcel(MultipartFile file) {
         try (InputStream inputStream = file.getInputStream()) {
             MapRowReadListener listener = new MapRowReadListener();
@@ -385,18 +272,18 @@ public class DynamicCrudExcelService {
         }
     }
 
-    private Map<Integer, ExcelColumnMeta> buildHeaderMapping(ExcelReadResult readResult,
-                                                            List<ExcelColumnMeta> columns,
-                                                            DynamicCrudImportResult result) {
-        Map<String, ExcelColumnMeta> knownHeaders = new HashMap<>();
-        for (ExcelColumnMeta column : columns) {
-            knownHeaders.put(normalizeHeader(column.getLabel()), column);
-            knownHeaders.put(normalizeHeader(column.getField()), column);
+    private Map<Integer, DynamicCrudExcelColumn> buildHeaderMapping(ExcelReadResult readResult,
+                                                                    List<DynamicCrudExcelColumn> columns,
+                                                                    DynamicCrudImportResult result) {
+        Map<String, DynamicCrudExcelColumn> knownHeaders = new HashMap<>();
+        for (DynamicCrudExcelColumn column : columns) {
+            knownHeaders.put(excelValueAdapter.normalizeHeader(column.getLabel()), column);
+            knownHeaders.put(excelValueAdapter.normalizeHeader(column.getField()), column);
         }
 
-        Map<Integer, ExcelColumnMeta> mapping = new LinkedHashMap<>();
+        Map<Integer, DynamicCrudExcelColumn> mapping = new LinkedHashMap<>();
         for (Map.Entry<Integer, String> entry : readResult.getHeaders().entrySet()) {
-            ExcelColumnMeta column = knownHeaders.get(normalizeHeader(entry.getValue()));
+            DynamicCrudExcelColumn column = knownHeaders.get(excelValueAdapter.normalizeHeader(entry.getValue()));
             if (column != null) {
                 mapping.put(entry.getKey(), column);
             }
@@ -408,9 +295,9 @@ public class DynamicCrudExcelService {
         }
 
         Set<String> presentFields = mapping.values().stream()
-                .map(ExcelColumnMeta::getField)
+                .map(DynamicCrudExcelColumn::getField)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
-        for (ExcelColumnMeta column : columns) {
+        for (DynamicCrudExcelColumn column : columns) {
             if (column.isRequired() && !presentFields.contains(column.getField())) {
                 result.addError(1, column.getField(), column.getLabel(), null,
                         "导入模板缺少必填列: " + column.getLabel());
@@ -431,18 +318,18 @@ public class DynamicCrudExcelService {
         return result;
     }
 
-    private List<ExcelColumnMeta> resolveExportColumns(AiCrudConfig config) {
+    private List<DynamicCrudExcelColumn> resolveExportColumns(AiCrudConfig config) {
         JsonNode schema = readArray(config.getColumnsSchema(), "columnsSchema");
         Map<String, TransMeta> transConfig = readTransConfig(config.getTransConfig());
         Map<String, String> modelDataTypes = readModelDataTypes(config.getModelSchema());
 
-        List<ExcelColumnMeta> columns = new ArrayList<>();
+        List<DynamicCrudExcelColumn> columns = new ArrayList<>();
         for (JsonNode node : schema) {
             String field = getFirstText(node, "prop", "dataIndex", "key", "field");
             if (StringUtils.isBlank(field) || isActionField(field)) {
                 continue;
             }
-            ExcelColumnMeta meta = new ExcelColumnMeta();
+            DynamicCrudExcelColumn meta = new DynamicCrudExcelColumn();
             meta.setField(field);
             meta.setLabel(StringUtils.defaultIfBlank(getFirstText(node, "title", "label", "columnName"), field));
             meta.setDataType(modelDataTypes.get(field));
@@ -453,18 +340,18 @@ public class DynamicCrudExcelService {
         return applyExportColumnConfig(config, columns);
     }
 
-    private List<ExcelColumnMeta> resolveImportColumns(AiCrudConfig config) {
+    private List<DynamicCrudExcelColumn> resolveImportColumns(AiCrudConfig config) {
         JsonNode schema = readArray(config.getEditSchema(), "editSchema");
         Map<String, TransMeta> transConfig = readTransConfig(config.getTransConfig());
         Map<String, String> modelDataTypes = readModelDataTypes(config.getModelSchema());
 
-        List<ExcelColumnMeta> columns = new ArrayList<>();
+        List<DynamicCrudExcelColumn> columns = new ArrayList<>();
         for (JsonNode node : schema) {
             String field = getFirstText(node, "field", "prop", "dataIndex", "key");
             if (StringUtils.isBlank(field) || isActionField(field)) {
                 continue;
             }
-            ExcelColumnMeta meta = new ExcelColumnMeta();
+            DynamicCrudExcelColumn meta = new DynamicCrudExcelColumn();
             meta.setField(field);
             meta.setLabel(StringUtils.defaultIfBlank(getFirstText(node, "label", "title", "columnName"), field));
             meta.setType(getFirstText(node, "type", "componentType"));
@@ -478,25 +365,26 @@ public class DynamicCrudExcelService {
         return applyImportColumnConfig(config, columns);
     }
 
-    private List<ExcelColumnMeta> applyExportColumnConfig(AiCrudConfig config, List<ExcelColumnMeta> schemaColumns) {
+    private List<DynamicCrudExcelColumn> applyExportColumnConfig(
+            AiCrudConfig config, List<DynamicCrudExcelColumn> schemaColumns) {
         List<ExcelColumnConfig> configuredColumns = loadColumnConfigs(config.getConfigKey());
         if (configuredColumns.isEmpty()) {
             return schemaColumns;
         }
 
-        Map<String, ExcelColumnMeta> schemaColumnMap = schemaColumns.stream()
+        Map<String, DynamicCrudExcelColumn> schemaColumnMap = schemaColumns.stream()
                 .collect(Collectors.toMap(
-                        ExcelColumnMeta::getField,
+                        DynamicCrudExcelColumn::getField,
                         column -> column,
                         (left, right) -> left,
                         LinkedHashMap::new
                 ));
-        List<ExcelColumnMeta> orderedColumns = new ArrayList<>();
+        List<DynamicCrudExcelColumn> orderedColumns = new ArrayList<>();
         for (ExcelColumnConfig columnConfig : configuredColumns) {
             if (Boolean.FALSE.equals(columnConfig.getExport()) || StringUtils.isBlank(columnConfig.getFieldName())) {
                 continue;
             }
-            ExcelColumnMeta schemaColumn = schemaColumnMap.get(columnConfig.getFieldName());
+            DynamicCrudExcelColumn schemaColumn = schemaColumnMap.get(columnConfig.getFieldName());
             if (schemaColumn == null) {
                 continue;
             }
@@ -505,7 +393,8 @@ public class DynamicCrudExcelService {
         return orderedColumns.isEmpty() ? schemaColumns : orderedColumns;
     }
 
-    private List<ExcelColumnMeta> applyImportColumnConfig(AiCrudConfig config, List<ExcelColumnMeta> schemaColumns) {
+    private List<DynamicCrudExcelColumn> applyImportColumnConfig(
+            AiCrudConfig config, List<DynamicCrudExcelColumn> schemaColumns) {
         List<ExcelColumnConfig> configuredColumns = loadColumnConfigs(config.getConfigKey());
         if (configuredColumns.isEmpty()) {
             return schemaColumns;
@@ -519,20 +408,20 @@ public class DynamicCrudExcelService {
                         (left, right) -> left,
                         LinkedHashMap::new
                 ));
-        List<ExcelColumnMeta> orderedColumns = new ArrayList<>();
+        List<DynamicCrudExcelColumn> orderedColumns = new ArrayList<>();
         Set<String> appendedFields = new LinkedHashSet<>();
         for (ExcelColumnConfig columnConfig : configuredColumns) {
             if (Boolean.FALSE.equals(columnConfig.getImportable()) || StringUtils.isBlank(columnConfig.getFieldName())) {
                 continue;
             }
-            ExcelColumnMeta schemaColumn = findColumn(schemaColumns, columnConfig.getFieldName());
+            DynamicCrudExcelColumn schemaColumn = findColumn(schemaColumns, columnConfig.getFieldName());
             if (schemaColumn == null) {
                 continue;
             }
             orderedColumns.add(mergeColumnConfig(schemaColumn, columnConfig));
             appendedFields.add(schemaColumn.getField());
         }
-        for (ExcelColumnMeta schemaColumn : schemaColumns) {
+        for (DynamicCrudExcelColumn schemaColumn : schemaColumns) {
             if (appendedFields.contains(schemaColumn.getField())) {
                 continue;
             }
@@ -545,15 +434,16 @@ public class DynamicCrudExcelService {
         return orderedColumns;
     }
 
-    private ExcelColumnMeta findColumn(List<ExcelColumnMeta> columns, String fieldName) {
+    private DynamicCrudExcelColumn findColumn(List<DynamicCrudExcelColumn> columns, String fieldName) {
         return columns.stream()
                 .filter(column -> fieldName.equals(column.getField()))
                 .findFirst()
                 .orElse(null);
     }
 
-    private ExcelColumnMeta mergeColumnConfig(ExcelColumnMeta source, ExcelColumnConfig columnConfig) {
-        ExcelColumnMeta target = new ExcelColumnMeta();
+    private DynamicCrudExcelColumn mergeColumnConfig(
+            DynamicCrudExcelColumn source, ExcelColumnConfig columnConfig) {
+        DynamicCrudExcelColumn target = new DynamicCrudExcelColumn();
         target.setField(source.getField());
         target.setLabel(StringUtils.defaultIfBlank(columnConfig.getColumnName(), source.getLabel()));
         target.setType(source.getType());
@@ -590,66 +480,10 @@ public class DynamicCrudExcelService {
         }
     }
 
-    private List<List<String>> buildHeaders(List<ExcelColumnMeta> columns) {
+    private List<List<String>> buildHeaders(List<DynamicCrudExcelColumn> columns) {
         return columns.stream()
                 .map(column -> List.of(column.getLabel()))
                 .toList();
-    }
-
-    private List<Object> buildExportRow(Map<String, Object> row, List<ExcelColumnMeta> columns) {
-        List<Object> values = new ArrayList<>();
-        for (ExcelColumnMeta column : columns) {
-            Object value = row.get(column.getField());
-            if (StringUtils.isNotBlank(column.getTargetField())) {
-                Object displayValue = row.get(column.getTargetField());
-                if (!isEmptyValue(displayValue)) {
-                    value = displayValue;
-                }
-            }
-            values.add(normalizeExportCellValue(column, value));
-        }
-        return values;
-    }
-
-    private Object normalizeExportCellValue(ExcelColumnMeta column, Object value) {
-        if (value == null) {
-            return null;
-        }
-        String dataType = StringUtils.defaultIfBlank(column.getDataType(), "").toLowerCase(Locale.ROOT);
-        String componentType = StringUtils.defaultIfBlank(column.getType(), "").toLowerCase(Locale.ROOT);
-        if ("date".equals(dataType) || "date".equals(componentType)) {
-            return formatDateValue(value);
-        }
-        if ("datetime".equals(dataType) || "datetime".equals(componentType)) {
-            return formatDateTimeValue(value);
-        }
-        if ("time".equals(dataType) || "time".equals(componentType)) {
-            return formatTimeValue(value);
-        }
-        if (value instanceof Date date) {
-            return DATETIME_FORMATTER.format(LocalDateTime.ofInstant(
-                    Instant.ofEpochMilli(date.getTime()), ZoneId.systemDefault()));
-        }
-        if (value instanceof LocalDate localDate) {
-            return DATE_FORMATTER.format(localDate);
-        }
-        if (value instanceof LocalDateTime localDateTime) {
-            return DATETIME_FORMATTER.format(localDateTime);
-        }
-        if (value instanceof LocalTime localTime) {
-            return TIME_FORMATTER.format(localTime);
-        }
-        if (value instanceof BigDecimal decimal) {
-            return decimal.stripTrailingZeros().toPlainString();
-        }
-        if (value instanceof Map<?, ?> || value instanceof Iterable<?> || value.getClass().isArray()) {
-            try {
-                return objectMapper.writeValueAsString(value);
-            } catch (Exception e) {
-                return String.valueOf(value);
-            }
-        }
-        return value;
     }
 
     private void writeWorkbook(HttpServletResponse response,
@@ -674,7 +508,7 @@ public class DynamicCrudExcelService {
 
     private void writeImportTemplateWorkbook(HttpServletResponse response,
                                              String fileName,
-                                             List<ExcelColumnMeta> columns) {
+                                             List<DynamicCrudExcelColumn> columns) {
         try {
             response.setContentType(XLSX_MIME);
             response.setCharacterEncoding(StandardCharsets.UTF_8.name());
@@ -684,116 +518,19 @@ public class DynamicCrudExcelService {
             ExcelImportTemplateWriter.write(
                     response.getOutputStream(),
                     "导入数据",
-                    columns.stream().map(this::toImportTemplateColumn).toList()
+                    columns.stream()
+                            .map(column -> excelValueAdapter.toImportTemplateColumn(column, resolveTenantId()))
+                            .toList()
             );
         } catch (IOException e) {
             throw new BusinessException("写入导入模板失败: " + e.getMessage());
         }
     }
 
-    private ImportTemplateColumn toImportTemplateColumn(ExcelColumnMeta column) {
-        List<String> dropdownOptions = selectDictLabels(column.getDictType());
-        return new ImportTemplateColumn(
-                column.getField(),
-                column.getLabel(),
-                column.isRequired(),
-                resolveImportTemplateExample(column, dropdownOptions),
-                resolveImportTemplateDescription(column, dropdownOptions),
-                dropdownOptions
-        );
-    }
-
-    private String resolveImportTemplateExample(ExcelColumnMeta column, List<String> dropdownOptions) {
-        if (StringUtils.isNotBlank(column.getExampleValue())) {
-            return column.getExampleValue();
-        }
-        if (dropdownOptions != null && !dropdownOptions.isEmpty()) {
-            return dropdownOptions.get(0);
-        }
-        if (StringUtils.isNotBlank(column.getDictType())) {
-            return "字典选项示例";
-        }
-
-        String dataType = StringUtils.defaultIfBlank(column.getDataType(), "").toLowerCase(Locale.ROOT);
-        String componentType = StringUtils.defaultIfBlank(column.getType(), "").toLowerCase(Locale.ROOT);
-        if ("date".equals(dataType) || "date".equals(componentType)) {
-            return "2026-07-15";
-        }
-        if ("datetime".equals(dataType) || "datetime".equals(componentType)) {
-            return "2026-07-15 09:30:00";
-        }
-        if ("time".equals(dataType) || "time".equals(componentType)) {
-            return "09:30:00";
-        }
-        if (Set.of("int", "tinyint", "bigint", "decimal").contains(dataType)
-                || Set.of("number", "inputnumber", "input-number").contains(componentType)) {
-            return "100";
-        }
-        if (Set.of("switch", "boolean", "checkbox").contains(componentType)) {
-            return "是";
-        }
-        return StringUtils.defaultIfBlank(column.getLabel(), column.getField()) + "示例";
-    }
-
-    private String resolveImportTemplateDescription(ExcelColumnMeta column, List<String> dropdownOptions) {
-        List<String> descriptions = new ArrayList<>();
-        if (StringUtils.isNotBlank(column.getDescription())) {
-            descriptions.add(column.getDescription());
-        }
-        if (StringUtils.isNotBlank(column.getDictType())) {
-            if (dropdownOptions != null && !dropdownOptions.isEmpty()) {
-                descriptions.add("请从下拉列表中选择字典标签，也可填写字典值。字典类型：" + column.getDictType());
-            } else {
-                descriptions.add("填写字典标签或字典值，字典类型：" + column.getDictType());
-            }
-        }
-
-        String dataType = StringUtils.defaultIfBlank(column.getDataType(), "").toLowerCase(Locale.ROOT);
-        String componentType = StringUtils.defaultIfBlank(column.getType(), "").toLowerCase(Locale.ROOT);
-        if ("date".equals(dataType) || "date".equals(componentType)) {
-            descriptions.add("日期格式：yyyy-MM-dd");
-        } else if ("datetime".equals(dataType) || "datetime".equals(componentType)) {
-            descriptions.add("日期时间格式：yyyy-MM-dd HH:mm:ss");
-        } else if ("time".equals(dataType) || "time".equals(componentType)) {
-            descriptions.add("时间格式：HH:mm:ss");
-        }
-        if (descriptions.isEmpty()) {
-            descriptions.add("按" + StringUtils.defaultIfBlank(column.getLabel(), column.getField()) + "的业务含义填写");
-        }
-        return String.join("；", descriptions);
-    }
-
-    private List<String> selectDictLabels(String dictType) {
-        if (StringUtils.isBlank(dictType)) {
-            return List.of();
-        }
-        StringBuilder sql = new StringBuilder("""
-                SELECT dict_label
-                FROM sys_dict_data
-                WHERE dict_type = :dictType
-                  AND dict_status = 1
-                  AND del_flag = 0
-                """);
-        MapSqlParameterSource params = new MapSqlParameterSource()
-                .addValue("dictType", dictType);
-        Long tenantId = resolveTenantId();
-        if (tenantId != null) {
-            sql.append(" AND tenant_id = :tenantId");
-            params.addValue("tenantId", tenantId);
-        }
-        sql.append(" ORDER BY dict_sort ASC, dict_code ASC");
-        List<String> labels = namedJdbcTemplate.queryForList(sql.toString(), params, String.class);
-        return labels.stream()
-                .filter(StringUtils::isNotBlank)
-                .map(String::trim)
-                .distinct()
-                .toList();
-    }
-
     private void writeAsyncWorkbook(Path targetFile,
                                     String configKey,
                                     DynamicCrudQuery query,
-                                    List<ExcelColumnMeta> columns,
+                                    List<DynamicCrudExcelColumn> columns,
                                     ExportExecutionContext context) throws IOException {
         List<List<String>> headers = buildHeaders(columns);
         ExcelWriter excelWriter = null;
@@ -812,7 +549,7 @@ public class DynamicCrudExcelService {
                         break;
                     }
                     List<List<Object>> data = rows.stream()
-                            .map(row -> buildExportRow(row, columns))
+                            .map(row -> excelValueAdapter.buildExportRow(row, columns))
                             .toList();
                     excelWriter.write(data, writeSheet);
                     exported += rows.size();
@@ -1049,101 +786,6 @@ public class DynamicCrudExcelService {
         };
     }
 
-    private boolean isBlankRow(Map<Integer, Object> values) {
-        if (values == null || values.isEmpty()) {
-            return true;
-        }
-        return values.values().stream()
-                .map(this::normalizeCellValue)
-                .allMatch(this::isEmptyValue);
-    }
-
-    private Object normalizeCellValue(Object value) {
-        if (value instanceof String str) {
-            return StringUtils.trimToNull(str);
-        }
-        return value;
-    }
-
-    private boolean isEmptyValue(Object value) {
-        return value == null || (value instanceof String str && StringUtils.isBlank(str));
-    }
-
-    private String normalizeHeader(String value) {
-        return StringUtils.defaultString(value).trim();
-    }
-
-    private String toCellText(Object value) {
-        if (value == null) {
-            return "";
-        }
-        if (value instanceof BigDecimal decimal) {
-            return decimal.stripTrailingZeros().toPlainString();
-        }
-        if (value instanceof Number number) {
-            return new BigDecimal(number.toString()).stripTrailingZeros().toPlainString();
-        }
-        if (value instanceof Date date) {
-            return DATETIME_FORMATTER.format(LocalDateTime.ofInstant(Instant.ofEpochMilli(date.getTime()), ZoneId.systemDefault()));
-        }
-        return StringUtils.trimToEmpty(String.valueOf(value));
-    }
-
-    private String toNumberText(Object value) {
-        String text = toCellText(value);
-        if (StringUtils.isBlank(text)) {
-            throw new BusinessException("数字不能为空");
-        }
-        return text;
-    }
-
-    private String formatDateValue(Object value) {
-        if (value instanceof Date date) {
-            return DATE_FORMATTER.format(LocalDateTime.ofInstant(Instant.ofEpochMilli(date.getTime()), ZoneId.systemDefault()));
-        }
-        String text = normalizeDateText(value);
-        try {
-            return DATE_FORMATTER.format(LocalDate.parse(text.substring(0, Math.min(10, text.length())), DATE_FORMATTER));
-        } catch (DateTimeParseException e) {
-            throw new BusinessException("日期格式应为 yyyy-MM-dd");
-        }
-    }
-
-    private String formatDateTimeValue(Object value) {
-        if (value instanceof Date date) {
-            return DATETIME_FORMATTER.format(LocalDateTime.ofInstant(Instant.ofEpochMilli(date.getTime()), ZoneId.systemDefault()));
-        }
-        String text = normalizeDateText(value);
-        if (text.length() == 10) {
-            text = text + " 00:00:00";
-        }
-        try {
-            return DATETIME_FORMATTER.format(LocalDateTime.parse(text, DATETIME_FORMATTER));
-        } catch (DateTimeParseException e) {
-            throw new BusinessException("日期时间格式应为 yyyy-MM-dd HH:mm:ss");
-        }
-    }
-
-    private String formatTimeValue(Object value) {
-        if (value instanceof Date date) {
-            return TIME_FORMATTER.format(LocalDateTime.ofInstant(Instant.ofEpochMilli(date.getTime()), ZoneId.systemDefault()));
-        }
-        String text = toCellText(value);
-        try {
-            return TIME_FORMATTER.format(LocalTime.parse(text, TIME_FORMATTER));
-        } catch (DateTimeParseException e) {
-            throw new BusinessException("时间格式应为 HH:mm:ss");
-        }
-    }
-
-    private String normalizeDateText(Object value) {
-        String text = toCellText(value).replace("/", "-").replace("T", " ");
-        if (StringUtils.isBlank(text)) {
-            throw new BusinessException("日期不能为空");
-        }
-        return text;
-    }
-
     private String buildFileName(AiCrudConfig config, String suffix) {
         String baseName = StringUtils.defaultIfBlank(config.getAppName(),
                 StringUtils.defaultIfBlank(config.getTableComment(), config.getConfigKey()));
@@ -1162,40 +804,21 @@ public class DynamicCrudExcelService {
     }
 
     @Data
-    private static class ExcelColumnMeta {
-        private String field;
-        private String label;
-        private String type;
-        private String dataType;
-        private String dictType;
-        private String targetField;
-        private boolean required;
-        private String exampleValue;
-        private String description;
-    }
-
-    @Data
     private static class TransMeta {
         private String dictType;
         private String targetField;
     }
 
     @Data
-    private static class ExcelRow {
-        private Integer rowNum;
-        private Map<Integer, Object> values = new LinkedHashMap<>();
-    }
-
-    @Data
     private static class ExcelReadResult {
         private Map<Integer, String> headers = new LinkedHashMap<>();
-        private List<ExcelRow> rows = new ArrayList<>();
+        private List<DynamicCrudExcelRow> rows = new ArrayList<>();
     }
 
     private static class MapRowReadListener extends AnalysisEventListener<Map<Integer, Object>> {
 
         private final Map<Integer, String> headers = new LinkedHashMap<>();
-        private final List<ExcelRow> rows = new ArrayList<>();
+        private final List<DynamicCrudExcelRow> rows = new ArrayList<>();
 
         @Override
         public void invokeHeadMap(Map<Integer, String> headMap, AnalysisContext context) {
@@ -1205,7 +828,7 @@ public class DynamicCrudExcelService {
 
         @Override
         public void invoke(Map<Integer, Object> data, AnalysisContext context) {
-            ExcelRow row = new ExcelRow();
+            DynamicCrudExcelRow row = new DynamicCrudExcelRow();
             row.setRowNum(context.readRowHolder().getRowIndex() + 1);
             row.setValues(data.entrySet().stream()
                     .filter(entry -> entry.getKey() != null)
@@ -1228,7 +851,7 @@ public class DynamicCrudExcelService {
             return headers;
         }
 
-        public List<ExcelRow> getRows() {
+        public List<DynamicCrudExcelRow> getRows() {
             return rows;
         }
     }

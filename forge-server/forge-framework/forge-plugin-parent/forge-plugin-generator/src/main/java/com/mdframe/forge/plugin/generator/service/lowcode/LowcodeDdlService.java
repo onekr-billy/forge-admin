@@ -28,6 +28,9 @@ import java.util.Set;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
+import static com.mdframe.forge.plugin.generator.service.lowcode.LowcodeOnlineDdlPolicy.assertSafeDdl;
+import static com.mdframe.forge.plugin.generator.service.lowcode.LowcodeOnlineDdlPolicy.isSafeOnlineDdl;
+
 /**
  * 低代码单表受控 DDL 生成与执行。
  */
@@ -251,12 +254,7 @@ public class LowcodeDdlService {
      * <p>该策略与最终执行白名单共用同一判断，避免发布检查允许、执行阶段又拒绝。</p>
      */
     public boolean containsUnsafeOnlineDdl(List<String> statements) {
-        if (statements == null) {
-            return false;
-        }
-        return statements.stream()
-                .filter(StringUtils::isNotBlank)
-                .anyMatch(statement -> !isSafeOnlineDdl(statement));
+        return LowcodeOnlineDdlPolicy.containsUnsafeOnlineDdl(statements);
     }
 
     public boolean tableExists(String tableName) {
@@ -964,41 +962,6 @@ public class LowcodeDdlService {
 
     private String fieldLabel(LowcodeFieldSchema field) {
         return StringUtils.defaultIfBlank(field.getLabel(), field.getColumnName());
-    }
-
-    private void assertSafeDdl(String ddl) {
-        if (isSafeOnlineDdl(ddl)) {
-            return;
-        }
-        throw new BusinessException("数据库差异包含高风险或非追加式 DDL（如字段类型、长度或必填属性调整），"
-                + "仅允许预览和导出脚本后人工审核执行");
-    }
-
-    private boolean isSafeOnlineDdl(String ddl) {
-        if (StringUtils.isBlank(ddl)) {
-            return false;
-        }
-        String normalized = ddl.trim().toUpperCase(Locale.ROOT);
-        if (normalized.startsWith("CREATE TABLE IF NOT EXISTS") || normalized.startsWith("CREATE TABLE ")) {
-            return true;
-        }
-        if (normalized.startsWith("ALTER TABLE") && normalized.contains(" ADD COLUMN ")) {
-            return true;
-        }
-        if (normalized.startsWith("ALTER TABLE") && normalized.contains(" ADD (")) {
-            return true;
-        }
-        if (normalized.startsWith("ALTER TABLE")
-                && (normalized.contains(" ADD KEY ") || normalized.contains(" ADD UNIQUE KEY "))) {
-            return true;
-        }
-        if (normalized.startsWith("CREATE INDEX ") || normalized.startsWith("CREATE UNIQUE INDEX ")) {
-            return true;
-        }
-        if (normalized.startsWith("COMMENT ON TABLE ") || normalized.startsWith("COMMENT ON COLUMN ")) {
-            return true;
-        }
-        return false;
     }
 
     private List<LowcodeFieldSchema> businessFields(LowcodeModelSchema modelSchema) {

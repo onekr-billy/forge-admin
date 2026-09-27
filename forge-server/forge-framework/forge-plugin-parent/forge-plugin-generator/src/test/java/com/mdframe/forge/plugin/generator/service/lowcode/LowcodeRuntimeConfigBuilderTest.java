@@ -1,6 +1,7 @@
 package com.mdframe.forge.plugin.generator.service.lowcode;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeFieldSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeModelSchema;
@@ -507,6 +508,44 @@ class LowcodeRuntimeConfigBuilderTest {
         assertEquals(false, child.get("showInCreate"));
         assertEquals(false, child.get("allowCreate"));
         assertEquals(false, child.get("inlineCreateEnabled"));
+    }
+
+    @Test
+    @DisplayName("master-detail runtime JSON keeps child fields and merge save mode")
+    void keepsMasterDetailRuntimeJsonContract() throws Exception {
+        LowcodePageSchema pageSchema = purchaseOrderMasterDetailPageSchema();
+        pageSchema.getModelRefs().get(1).setProps(Map.of(
+                "saveMode", "merge", "childFieldCodes", List.of("materialName")));
+
+        LowcodeRuntimeConfig runtimeConfig = builder.buildRuntimeConfig(
+                "pw_purchase_order", purchaseOrderModelSchema(), pageSchema);
+        JsonNode actual = objectMapper.readTree(runtimeConfig.getOptions()).path("masterDetailConfig");
+        JsonNode expected = objectMapper.readTree("""
+                {
+                  "primary": {
+                    "modelCode": "pw_purchase_order", "modelName": "采购单",
+                    "tableName": "pw_purchase_order", "keyField": "id"
+                  },
+                  "children": [{
+                    "key": "pw_purchase_order_item", "modelCode": "pw_purchase_order_item",
+                    "modelName": "采购明细", "tableName": "pw_purchase_order_item",
+                    "relationType": "ONE_TO_MANY", "relationKey": "pw_purchase_order_item",
+                    "sourceField": "purchaseId", "targetField": "id",
+                    "showInCreate": true, "allowCreate": true, "inlineCreateEnabled": true,
+                    "showInEdit": true, "showInDetail": true, "saveMode": "merge",
+                    "fields": [{
+                      "field": "materialName", "label": "物料名称", "type": "input",
+                      "required": false, "placeholder": "请输入物料名称",
+                      "props": {"placeholder": "请输入物料名称"},
+                      "sourceField": "materialName", "fieldRef": "pw_purchase_order_item__materialName",
+                      "columnName": "material_name", "modelCode": "pw_purchase_order_item",
+                      "modelName": "采购明细"
+                    }]
+                  }]
+                }
+                """);
+
+        assertEquals(expected, actual);
     }
 
     @Test

@@ -33,10 +33,10 @@ class FlowOrgIntegrationSecurityContractTest {
         assertTrue(service.contains("sysUserMapper.selectFlowUserInfo(tenantId, id)"));
         assertTrue(service.contains("getUserInfoBatch(List<String> userIds)"));
         assertTrue(service.contains("sysUserMapper.selectFlowUserInfoBatch(tenantId, ids)"));
-        String taskService = Files.readString(Path.of(
-                "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowTaskServiceImpl.java"));
-        assertTrue(taskService.contains("Set<String> userIdsToLoad"));
-        assertTrue(taskService.contains("getUserInfoBatch(new ArrayList<>(userIdsToLoad))"));
+        String diagramService = Files.readString(Path.of(
+                "src/main/java/com/mdframe/forge/starter/flow/service/impl/FlowProcessDiagramService.java"));
+        assertTrue(diagramService.contains("Set<String> userIdsToLoad"));
+        assertTrue(diagramService.contains("getUserInfoBatch(new ArrayList<>(userIdsToLoad))"));
         assertTrue(service.contains("sysUserMapper.selectFlowUsers(tenantId, trimToNull(keyword), orgId)"));
         assertTrue(service.contains("sysUserOrgRoleMapper.selectUserIdsByRoleIdsAcrossOrg"));
         assertTrue(mapper.contains("<select id=\"selectFlowUserInfo\""));

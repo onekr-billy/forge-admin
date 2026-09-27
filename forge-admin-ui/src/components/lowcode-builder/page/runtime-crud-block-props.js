@@ -130,6 +130,12 @@ export function buildRuntimeCrudBlockProps({
       return [key, designPreview ? appendDesignPreviewToApiValue(resolved) : resolved]
     })
     .filter(([, value]) => value))
+  // 嵌入式树表：运行配置已把 list 改写成 /tree；区块 listApi 默认 /page 不能盖掉
+  if (runtimeProps.showPagination === false && runtimeProps.apiConfig?.tree) {
+    const treeList = runtimeProps.apiConfig.list || runtimeProps.apiConfig.tree
+    if (treeList)
+      runtimeBlockApiConfig.list = treeList
+  }
   return {
     ...runtimeProps,
     ...resolveCrudPagePresentation(blockProps, runtimeProps),
@@ -200,7 +206,10 @@ export function buildRuntimeCrudBlockProps({
       ...runtimeBlockApiConfig,
     },
     showSearch: blockProps.showSearch ?? runtimeProps.showSearch,
-    showPagination: blockProps.showPagination ?? runtimeProps.showPagination,
+    // 嵌入式树表运行配置会关掉分页；区块默认 true 不能盖掉
+    showPagination: runtimeProps.showPagination === false
+      ? false
+      : (blockProps.showPagination ?? runtimeProps.showPagination),
     searchGridCols: blockProps.searchGridCols || runtimeProps.searchGridCols,
     searchLabelWidth: blockProps.searchLabelWidth || runtimeProps.searchLabelWidth,
     searchEnableCollapse: blockProps.searchEnableCollapse ?? runtimeProps.searchEnableCollapse,

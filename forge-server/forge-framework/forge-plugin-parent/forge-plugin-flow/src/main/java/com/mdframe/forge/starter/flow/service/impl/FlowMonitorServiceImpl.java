@@ -23,8 +23,6 @@ import com.mdframe.forge.starter.flow.vo.FlowMonitorProcessInstancePageVO;
 import com.mdframe.forge.starter.flow.vo.FlowMonitorProcessInstanceVO;
 import com.mdframe.forge.starter.flow.vo.FlowMonitorStatisticsVO;
 import com.mdframe.forge.starter.flow.vo.FlowMonitorTaskPageVO;
-import com.mdframe.forge.starter.flow.vo.FlowMonitorTaskTreeItemVO;
-import com.mdframe.forge.starter.flow.vo.FlowMonitorTaskTreeNodeVO;
 import com.mdframe.forge.starter.flow.vo.FlowMonitorTaskTrendVO;
 import com.mdframe.forge.starter.flow.vo.FlowProcessDistributionVO;
 import lombok.RequiredArgsConstructor;
@@ -44,7 +42,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.*;
 
 /**
@@ -498,12 +495,12 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
             LocalDateTime startOfDay = LocalDateTime.of(LocalDate.now(), LocalTime.MIN);
             Map<String, Object> statistics = flowBusinessMapper.selectMonitorStatistics(tenantId, startOfDay);
             if (statistics == null) {
-                return degradedAdminStatistics("FLOW_MONITOR_STATS_UNAVAILABLE");
+                return FlowMonitorViewAssembler.degradedAdminStatistics("FLOW_MONITOR_STATS_UNAVAILABLE");
             }
-            return toMonitorStatistics(statistics);
+            return FlowMonitorViewAssembler.toMonitorStatistics(statistics);
         } catch (Exception e) {
             log.error("获取统计数据失败：tenantId={}", tenantId, e);
-            return degradedAdminStatistics("FLOW_MONITOR_STATS_UNAVAILABLE");
+            return FlowMonitorViewAssembler.degradedAdminStatistics("FLOW_MONITOR_STATS_UNAVAILABLE");
         }
     }
 
@@ -526,7 +523,8 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
                     processName, initiator, status, modelKey, startTime, endTime, overdue);
             Map<String, Map<String, Object>> taskSummaries = loadActiveTaskSummaries(pageResult.getRecords(), tenantId);
             for (FlowBusiness business : pageResult.getRecords()) {
-                list.add(toAdminProcessInstance(business, taskSummaries.get(business.getProcessInstanceId())));
+                list.add(FlowMonitorViewAssembler.toAdminProcessInstance(
+                        business, taskSummaries.get(business.getProcessInstanceId()), userLookupProvider));
             }
             result.setList(list);
             result.setTotal(pageResult.getTotal());
@@ -578,7 +576,7 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
         result.setPageSize(page.getSize());
         List<com.mdframe.forge.starter.flow.entity.FlowTask> treeTasks = flowTaskMapper
                 .selectAdminTaskTreeByProcessInstance(business.getProcessInstanceId(), tenantId, 500);
-        result.setTaskTree(buildAdminTaskTree(treeTasks));
+        result.setTaskTree(FlowMonitorViewAssembler.buildAdminTaskTree(treeTasks));
         result.setCurrentTaskIds(treeTasks.stream()
                 .filter(task -> task != null && FlowTaskStatus.isActionable(task.getStatus()))
                 .map(com.mdframe.forge.starter.flow.entity.FlowTask::getTaskId)
@@ -587,50 +585,6 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
         result.setTaskTreeTruncated(treeTasks.size() >= 500);
         result.setDegraded(false);
         return result;
-    }
-
-    private List<FlowMonitorTaskTreeNodeVO> buildAdminTaskTree(
-            List<com.mdframe.forge.starter.flow.entity.FlowTask> tasks) {
-        if (tasks == null || tasks.isEmpty()) {
-            return List.of();
-        }
-        Map<String, FlowMonitorTaskTreeNodeVO> groups = new LinkedHashMap<>();
-        for (com.mdframe.forge.starter.flow.entity.FlowTask task : tasks) {
-            if (task == null) {
-                continue;
-            }
-            String nodeKey = isBlank(task.getTaskDefKey()) ? "unknown" : task.getTaskDefKey();
-            FlowMonitorTaskTreeNodeVO group = groups.computeIfAbsent(nodeKey, key -> {
-                FlowMonitorTaskTreeNodeVO item = new FlowMonitorTaskTreeNodeVO();
-                item.setKey("node:" + key);
-                item.setLabel(isBlank(task.getTaskName()) ? key : task.getTaskName());
-                item.setNodeKey(key);
-                item.setChildren(new ArrayList<>());
-                return item;
-            });
-            FlowMonitorTaskTreeItemVO child = new FlowMonitorTaskTreeItemVO();
-            child.setKey(task.getTaskId());
-            child.setLabel(firstNonBlank(task.getAssigneeName(), task.getAssignee(), "待签收"));
-            child.setTaskId(task.getTaskId());
-            child.setStatus(task.getStatus());
-            child.setActive(FlowTaskStatus.isActionable(task.getStatus()));
-            child.setCreateTime(task.getCreateTime());
-            child.setCompleteTime(task.getCompleteTime());
-            group.getChildren().add(child);
-        }
-        return new ArrayList<>(groups.values());
-    }
-
-    private String firstNonBlank(String... values) {
-        if (values == null) {
-            return null;
-        }
-        for (String value : values) {
-            if (!isBlank(value)) {
-                return value;
-            }
-        }
-        return null;
     }
 
     @Override
@@ -848,57 +802,6 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
         return summaries;
     }
 
-    private FlowMonitorProcessInstanceVO toAdminProcessInstance(FlowBusiness business,
-                                                                Map<String, Object> taskSummary) {
-        FlowMonitorProcessInstanceVO item = new FlowMonitorProcessInstanceVO();
-        item.setId(business.getProcessInstanceId());
-        item.setProcessName(business.getTitle());
-        item.setProcessDefKey(business.getProcessDefKey());
-        item.setProcessDefName(business.getTitle());
-        item.setInitiatorName(business.getApplyUserName());
-        item.setInitiatorId(business.getApplyUserId());
-        item.setStatus(business.getStatus());
-        item.setStartTime(business.getCreateTime());
-        item.setBusinessKey(business.getBusinessKey());
-        item.setDuration(formatDuration(business.getCreateTime()));
-
-        item.setCurrentNode("-");
-        item.setCurrentAssignee("-");
-        if (FlowBusinessStatus.isPending(business.getStatus()) && taskSummary != null) {
-            try {
-                item.setCurrentNode(Objects.toString(taskSummary.get("taskName"), "-"));
-                String assignee = Objects.toString(taskSummary.get("assignee"), null);
-                if (assignee == null) {
-                        item.setCurrentAssignee("待认领");
-                } else {
-                        FlowMonitorUserLookup userLookup = userLookupProvider.getIfAvailable();
-                        String displayName = userLookup == null ? null : userLookup.findDisplayName(assignee);
-                        item.setCurrentAssignee(isBlank(displayName) ? assignee : displayName);
-                }
-            } catch (Exception e) {
-                item.setCurrentNode("-");
-                item.setCurrentAssignee("-");
-                log.warn("查询流程监控当前任务失败：processInstanceId={}", business.getProcessInstanceId(), e);
-            }
-        }
-        return item;
-    }
-
-    private String formatDuration(LocalDateTime createTime) {
-        if (createTime == null) {
-            return "-";
-        }
-        long startMillis = createTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
-        long durationMinutes = (System.currentTimeMillis() - startMillis) / (1000 * 60);
-        if (durationMinutes < 60) {
-            return durationMinutes + "分钟";
-        }
-        if (durationMinutes < 24 * 60) {
-            return durationMinutes / 60 + "小时";
-        }
-        return durationMinutes / (24 * 60) + "天";
-    }
-
     private Map<String, Object> cleanupProcessInstanceIds(Collection<String> processInstanceIds,
                                                           Long tenantId,
                                                           String reason) {
@@ -1032,39 +935,6 @@ public class FlowMonitorServiceImpl implements FlowMonitorService {
             throw new BusinessException(404, "流程实例不存在或不属于当前租户");
         }
         return business;
-    }
-
-    private FlowMonitorStatisticsVO degradedAdminStatistics(String errorCode) {
-        FlowMonitorStatisticsVO statistics = new FlowMonitorStatisticsVO();
-        statistics.setDegraded(true);
-        statistics.setErrorCode(errorCode);
-        return statistics;
-    }
-
-    private FlowMonitorStatisticsVO toMonitorStatistics(Map<String, Object> values) {
-        FlowMonitorStatisticsVO statistics = new FlowMonitorStatisticsVO();
-        statistics.setRunningInstances(toLong(values.get("runningInstances")));
-        statistics.setPendingTasks(toLong(values.get("pendingTasks")));
-        statistics.setTodayCompleted(toLong(values.get("todayCompleted")));
-        statistics.setTimeoutTasks(toLong(values.get("timeoutTasks")));
-        statistics.setDegraded(Boolean.TRUE.equals(values.get("degraded")));
-        Object errorCode = values.get("errorCode");
-        statistics.setErrorCode(errorCode == null ? null : String.valueOf(errorCode));
-        return statistics;
-    }
-
-    private Long toLong(Object value) {
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        try {
-            return Long.valueOf(String.valueOf(value));
-        } catch (NumberFormatException e) {
-            return null;
-        }
     }
 
     private Long resolveCurrentTenantId(String failureMessage) {

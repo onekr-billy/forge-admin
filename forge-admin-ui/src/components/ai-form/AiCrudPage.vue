@@ -220,7 +220,7 @@
           :resizable="resolvedResizable"
           :empty-title="resolvedEmptyTitle"
           :empty-description="resolvedEmptyDescription"
-          v-bind="tableProps"
+          v-bind="effectiveTableProps"
           @page-change="handlePageChange"
           @page-size-change="handlePageSizeChange"
           @refresh="handleRefresh"

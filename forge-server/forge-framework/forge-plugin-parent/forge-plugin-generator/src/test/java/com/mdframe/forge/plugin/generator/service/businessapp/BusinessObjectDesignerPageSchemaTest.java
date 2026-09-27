@@ -37,7 +37,7 @@ class BusinessObjectDesignerPageSchemaTest {
     @DisplayName("bridges legacy linkage rules through form governance")
     @SuppressWarnings("unchecked")
     void bridgesLegacyLinkageRulesThroughFormGovernance() throws Exception {
-        BusinessObjectDesignerService service = designerService();
+        BusinessObjectLinkagePolicy policy = new BusinessObjectLinkagePolicy(new ObjectMapper());
         FormDesignerSchemaDTO formSchema = new FormDesignerSchemaDTO();
         LinkageSchemaDTO legacy = new LinkageSchemaDTO();
         legacy.setSettings(Map.of("strict", true));
@@ -48,10 +48,7 @@ class BusinessObjectDesignerPageSchemaTest {
                 "targetField", "city"
         )));
 
-        Method hydrate = BusinessObjectDesignerService.class.getDeclaredMethod(
-                "hydrateFormFieldLinkages", FormDesignerSchemaDTO.class, LinkageSchemaDTO.class);
-        hydrate.setAccessible(true);
-        FormDesignerSchemaDTO hydrated = (FormDesignerSchemaDTO) hydrate.invoke(service, formSchema, legacy);
+        FormDesignerSchemaDTO hydrated = policy.hydrateFormFieldLinkages(formSchema, legacy);
         Map<String, Object> governance = (Map<String, Object>) hydrated.getSettings().get("governance");
         assertEquals(legacy.getRules(), governance.get("fieldLinkages"));
 
@@ -62,10 +59,7 @@ class BusinessObjectDesignerPageSchemaTest {
         configuredRule.put("targetField", "city");
         governance.put("fieldLinkages", List.of(configuredRule));
 
-        Method unify = BusinessObjectDesignerService.class.getDeclaredMethod(
-                "resolveUnifiedLinkageSchema", FormDesignerSchemaDTO.class, LinkageSchemaDTO.class);
-        unify.setAccessible(true);
-        LinkageSchemaDTO unified = (LinkageSchemaDTO) unify.invoke(service, hydrated, legacy);
+        LinkageSchemaDTO unified = policy.resolveUnifiedLinkageSchema(hydrated, legacy);
 
         assertEquals("application_rule", unified.getRules().get(0).get("ruleId"));
         assertEquals(Map.of("strict", true), unified.getSettings());
@@ -165,11 +159,8 @@ class BusinessObjectDesignerPageSchemaTest {
             ));
         }
 
-        Method method = BusinessObjectDesignerService.class.getDeclaredMethod(
-                "buildRuntimeFormLayout", List.class, Set.class, int.class);
-        method.setAccessible(true);
-        List<Map<String, Object>> layout = (List<Map<String, Object>>) method.invoke(
-                designerService(), components, modelFields, 2);
+        List<Map<String, Object>> layout = new BusinessObjectRuntimeFormProjector(value -> false)
+                .buildRuntimeFormLayout(components, modelFields, 2);
 
         assertEquals(componentTypes.size() + LowcodeComponentCatalog.PAGE_WIDGET_COMPONENT_KEYS.size(), layout.size());
         assertEquals(componentTypes.size(), layout.stream()
@@ -185,11 +176,8 @@ class BusinessObjectDesignerPageSchemaTest {
     @DisplayName("applies input number component alias defaults")
     void appliesInputNumberComponentAliasDefaults() throws Exception {
         BusinessFieldDTO field = new BusinessFieldDTO();
-        Method method = BusinessObjectDesignerService.class.getDeclaredMethod(
-                "applyComponentDefaults", BusinessFieldDTO.class, String.class);
-        method.setAccessible(true);
 
-        method.invoke(designerService(), field, "input-number");
+        fieldDesignPolicy().applyComponentDefaults(field, "input-number");
 
         assertEquals("NUMBER", field.getFieldType());
         assertEquals("int", field.getDataType());
@@ -204,11 +192,7 @@ class BusinessObjectDesignerPageSchemaTest {
         field.setDataType("decimal");
         field.setLength(18);
         field.setPrecision(2);
-        Method method = BusinessObjectDesignerService.class.getDeclaredMethod(
-                "applyComponentDefaults", BusinessFieldDTO.class, String.class);
-        method.setAccessible(true);
-
-        method.invoke(designerService(), field, "number");
+        fieldDesignPolicy().applyComponentDefaults(field, "number");
 
         assertEquals("MONEY", field.getFieldType());
         assertEquals("decimal", field.getDataType());
@@ -281,11 +265,8 @@ class BusinessObjectDesignerPageSchemaTest {
                 Map.of("id", "card", "componentKey", "card", "children", List.of(nestedSubTable)),
                 Map.of("formKey", "detail", "schema", Map.of("components", List.of(multiFormSubTable))));
 
-        Method method = BusinessObjectDesignerService.class.getDeclaredMethod(
-                "collectSubTableComponents", List.class, List.class);
-        method.setAccessible(true);
         List<Map<String, Object>> result = new ArrayList<>();
-        method.invoke(designerService(), nodes, result);
+        relationCoordinator().collectSubTableComponents(nodes, result);
 
         assertEquals(List.of("root_child", "nested_child", "multi_child"),
                 result.stream().map(item -> String.valueOf(item.get("id"))).toList());
@@ -309,12 +290,8 @@ class BusinessObjectDesignerPageSchemaTest {
         )));
         pageSchema.setZones(List.of(editZone));
 
-        Method migrate = BusinessObjectDesignerService.class.getDeclaredMethod(
-                "migrateFormDesignerSchemaFromPageSchema",
-                AiBusinessObject.class, LowcodeModelSchema.class, LowcodePageSchema.class);
-        migrate.setAccessible(true);
-        FormDesignerSchemaDTO migrated = (FormDesignerSchemaDTO) migrate.invoke(
-                service, object, modelSchema(), pageSchema);
+        FormDesignerSchemaDTO migrated = new BusinessObjectFormSchemaAssembler(new ObjectMapper())
+                .resolveFormDesignerSchema(object, modelSchema(), pageSchema, Map.of());
 
         Method merge = BusinessObjectDesignerService.class.getDeclaredMethod(
                 "mergeFormDesignerSchemaIntoRuntimeOptions", String.class, LowcodePageSchema.class);
@@ -398,11 +375,6 @@ class BusinessObjectDesignerPageSchemaTest {
     @Test
     @DisplayName("keeps existing chinese child tab titles when merging refs")
     void keepsExistingChineseChildTabTitlesWhenMergingRefs() throws Exception {
-        BusinessObjectDesignerService service = designerService();
-        Method method = BusinessObjectDesignerService.class.getDeclaredMethod(
-                "mergeExistingPageModelRef", LowcodePageModelRef.class, LowcodePageModelRef.class);
-        method.setAccessible(true);
-
         LowcodePageModelRef target = new LowcodePageModelRef();
         target.setModelCode("ps_presale_order_item");
         target.setModelName("预售商品明细");
@@ -421,7 +393,7 @@ class BusinessObjectDesignerPageSchemaTest {
                 "relationName", "预售商品"
         )));
 
-        method.invoke(service, target, existing);
+        relationProjector().mergeExistingPageModelRef(target, existing);
 
         assertEquals("预售商品", target.getModelName());
         assertEquals("预售商品", target.getProps().get("tabTitle"));
@@ -432,7 +404,6 @@ class BusinessObjectDesignerPageSchemaTest {
     @Test
     @DisplayName("keeps child list fields while compiling the view schema into page zones")
     void keepsChildListFieldsWhenApplyingViewSchema() throws Exception {
-        BusinessObjectDesignerService service = designerService();
         LowcodeModelSchema modelSchema = modelSchema();
         LowcodePageSchema pageSchema = new LowcodePageSchema();
         LowcodePageModelRef childRef = new LowcodePageModelRef();
@@ -454,15 +425,10 @@ class BusinessObjectDesignerPageSchemaTest {
                 Map.of("fieldCode", "pw_purchase_order_item__materialName", "label", "物料名称", "visible", true, "order", 1)
         ));
 
-        Method sanitize = BusinessObjectDesignerService.class.getDeclaredMethod(
-                "sanitizeViewSchemaFieldRefs", ViewSchemaDTO.class, LowcodeModelSchema.class, LowcodePageSchema.class);
-        sanitize.setAccessible(true);
-        ViewSchemaDTO sanitized = (ViewSchemaDTO) sanitize.invoke(service, viewSchema, modelSchema, pageSchema);
-
-        Method apply = BusinessObjectDesignerService.class.getDeclaredMethod(
-                "applyViewSchemaToPageZones", LowcodePageSchema.class, LowcodeModelSchema.class, ViewSchemaDTO.class);
-        apply.setAccessible(true);
-        apply.invoke(service, pageSchema, modelSchema, sanitized);
+        BusinessObjectViewSchemaProjector projector = new BusinessObjectViewSchemaProjector(
+                new ObjectMapper(), field -> "input");
+        ViewSchemaDTO sanitized = projector.sanitizeViewSchemaFieldRefs(viewSchema, modelSchema, pageSchema);
+        projector.applyViewSchemaToPageZones(pageSchema, modelSchema, sanitized);
 
         LowcodePageZone table = pageSchema.getZones().stream()
                 .filter(item -> "table".equals(item.getZoneKey()))
@@ -477,11 +443,8 @@ class BusinessObjectDesignerPageSchemaTest {
                 new LowcodeModelSchemaNormalizer(),
                 new BusinessNamingService()
         );
-        BusinessObjectDesignerService service = designerService(fieldSchemaService);
-        Method method = BusinessObjectDesignerService.class.getDeclaredMethod(
-                "ensurePageSchema", LowcodePageSchema.class, LowcodeModelSchema.class);
-        method.setAccessible(true);
-        return (LowcodePageSchema) method.invoke(service, pageSchema, modelSchema);
+        return new BusinessObjectLegacyPageSchemaAdapter(new ObjectMapper(), fieldSchemaService)
+                .ensurePageSchema(pageSchema, modelSchema);
     }
 
     private LowcodePageSchema resolvePageSchema(AiCrudConfig config, LowcodeModelSchema modelSchema) throws Exception {
@@ -492,10 +455,13 @@ class BusinessObjectDesignerPageSchemaTest {
     }
 
     private LowcodeModelSchema rebuildModelFields(LowcodeModelSchema modelSchema, List<BusinessFieldDTO> fields) throws Exception {
-        Method method = BusinessObjectDesignerService.class.getDeclaredMethod(
-                "rebuildModelFields", LowcodeModelSchema.class, List.class);
-        method.setAccessible(true);
-        return (LowcodeModelSchema) method.invoke(designerService(), modelSchema, fields);
+        return fieldDesignPolicy().rebuildModelFields(modelSchema, fields);
+    }
+
+    private BusinessObjectFieldDesignPolicy fieldDesignPolicy() {
+        BusinessFieldSchemaService fieldSchemaService = new BusinessFieldSchemaService(
+                new LowcodeModelSchemaNormalizer(), new BusinessNamingService());
+        return new BusinessObjectFieldDesignPolicy(fieldSchemaService, new LowcodeModelSchemaNormalizer());
     }
 
     @SuppressWarnings("unchecked")
@@ -560,6 +526,16 @@ class BusinessObjectDesignerPageSchemaTest {
                 null,
                 null
         );
+    }
+
+    private BusinessObjectRelationCoordinator relationCoordinator() {
+        return new BusinessObjectRelationCoordinator(
+                new ObjectMapper(), null, null, () -> 1L, ignored -> null, (context, status) -> { });
+    }
+
+    private BusinessObjectRelationProjector relationProjector() {
+        return new BusinessObjectRelationProjector(
+                new ObjectMapper(), null, null, () -> 1L, ignored -> null);
     }
 
     private LowcodePageZone zone(String zoneKey, List<String> fieldRefs) {
