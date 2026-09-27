@@ -74,6 +74,15 @@
 - 数据迁移：`V1.0.190__add_user_password_history.sql` 回填并固化 `password_changed_time`，历史表仅存单向哈希且按租户/用户/时间建立索引，窗口外哈希物理清理。
 - 实际结果：认证验证码 25/25、System 定向 22/22；System 依赖反应堆 26/26 模块成功且插件完整测试 154/154，Admin 聚合编译 46/46 成功。未执行真实 MySQL Flyway 与多实例并发改密。
 
+## 1.8 2026-09-28 API 权限资源覆盖启动门禁
+
+- 扫描范围：从 Spring MVC `RequestMappingHandlerMapping` 读取全部 Controller 映射，逐一展开一个 Handler 上的多路径与多 HTTP 方法，并按 `METHOD path` 去重；不再只检查第一个路径或第一个方法。
+- 豁免范围：仅跳过 `@ApiPermissionIgnore`、`@SaIgnore`、既有认证/开放网关专用链路和显式 `apiPermissionExcludePaths`；框架 `/error` 与静态/健康检查不作为业务权限资源。
+- 故障语义：资源不存在和资源查询异常都计入未覆盖；默认在 `ApplicationRunner` 阶段抛出异常，阻止应用进入 ready。`FORGE_AUTH_API_PERMISSION_COVERAGE_FAIL_ON_MISSING=false` 只用于受控灰度盘点，不改变请求期 fail-closed。
+- 日志约束：报告只输出 HTTP 方法、模板路径和 Handler 名，不输出用户权限、请求参数或数据库异常详情；样本数量限制为 1～1000。
+- 实际结果：`ApiPermissionCoverageVerifierTest` 3/3，认证 Starter 依赖反应堆 16/16 模块成功且 `forge-starter-auth` 58/58 测试通过；首次沙箱内全量测试仅因 MockWebServer 无权绑定本机端口失败，沙箱外同命令复跑通过。Admin 聚合编译 46/46 成功。
+- 环境限制：未连接真实 MySQL 启动 Admin，尚未生成目标环境的实际缺失路由清单；默认门禁会在部署启动时阻止资源不完整或数据库查询失败的实例进入 ready。
+
 ## 2. P0 必跑验证
 
 ### 动态脚本与 HTML

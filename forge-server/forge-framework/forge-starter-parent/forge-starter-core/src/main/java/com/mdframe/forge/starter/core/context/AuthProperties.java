@@ -28,6 +28,22 @@ public class AuthProperties {
     };
 
     /**
+     * 是否在应用启动完成前核对 Controller 路由与 API 权限资源覆盖关系。
+     */
+    private Boolean apiPermissionCoverageEnabled = true;
+
+    /**
+     * 权限资源缺失或查询失败时是否阻止应用完成启动。
+     * 默认开启；仅允许在受控灰度盘点期间通过环境配置临时关闭。
+     */
+    private Boolean apiPermissionCoverageFailOnMissing = true;
+
+    /**
+     * 启动日志中最多输出的缺失路由数量，避免错误配置导致日志洪泛。
+     */
+    private Integer apiPermissionCoverageReportLimit = 100;
+
+    /**
      * 是否启用登录失败锁定功能
      * 默认启用
      */

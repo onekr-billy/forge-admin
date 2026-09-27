@@ -1,5 +1,25 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：A-03 API 权限资源覆盖启动门禁
+
+### 实现
+
+- 新增 `ApiPermissionCoverageVerifier`，在 `ApplicationRunner` 阶段读取 Spring MVC 全量 Controller 映射，展开一个 Handler 的所有路径和 HTTP 方法，并按 `METHOD path` 去重生成覆盖报告。
+- 仅跳过显式 `@ApiPermissionIgnore`、`@SaIgnore`、既有认证/开放网关专用链路、静态/健康检查和配置白名单；受保护路由必须能匹配 `sys_resource` API 资源。
+- 资源不存在和资源查询异常统一计入缺失；默认 `api-permission-coverage-fail-on-missing=true`，缺失时抛出启动异常，防止实例进入 ready。保留显式环境变量关闭阻断，仅用于受控灰度盘点，请求期仍由 `ApiPermissionInterceptor` fail-closed。
+- 报告只记录方法、模板路径和 Handler 名，不记录用户权限、请求参数或数据库异常详情，并限制最多输出 100 条（可配置 1～1000）。
+- 动态认证配置转换同步支持覆盖检查的启用、阻断和报告上限字段。
+
+### 验证
+
+- 测试先以缺失实现产生预期编译失败，完成实现后 `ApiPermissionCoverageVerifierTest` 3/3 通过，覆盖多路径/多方法、显式匿名、配置白名单、资源缺失、查询异常和 enforce/report 两种模式。
+- 认证 Starter 全量依赖反应堆在沙箱外复跑成功：16/16 模块成功，`forge-starter-auth` 58/58 测试通过；首次沙箱内运行仅因 `OkHttpSecureOutboundClientTest` 的 MockWebServer 无权绑定临时端口而失败，未记为代码失败。
+- `mvn -pl forge-admin-server -am -DskipTests compile`（JDK 17）：Admin 聚合反应堆 46/46 成功。
+
+### 未覆盖
+
+- 本地未连接真实 MySQL 启动 Admin，因此没有把某一目标环境的实际路由覆盖率或缺失资源清单记录为通过；部署时默认门禁会针对该环境数据库生成报告并阻止未覆盖实例进入 ready。
+
 ## 2026-09-28：A-13 密码历史、过期与认证边界闭环
 
 ### 实现
