@@ -5,6 +5,8 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessTrigger;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessTriggerLog;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFlowRuntimeVO;
+import com.mdframe.forge.plugin.message.domain.dto.MessageSendRequestDTO;
+import com.mdframe.forge.plugin.message.domain.entity.SysMessage;
 import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -261,6 +263,50 @@ class BusinessTriggerExecutorEventTest {
         verify(triggerService).updateExecutionLog(logCaptor.capture());
         assertEquals("FAILED", logCaptor.getValue().getExecuteStatus());
         verify(triggerService, never()).incrementExecuteCount(10L);
+    }
+
+    @Test
+    @DisplayName("消息副作用使用事件与触发器组合幂等键")
+    void messageActionUsesStableIdempotencyKey() {
+        BusinessTriggerService triggerService = mock(BusinessTriggerService.class);
+        when(triggerService.tryClaimExecution(any())).thenReturn(true);
+        BusinessMessageChannelService messageService = mock(BusinessMessageChannelService.class);
+        BusinessMessageChannelStatus status = new BusinessMessageChannelStatus();
+        status.setChannelCode("internal_websocket");
+        status.setSendChannel("WEB");
+        status.setTodo(false);
+        when(messageService.resolveChannel(any())).thenReturn(status);
+        SysMessage message = new SysMessage();
+        message.setId(88L);
+        when(messageService.sendInternalMessage(any())).thenReturn(message);
+        BusinessTriggerExecutor executor = new BusinessTriggerExecutor(
+                triggerService,
+                mock(BusinessFlowService.class),
+                mock(DynamicCrudService.class),
+                messageService,
+                mock(BusinessActionExecutionService.class),
+                mock(CallApiActionStepExecutor.class));
+        AiBusinessTrigger trigger = new AiBusinessTrigger();
+        trigger.setId(10L);
+        trigger.setTenantId(1L);
+        trigger.setObjectCode("presale_order");
+        trigger.setTriggerName("发送消息");
+        trigger.setActionType("SEND_MESSAGE");
+        trigger.setActionConfig("{}");
+        BusinessEvent event = trusted(BusinessEvent.builder()
+                .eventType(BusinessEvent.RECORD_CREATED)
+                .objectCode("presale_order")
+                .recordId("100")
+                .operatorId(8L)
+                .tenantId(1L)
+                .build());
+
+        executor.executeTrigger(trigger, event);
+
+        ArgumentCaptor<MessageSendRequestDTO> request = ArgumentCaptor.forClass(MessageSendRequestDTO.class);
+        verify(messageService).sendInternalMessage(request.capture());
+        assertEquals("trigger:10:" + event.getEventId() + ":message",
+                request.getValue().getIdempotencyKey());
     }
 
     private BusinessTriggerExecutor executor(BusinessTriggerService triggerService) {

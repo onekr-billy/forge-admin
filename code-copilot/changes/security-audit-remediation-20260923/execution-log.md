@@ -1,5 +1,28 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：T4.4 业务触发器租约恢复与危险副作用隔离
+
+### 实现
+
+- `ai_business_trigger_log` 增加触发器快照、联合执行摘要、下次重试时间、租约 owner/time；新事件插入 PENDING 后通过数据库 CAS 认领，执行结果按租户、日志 ID、PENDING 状态和 owner 条件回写，防止过期 worker 覆盖接管结果。
+- 新增不可变执行信封，持久化规范化的完整业务事件与触发器定义；恢复前重新校验摘要以及租户、触发器、事件、动作身份，旧日志、缺失字段和篡改快照统一转 TODO 人工处理。
+- 新增定时恢复派发器，扫描超时 PENDING 与到期 FAILED；失败按指数退避，重试耗尽进入 DEAD。START_FLOW、SEND_MESSAGE、UPDATE_FIELD 和稳定幂等业务动作可自动恢复，CREATE_RECORD 与 WEBHOOK 因崩溃后结果不明确而禁止自动重放。
+- SEND_MESSAGE 使用触发器 ID 与业务事件 ID 派生的稳定幂等键；业务动作继续复用事件稳定键，恢复重试不生成新的副作用身份。
+- 新增 `V1.0.193__add_business_trigger_recovery_lease.sql`，以 `information_schema` 防重复扩列/建索引；历史 PENDING 因无完整快照迁移为 TODO，并补齐 PENDING/DEAD 字典数据和 TODO 展示文案。
+
+### 验证
+
+- 定向执行 `BusinessTriggerExecutionClaimTest`、`BusinessTriggerExecutorEventTest`、`BusinessTriggerExecutorWebhookTest`、`BusinessTriggerExecutionEnvelopeTest`、`BusinessTriggerRecoveryDispatcherTest`、`BusinessTriggerRecoveryMapperContractTest`、`BusinessTriggerRecoveryMigrationContractTest`：24/24 通过，0 失败、0 错误、0 跳过。
+- `forge-plugin-generator` 完整测试 1332/1332 通过；新增迁移契约在随后定向集合中独立通过。Admin JDK 17 聚合编译 46/46 模块成功。
+- `BusinessTriggerLogMapper.xml` 通过 `xmllint --noout`；迁移无 `${...}` 或 `tenant_id = 0`，`git diff --check` 通过。`BusinessTriggerExecutor` 968 行，其余新增/修改的恢复职责类均低于 500 行。
+- 全依赖测试尝试在上游 `forge-starter-outbound` 的 MockWebServer 绑定本机临时端口时被沙箱以 `SocketException: Operation not permitted` 阻断，Generator 未进入该次反应堆测试；该结果只记录为环境限制，不作为通过证据。
+
+### 未覆盖
+
+- 未连接真实 MySQL 执行 V1.0.193/Flyway，未执行双 JVM 竞争、进程在副作用后/结果回写前崩溃、真实消息/Flowable 故障注入或人工恢复操作验收。
+- 本批只补齐触发器消费端的 PENDING/FAILED 恢复；CRUD 生产端事务事件 Outbox、业务聚合顺序号和真实乱序回调仍在 T4.4 保持未完成，不能宣称 exactly-once。
+- T4.2/T4.3 巨型组件/巨型类改造继续按用户要求排除。
+
 ## 2026-09-28：Flow 通知事务 Outbox 与有序补偿
 
 ### 实现

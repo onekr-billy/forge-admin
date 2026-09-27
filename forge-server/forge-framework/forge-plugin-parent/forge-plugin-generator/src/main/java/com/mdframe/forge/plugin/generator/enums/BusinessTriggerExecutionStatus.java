@@ -12,7 +12,8 @@ public enum BusinessTriggerExecutionStatus {
     SUCCESS("SUCCESS", "成功"),
     FAILED("FAILED", "失败"),
     SKIPPED("SKIPPED", "已跳过"),
-    TODO("TODO", "待人工处理");
+    TODO("TODO", "待人工处理"),
+    DEAD("DEAD", "重试耗尽");
 
     private final String code;
     private final String label;

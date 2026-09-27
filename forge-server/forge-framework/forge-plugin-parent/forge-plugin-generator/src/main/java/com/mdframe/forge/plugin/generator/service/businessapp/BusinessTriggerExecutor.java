@@ -23,8 +23,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -128,6 +126,25 @@ public class BusinessTriggerExecutor {
             return;
         }
 
+        executeClaimedTrigger(trigger, event, logEntry, startTime);
+    }
+
+    void executeRecoveredTrigger(AiBusinessTrigger trigger, BusinessEvent event,
+                                 AiBusinessTriggerLog claimedLog) {
+        if (claimedLog == null || StringUtils.isBlank(claimedLog.getLockOwner())
+                || trigger == null || event == null
+                || !BusinessEventEnvelope.isTrusted(event)
+                || !Objects.equals(claimedLog.getTenantId(), event.getTenantId())
+                || !Objects.equals(claimedLog.getTenantId(), trigger.getTenantId())
+                || !Objects.equals(claimedLog.getTriggerId(), trigger.getId())
+                || !StringUtils.equals(claimedLog.getEventId(), event.getEventId())) {
+            throw new BusinessException("业务触发器恢复命令身份不一致");
+        }
+        executeClaimedTrigger(trigger, event, claimedLog, System.currentTimeMillis());
+    }
+
+    private void executeClaimedTrigger(AiBusinessTrigger trigger, BusinessEvent event,
+                                       AiBusinessTriggerLog logEntry, long startTime) {
         try {
             // 1. 评估条件
             if (!evaluateCondition(trigger, event)) {
@@ -402,7 +419,7 @@ public class BusinessTriggerExecutor {
 
         return switch (actionType) {
             case "START_FLOW" -> executeStartFlowAction(actionConfig, event);
-            case "SEND_MESSAGE" -> executeSendMessageAction(actionConfig, event);
+            case "SEND_MESSAGE" -> executeSendMessageAction(trigger, actionConfig, event);
             case "CREATE_RECORD" -> executeCreateRecordAction(actionConfig, event);
             case "UPDATE_FIELD" -> executeUpdateFieldAction(actionConfig, event);
             case "WEBHOOK" -> executeWebhookAction(actionConfig, event);
@@ -425,7 +442,7 @@ public class BusinessTriggerExecutor {
         dto.setActionCode(actionCode);
         dto.setIdempotencyKey(StringUtils.firstNonBlank(
                 StringUtils.trimToNull(config.getString("idempotencyKey")),
-                buildTriggerActionIdempotencyKey(trigger, event, actionCode)));
+                BusinessTriggerExecutionEnvelope.idempotencyKey(trigger, event, actionCode)));
         dto.setFormData(toPlainMap(config.getJSONObject("formData")));
         dto.setContext(buildTriggerActionContext(trigger, event));
         BusinessActionExecuteResultVO actionResult = actionExecutionService.execute(dto);
@@ -452,31 +469,6 @@ public class BusinessTriggerExecutor {
         context.put("operatorId", event.getOperatorId());
         context.put("operatorName", event.getOperatorName());
         return context;
-    }
-
-    private String buildTriggerActionIdempotencyKey(AiBusinessTrigger trigger, BusinessEvent event, String actionCode) {
-        String raw = "trigger:"
-                + StringUtils.defaultString(trigger.getId() == null ? null : String.valueOf(trigger.getId()))
-                + ":" + StringUtils.defaultString(event.getEventId())
-                + ":" + StringUtils.defaultString(actionCode);
-        if (raw.length() <= 128) {
-            return raw;
-        }
-        return StringUtils.left(raw, 88) + ":" + sha256(raw).substring(0, 32);
-    }
-
-    private String sha256(String value) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(StringUtils.defaultString(value).getBytes(StandardCharsets.UTF_8));
-            StringBuilder builder = new StringBuilder(hash.length * 2);
-            for (byte b : hash) {
-                builder.append(String.format("%02x", b));
-            }
-            return builder.toString();
-        } catch (Exception e) {
-            return "00000000000000000000000000000000";
-        }
     }
 
     private Map<String, Object> toPlainMap(JSONObject source) {
@@ -535,7 +527,7 @@ public class BusinessTriggerExecutor {
     /**
      * 发送消息动作（复用现有消息中心）
      */
-    private JSONObject executeSendMessageAction(JSONObject config, BusinessEvent event) {
+    private JSONObject executeSendMessageAction(AiBusinessTrigger trigger, JSONObject config, BusinessEvent event) {
         String templateCode = config.getString("templateCode");
         String receiverRule = StringUtils.firstNonBlank(
                 readRecordValueAsText(event.getRecordData(), "reminderReceiverRule"),
@@ -558,6 +550,7 @@ public class BusinessTriggerExecutor {
         req.setType("SYSTEM");
         req.setBizType("TRIGGER");
         req.setBizKey(event.getObjectCode() + ":" + event.getRecordId());
+        req.setIdempotencyKey(BusinessTriggerExecutionEnvelope.idempotencyKey(trigger, event, "message"));
 
         // 模板参数：将业务记录数据作为模板变量
         Map<String, Object> params = new HashMap<>();
@@ -965,11 +958,11 @@ public class BusinessTriggerExecutor {
         logEntry.setEventSource(event.getEventSource());
         logEntry.setEventVersion(event.getEventVersion());
         logEntry.setEventDigest(event.getEventDigest());
-        logEntry.setEventData(event.getRecordData() != null ? JSON.toJSONString(event.getRecordData()) : null);
         logEntry.setActionType(trigger.getActionType());
         logEntry.setExecuteStatus(BusinessTriggerExecutionStatus.PENDING.getCode());
         logEntry.setExecuteTime(LocalDateTime.now());
         logEntry.setRetryCount(0);
+        BusinessTriggerExecutionEnvelope.snapshot(logEntry, trigger, event);
         return logEntry;
     }
 }

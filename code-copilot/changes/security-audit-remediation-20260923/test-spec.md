@@ -283,6 +283,15 @@
 - 既有限制：38 模块全测试在无关的 `forge-plugin-ai` 测试夹具编译处阻断（`RecordingAdapter` 未实现新增的 `createEmbeddingModel`），但生产主链编译、Flow 插件全量测试和 Flow Server 自身测试均独立通过。
 - 环境限制：未连接真实 MySQL 执行 V1.0.192/Flyway，未进行双节点并发认领、进程崩溃和真实下游故障注入；尚无死信人工重放接口，Flowable 镜像、候选人与业务状态同步仍需独立补偿闭环。
 
+## 1.32 2026-09-28 业务触发器命令租约与崩溃恢复
+
+- 持久化信封：触发器认领日志必须保存规范化的完整业务事件与触发器不可变快照，并对二者联合计算 SHA-256 摘要；恢复前必须复验租户、触发器、事件、动作身份及摘要，篡改或缺失快照一律转人工处理。
+- 租约恢复：新事件先插入 PENDING 再以数据库 CAS 认领；定时恢复器只认领本租户下超时 PENDING 或到期 FAILED，执行结果必须按 `tenant_id + id + PENDING + lock_owner` 回写，旧 worker 不得覆盖接管者结果。
+- 重试边界：失败按指数退避重试，超过上限进入 DEAD；START_FLOW、SEND_MESSAGE、UPDATE_FIELD 和带稳定幂等键的业务动作允许自动恢复，结果不明确的 CREATE_RECORD、WEBHOOK 不得盲目重放，必须转 TODO 人工处理。
+- 幂等契约：消息副作用使用由触发器 ID 与事件 ID 派生的稳定幂等键；重复事件必须验证摘要一致后跳过，摘要冲突必须拒绝。
+- 实际结果：恢复信封、认领/CAS、重试/DEAD、消息幂等、危险动作人工分流、Mapper 与迁移契约定向测试 24/24；Generator 模块完整测试基线 1332/1332；Admin 聚合编译 46/46，均为 0 失败、0 错误。
+- 环境限制：未连接真实 MySQL 执行 V1.0.193/Flyway，未执行双 JVM 并发认领、kill -9 崩溃接管或真实消息/Flowable 故障注入；全依赖测试在无关 `forge-starter-outbound` MockWebServer 绑定本机端口处被沙箱限制阻断，Generator 自身完整测试与 Admin 聚合编译独立通过。
+
 ## 2. P0 必跑验证
 
 ### 动态脚本与 HTML

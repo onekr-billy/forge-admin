@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessTrigger;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessTriggerLog;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessActionStepDTO;
+import com.mdframe.forge.plugin.generator.enums.BusinessTriggerExecutionStatus;
 import com.mdframe.forge.plugin.generator.mapper.BusinessTriggerLogMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessTriggerMapper;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessTriggerScenarioTemplateVO;
@@ -19,14 +20,18 @@ import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
 
 /**
  * 触发器管理服务。
@@ -40,6 +45,16 @@ public class BusinessTriggerService {
 
     private final BusinessTriggerMapper triggerMapper;
     private final BusinessTriggerLogMapper triggerLogMapper;
+    private final String workerId = UUID.randomUUID().toString();
+
+    @Value("${forge.business.trigger-recovery.max-retry-count:5}")
+    private int maxRetryCount = 5;
+
+    @Value("${forge.business.trigger-recovery.lock-timeout-seconds:900}")
+    private long lockTimeoutSeconds = 900;
+
+    @Value("${forge.business.trigger-recovery.retry-base-seconds:30}")
+    private long retryBaseSeconds = 30;
 
     /**
      * 分页查询触发器
@@ -122,25 +137,129 @@ public class BusinessTriggerService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
     public boolean tryClaimExecution(AiBusinessTriggerLog logEntry) {
-        if (logEntry == null || StringUtils.isBlank(logEntry.getEventId())) {
-            throw new BusinessException("业务事件缺少稳定事件ID");
-        }
+        validateExecutionLog(logEntry);
         if (logEntry.getId() == null) {
             logEntry.setId(IdWorker.getId());
         }
+        boolean inserted;
         try {
-            return triggerLogMapper.insert(logEntry) == 1;
+            inserted = triggerLogMapper.insert(logEntry) == 1;
         } catch (DuplicateKeyException duplicate) {
+            AiBusinessTriggerLog existing = selectByExecutionKey(logEntry);
+            if (existing == null || !Objects.equals(existing.getEventDigest(), logEntry.getEventDigest())) {
+                throw new BusinessException("业务事件ID与载荷摘要冲突");
+            }
             return false;
+        }
+        return inserted && claim(logEntry, workerId, LocalDateTime.now()) != null;
+    }
+
+    public List<AiBusinessTriggerLog> findRecoveryCandidates(LocalDateTime now, int batchSize) {
+        LocalDateTime scanTime = now == null ? LocalDateTime.now() : now;
+        int safeBatchSize = Math.max(1, Math.min(batchSize, 500));
+        return TenantContextHolder.executeIgnore(() -> triggerLogMapper.selectRecoveryCandidates(
+                scanTime, staleBefore(scanTime), safeMaxRetryCount(), safeBatchSize));
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
+    public AiBusinessTriggerLog claimRecovery(AiBusinessTriggerLog candidate, String owner, LocalDateTime now) {
+        if (candidate == null || candidate.getTenantId() == null || candidate.getId() == null) {
+            return null;
+        }
+        return claim(candidate, owner, now == null ? LocalDateTime.now() : now);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
+    public void markManualReview(AiBusinessTriggerLog claimed, String reason) {
+        if (claimed == null) {
+            return;
+        }
+        claimed.setExecuteStatus(BusinessTriggerExecutionStatus.TODO.getCode());
+        claimed.setErrorMessage(StringUtils.abbreviate(
+                StringUtils.defaultIfBlank(reason, "需要人工确认后重放"), 2000));
+        claimed.setNextRetryTime(null);
+        updateExecutionLog(claimed);
+    }
+
+    private AiBusinessTriggerLog claim(AiBusinessTriggerLog candidate, String owner, LocalDateTime now) {
+        if (candidate == null || StringUtils.isBlank(owner)) {
+            return null;
+        }
+        int claimed = TenantContextHolder.executeIgnore(() -> triggerLogMapper.claimExecution(
+                candidate.getTenantId(), candidate.getId(), owner, now,
+                staleBefore(now), safeMaxRetryCount()));
+        if (claimed != 1) {
+            return null;
+        }
+        AiBusinessTriggerLog result = TenantContextHolder.executeIgnore(
+                () -> triggerLogMapper.selectByLogId(candidate.getTenantId(), candidate.getId()));
+        if (result != null) {
+            copyClaimState(result, candidate);
+        }
+        return result;
+    }
+
+    private AiBusinessTriggerLog selectByExecutionKey(AiBusinessTriggerLog logEntry) {
+        return TenantContextHolder.executeIgnore(() -> triggerLogMapper.selectByExecutionKey(
+                logEntry.getTenantId(), logEntry.getTriggerId(), logEntry.getEventId()));
+    }
+
+    private void validateExecutionLog(AiBusinessTriggerLog logEntry) {
+        if (logEntry == null || logEntry.getTenantId() == null || logEntry.getTenantId() <= 0
+                || logEntry.getTriggerId() == null || StringUtils.isBlank(logEntry.getEventId())
+                || StringUtils.isBlank(logEntry.getEventDigest())
+                || StringUtils.isBlank(logEntry.getTriggerSnapshot())
+                || StringUtils.isBlank(logEntry.getExecutionDigest())) {
+            throw new BusinessException("业务事件缺少稳定事件ID");
         }
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
     public void updateExecutionLog(AiBusinessTriggerLog logEntry) {
         if (logEntry == null || logEntry.getId() == null || logEntry.getTenantId() == null
-                || triggerLogMapper.updateExecutionResult(logEntry) != 1) {
+                || StringUtils.isBlank(logEntry.getLockOwner())) {
             throw new BusinessException("业务触发器执行日志更新失败");
         }
+        if (BusinessTriggerExecutionStatus.FAILED.matches(logEntry.getExecuteStatus())) {
+            int attempts = logEntry.getRetryCount() == null ? 0 : logEntry.getRetryCount();
+            if (attempts >= safeMaxRetryCount()) {
+                logEntry.setExecuteStatus(BusinessTriggerExecutionStatus.DEAD.getCode());
+                logEntry.setNextRetryTime(null);
+            } else {
+                logEntry.setNextRetryTime(LocalDateTime.now().plus(backoff(attempts)));
+            }
+        } else {
+            logEntry.setNextRetryTime(null);
+        }
+        if (triggerLogMapper.updateExecutionResult(logEntry) != 1) {
+            throw new BusinessException("业务触发器执行日志更新失败");
+        }
+    }
+
+    private int safeMaxRetryCount() {
+        return Math.max(1, maxRetryCount);
+    }
+
+    private LocalDateTime staleBefore(LocalDateTime now) {
+        return now.minusSeconds(Math.max(30, lockTimeoutSeconds));
+    }
+
+    private Duration backoff(int attempts) {
+        long baseSeconds = Math.max(1, retryBaseSeconds);
+        int exponent = Math.max(0, Math.min(attempts - 1, 10));
+        try {
+            return Duration.ofSeconds(baseSeconds).multipliedBy(1L << exponent);
+        } catch (ArithmeticException exception) {
+            return Duration.ofHours(24);
+        }
+    }
+
+    private void copyClaimState(AiBusinessTriggerLog claimed, AiBusinessTriggerLog target) {
+        target.setId(claimed.getId());
+        target.setRetryCount(claimed.getRetryCount());
+        target.setLockOwner(claimed.getLockOwner());
+        target.setLockTime(claimed.getLockTime());
+        target.setExecuteTime(claimed.getExecuteTime());
     }
 
     /**
