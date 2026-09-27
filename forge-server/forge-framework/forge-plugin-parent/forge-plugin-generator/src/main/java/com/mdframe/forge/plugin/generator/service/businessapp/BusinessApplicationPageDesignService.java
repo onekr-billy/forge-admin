@@ -17,9 +17,6 @@ import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessObjectDesigner
 import com.mdframe.forge.plugin.generator.dto.businessapp.FormDesignerSchemaDTO;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeFieldSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeModelSchema;
-import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageSchema;
-import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePageZone;
-import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeTreeConfig;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudRepository;
 import com.mdframe.forge.plugin.generator.service.IGenDatasourceService;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeDdlService;
@@ -57,6 +54,9 @@ import com.mdframe.forge.starter.core.enums.EnableStatus;
 @RequiredArgsConstructor
 @Slf4j
 public class BusinessApplicationPageDesignService {
+
+    private static final BusinessApplicationTreePageProjector TREE_PAGE_PROJECTOR =
+            new BusinessApplicationTreePageProjector();
 
     private static final String MANAGED_BY_PAGE_FORM = "PAGE_FORM";
     private static final String LOWCODE_RUNTIME = "LOWCODE_RUNTIME";
@@ -207,7 +207,14 @@ public class BusinessApplicationPageDesignService {
         designer.setDisplayField(resolveDisplayField(effectiveFields));
         designer.setFields(effectiveFields);
         designer.setFormDesignerSchema(formSchema);
-        applyTreeShapePresets(designer, current, request);
+        TREE_PAGE_PROJECTOR.applyDesignerPreset(
+                designer,
+                current.getModelSchema(),
+                current.getPageSchema(),
+                request.pageType(),
+                request.objectName(),
+                request.builder(),
+                request.pageId());
         designerService.saveDesigner(object.getId(), designer);
 
         AiBusinessObject savedObject = objectService.requireEntity(object.getId());
@@ -215,7 +222,7 @@ public class BusinessApplicationPageDesignService {
         Map<String, Object> builder = cloneBuilder(request.builder());
         synchronizeBuilderFormAsset(builder, request.formAssetId(), formSchema);
         patchBuilderObjectReference(builder, request, savedObject, businessData.hasData());
-        patchBuilderTreeShape(builder, request);
+        TREE_PAGE_PROJECTOR.patchBuilder(builder, request.pageId(), request.pageType());
         if (businessData.hasData()) {
             lockBuilderFormFields(builder, request.formAssetId());
         }
@@ -576,58 +583,6 @@ public class BusinessApplicationPageDesignService {
         }
     }
 
-    /** 把树形快捷页的 treeConfig.enabled / enableTreeAddChild 同步回应用草稿区块。 */
-    private void patchBuilderTreeShape(Map<String, Object> builder, PageDesignRequest request) {
-        if (!"tree-list".equals(request.pageType()) && !"tree-table".equals(request.pageType())) {
-            return;
-        }
-        boolean treeTable = "tree-table".equals(request.pageType());
-        Map<String, Object> pages = mutableMap(builder.get("pages"));
-        Map<String, Object> page = pages == null ? null : mutableMap(pages.get(request.pageId()));
-        Map<String, Object> layout = page == null ? null : mutableMap(page.get("layout"));
-        Map<String, Object> grid = layout == null ? null : mutableMap(layout.get("gridLayout"));
-        Object itemsValue = grid == null ? null : grid.get("items");
-        if (!(itemsValue instanceof List<?> items)) {
-            return;
-        }
-        for (Object item : items) {
-            Map<String, Object> block = mutableMap(item);
-            if (block == null || !"AiCrudPage".equals(String.valueOf(block.get("blockType")))) {
-                continue;
-            }
-            Map<String, Object> props = mutableMap(block.get("props"));
-            if (props == null) {
-                props = new LinkedHashMap<>();
-                block.put("props", props);
-            }
-            Map<String, Object> treeConfig = mutableMap(props.get("treeConfig"));
-            if (treeConfig == null) {
-                treeConfig = new LinkedHashMap<>();
-            }
-            treeConfig.put("enabled", Boolean.TRUE);
-            treeConfig.putIfAbsent("keyField", "id");
-            treeConfig.putIfAbsent("parentField", "parentId");
-            treeConfig.putIfAbsent("labelField", "name");
-            treeConfig.putIfAbsent("filterField", "parentId");
-            treeConfig.putIfAbsent("targetField", "id");
-            treeConfig.putIfAbsent("childrenField", "children");
-            treeConfig.putIfAbsent("loadMode", "full");
-            props.put("treeConfig", treeConfig);
-            props.put("enableTreeAddChild", !treeTable);
-            Map<String, Object> options = mutableMap(props.get("options"));
-            if (options == null) {
-                options = new LinkedHashMap<>();
-            }
-            options.put("treeConfig", new LinkedHashMap<>(treeConfig));
-            options.put("enableTreeAddChild", !treeTable);
-            if (treeTable) {
-                options.put("layoutType", "tree-crud");
-                props.put("layoutType", "tree-crud");
-            }
-            props.put("options", options);
-        }
-    }
-
     private void lockBuilderFormFields(Map<String, Object> builder, String formAssetId) {
         Object assetsValue = builder.get("formAssets");
         if (!(assetsValue instanceof List<?> assets)) {
@@ -861,170 +816,6 @@ public class BusinessApplicationPageDesignService {
             case "tree-list" -> "tree-list";
             default -> "crud";
         };
-    }
-
-    /**
-     * 树形列表 / 左树右表快捷创建：落库时打开模型树形开关，否则列表设计里「启用树形列表」默认关闭，
-     * 运行配置也不会编译出 treeConfig.enabled。
-     */
-    private void applyTreeShapePresets(
-            BusinessObjectDesignerDTO designer,
-            BusinessObjectDesignerService.DesignerContext current,
-            PageDesignRequest request) {
-        if (!"tree-list".equals(request.pageType()) && !"tree-table".equals(request.pageType())) {
-            return;
-        }
-        boolean treeTable = "tree-table".equals(request.pageType());
-        LowcodeModelSchema model = current.getModelSchema() == null
-                ? new LowcodeModelSchema()
-                : current.getModelSchema();
-        LowcodeTreeConfig treeConfig = model.getTreeConfig() == null
-                ? new LowcodeTreeConfig()
-                : model.getTreeConfig();
-        Map<String, Object> fromBuilder = extractBuilderTreeConfig(request.builder(), request.pageId());
-        mergeTreeConfigDefaults(treeConfig, fromBuilder, request.objectName());
-        treeConfig.setEnabled(true);
-        model.setAppType("TREE");
-        model.setTreeConfig(treeConfig);
-        designer.setModelSchema(model);
-
-        LowcodePageSchema pageSchema = current.getPageSchema() == null
-                ? new LowcodePageSchema()
-                : current.getPageSchema();
-        if (treeTable) {
-            pageSchema.setLayoutType("tree-crud");
-        } else if (StringUtils.isBlank(pageSchema.getLayoutType())
-                || "simple-crud".equals(pageSchema.getLayoutType())) {
-            pageSchema.setLayoutType("list-form");
-        }
-        LowcodePageZone tableZone = ensureTableZone(pageSchema);
-        Map<String, Object> props = tableZone.getProps() == null
-                ? new LinkedHashMap<>()
-                : new LinkedHashMap<>(tableZone.getProps());
-        props.put("treeConfig", treeConfig);
-        props.put("enableTreeAddChild", !treeTable);
-        if (treeTable) {
-            props.put("layoutType", "tree-crud");
-        }
-        tableZone.setProps(props);
-        designer.setPageSchema(pageSchema);
-    }
-
-    private void mergeTreeConfigDefaults(
-            LowcodeTreeConfig treeConfig, Map<String, Object> fromBuilder, String objectName) {
-        if (fromBuilder != null) {
-            if (StringUtils.isBlank(treeConfig.getKeyField())) {
-                treeConfig.setKeyField(firstText(fromBuilder, "keyField", "id"));
-            }
-            if (StringUtils.isBlank(treeConfig.getParentField())) {
-                treeConfig.setParentField(firstText(fromBuilder, "parentField", "parentId"));
-            }
-            if (StringUtils.isBlank(treeConfig.getLabelField())) {
-                treeConfig.setLabelField(firstText(fromBuilder, "labelField", "name"));
-            }
-            if (StringUtils.isBlank(treeConfig.getFilterField())) {
-                treeConfig.setFilterField(firstText(fromBuilder, "filterField",
-                        StringUtils.defaultIfBlank(treeConfig.getParentField(), "parentId")));
-            }
-            if (StringUtils.isBlank(treeConfig.getTargetField())) {
-                treeConfig.setTargetField(firstText(fromBuilder, "targetField",
-                        StringUtils.defaultIfBlank(treeConfig.getKeyField(), "id")));
-            }
-            if (StringUtils.isBlank(treeConfig.getChildrenField())) {
-                treeConfig.setChildrenField(firstText(fromBuilder, "childrenField", "children"));
-            }
-            if (StringUtils.isBlank(treeConfig.getTreeTitle())) {
-                treeConfig.setTreeTitle(firstText(fromBuilder, "treeTitle", ""));
-            }
-            if (StringUtils.isBlank(treeConfig.getLoadMode())) {
-                treeConfig.setLoadMode(firstText(fromBuilder, "loadMode", "full"));
-            }
-        }
-        if (StringUtils.isBlank(treeConfig.getKeyField())) {
-            treeConfig.setKeyField("id");
-        }
-        if (StringUtils.isBlank(treeConfig.getParentField())) {
-            treeConfig.setParentField("parentId");
-        }
-        if (StringUtils.isBlank(treeConfig.getLabelField())) {
-            treeConfig.setLabelField("name");
-        }
-        if (StringUtils.isBlank(treeConfig.getFilterField())) {
-            treeConfig.setFilterField(treeConfig.getParentField());
-        }
-        if (StringUtils.isBlank(treeConfig.getTargetField())) {
-            treeConfig.setTargetField(treeConfig.getKeyField());
-        }
-        if (StringUtils.isBlank(treeConfig.getChildrenField())) {
-            treeConfig.setChildrenField("children");
-        }
-        if (StringUtils.isBlank(treeConfig.getLoadMode())) {
-            treeConfig.setLoadMode("full");
-        }
-        if (StringUtils.isBlank(treeConfig.getTreeTitle())) {
-            String title = StringUtils.trimToEmpty(objectName);
-            treeConfig.setTreeTitle(title.isEmpty() ? "分类树" : title + "树");
-        }
-    }
-
-    private LowcodePageZone ensureTableZone(LowcodePageSchema pageSchema) {
-        if (pageSchema.getZones() == null) {
-            pageSchema.setZones(new ArrayList<>());
-        }
-        for (LowcodePageZone zone : pageSchema.getZones()) {
-            if (zone != null && "table".equals(zone.getZoneKey())) {
-                return zone;
-            }
-        }
-        LowcodePageZone created = new LowcodePageZone();
-        created.setZoneKey("table");
-        created.setEnabled(true);
-        created.setProps(new LinkedHashMap<>());
-        pageSchema.getZones().add(created);
-        return created;
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> extractBuilderTreeConfig(Map<String, Object> builder, String pageId) {
-        if (builder == null || StringUtils.isBlank(pageId)) {
-            return null;
-        }
-        Map<String, Object> pages = mutableMap(builder.get("pages"));
-        Map<String, Object> page = pages == null ? null : mutableMap(pages.get(pageId));
-        Map<String, Object> layout = page == null ? null : mutableMap(page.get("layout"));
-        Map<String, Object> grid = layout == null ? null : mutableMap(layout.get("gridLayout"));
-        Object itemsValue = grid == null ? null : grid.get("items");
-        if (!(itemsValue instanceof List<?> items)) {
-            return null;
-        }
-        for (Object item : items) {
-            Map<String, Object> block = mutableMap(item);
-            if (block == null || !"AiCrudPage".equals(String.valueOf(block.get("blockType")))) {
-                continue;
-            }
-            Map<String, Object> props = mutableMap(block.get("props"));
-            if (props == null) {
-                return null;
-            }
-            Map<String, Object> treeConfig = mutableMap(props.get("treeConfig"));
-            if (treeConfig == null) {
-                Map<String, Object> options = mutableMap(props.get("options"));
-                treeConfig = options == null ? null : mutableMap(options.get("treeConfig"));
-            }
-            return treeConfig;
-        }
-        return null;
-    }
-
-    private String firstText(Map<String, Object> source, String key, String fallback) {
-        if (source == null) {
-            return fallback;
-        }
-        String value = StringUtils.trimToNull(String.valueOf(source.getOrDefault(key, "")));
-        if (value == null || "null".equals(value)) {
-            return fallback;
-        }
-        return value;
     }
 
     private String requiredText(String value, String message, int maxLength) {

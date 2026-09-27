@@ -84,5 +84,6 @@
 - [x] 提取单据编号规则引擎，以 Interpreter Strategy 统一旧模板归一、预览、校验和运行时序列生成，使 `BusinessDocumentConfigService` 降至 871 行并满足单类 1000 行目标。
 - [x] 提取单据运行态 Action Policy/Projector，集中主流程、发起模式、状态准入及发起/待办/撤回按钮投影，使 `BusinessDocumentRuntimeService` 降至 867 行并满足单类 1000 行目标。
 - [x] 提取能力调用 Contract Policy/Builder，集中版本 Schema、策略覆盖、流程绑定、提交授权字段和请求/响应说明生成，使 `CapabilityCallGuideService` 降至 850 行并满足单类 1000 行目标。
+- [x] 提取应用树形页面 Projector，统一模型 TreeConfig、Page Zone 与 Builder 协议投影，使 `BusinessApplicationPageDesignService` 降至 874 行；后端生产类已无超过 1000 行的文件。
 - [ ] 完成业务流程服务级联调和运行配置真实页面验收。
 - [ ] 分阶段拆分动态 CRUD、设计态、发布、Flowable 任务/模型及业务动作/触发器；每阶段独立验证。

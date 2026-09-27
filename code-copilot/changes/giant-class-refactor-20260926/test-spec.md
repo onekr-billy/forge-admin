@@ -681,3 +681,12 @@
 - 验证：执行 capability-platform Reactor 编译，重跑新策略类和原调用指引服务定向测试，执行 `git diff --check` 和类行数检查；不启动真实服务。
 
 验证结果：Schema/策略解析、动作编码、流程/提交检查及请求示例投影已委托 `CapabilityCallContractPolicy`；新增 4 项测试覆盖非法 Schema、操作覆盖、流程提示、提交字段过滤与绑定版本不匹配。相关 2 个测试类共 11 项通过，0 失败、0 错误。capability-platform Reactor 编译与 `git diff --check` 通过；`CapabilityCallGuideService` 850 行，新 Policy 297 行。
+
+## 2026-09-27 第八十五轮增量验证：应用树形页面协议投影器
+
+- P0：`tree-list` / `tree-table` 的模型 `TreeConfig`、页面布局、表格区域属性和 Builder 区块属性保持一致，已有模型配置优先于 Builder，缺省字段继续按原规则补齐。
+- P0：非树形页面不得写入树配置；`tree-table` 禁止新增子节点并固定 `tree-crud`，`tree-list` 保持 `list-form` 和新增子节点能力。
+- P1：使用 Projector + Defaults Policy 集中三份树形页面协议；Service 保留页面保存事务、对象生命周期、表单保护、应用导航和 DDL 同步，新生产类少于 1000 行。
+- 验证：执行 generator Reactor 编译，重跑 Projector 与页面设计 Service 定向测试，执行 `git diff --check` 和后端生产类全量行数扫描；不启动真实服务。
+
+验证结果：树形模型、Page Zone 与 Builder 投影已委托 `BusinessApplicationTreePageProjector`；新增 3 项测试覆盖配置优先级、两种树页面和非树页面短路，连同原 Service 9 项共 12 项通过，0 失败、0 错误。generator Reactor 编译、`git diff --check` 与全量行数扫描通过；`BusinessApplicationPageDesignService` 874 行，新 Projector 238 行，后端生产类无超过 1000 行的文件。

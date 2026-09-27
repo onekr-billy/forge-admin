@@ -463,3 +463,9 @@
 - 使用 Policy + Contract Builder 从 `CapabilityCallGuideService` 迁出版本 Schema/调用策略解析、操作级覆盖、动作编码、请求/响应/业务说明、流程绑定检查、提交授权字段检查和请求示例字段投影。
 - Service 继续持有应用、版本、操作和凭证加载，OAuth/HMAC/User Assertion 示例及最终 Guide 编排；通过私有工厂保持原十四参数构造边界。入口由 1109 行降至 850 行，新 `CapabilityCallContractPolicy` 297 行，均低于 1000 行。
 - capability-platform Reactor 编译退出码 0；执行 `CapabilityCallContractPolicyTest,CapabilityCallGuideServiceTest` 共 2 类 11 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin 服务、未连接数据库或真实 OAuth/MCP 服务；真实发布版本策略、流程绑定漂移和外部凭证调用仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第八十五个切口：应用树形页面协议投影器
+
+- 使用 Projector + Defaults Policy 从 `BusinessApplicationPageDesignService` 迁出树形快捷页面的模型 `TreeConfig`、页面布局/表格区域和 Builder 区块三向投影，集中 `tree-list` 与 `tree-table` 的缺省值和行为差异。
+- Service 继续持有元数据事务、对象创建/复用、已有数据字段保护、表单资产同步、应用对象关联和事务后 DDL；原十三参数构造签名保持不变。入口由 1083 行降至 874 行，新 `BusinessApplicationTreePageProjector` 238 行，均低于 1000 行。
+- generator Reactor 编译退出码 0；执行 `BusinessApplicationTreePageProjectorTest,BusinessApplicationPageDesignServiceTest` 共 2 类 12 项，0 失败、0 错误；`git diff --check` 和后端生产类全量行数扫描通过，已无超过 1000 行的生产类。未启动 Admin 服务、未连接数据库或执行在线 DDL；真实树形数据、已有页面资产兼容和 DDL 提交后恢复仍需服务环境验收，无服务 PID 需停止。
