@@ -386,3 +386,12 @@
 - 验证：执行 generator Reactor 编译，重跑业务对象设计器/发布/数据库同步及运行布局相关测试，执行 `git diff --check` 和类行数检查；不启动真实服务。
 
 验证结果：视图 Schema 解析、默认组装、字段清洗和搜索/列表/详情区域投影已委托 `BusinessObjectViewSchemaProjector`；相关 14 个测试类共 70 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`BusinessObjectDesignerService` 3131 行，新 Projector 548 行。
+
+## 2026-09-27 第五十三轮增量验证：业务对象字段联动策略
+
+- P0：旧 linkageSchema 与表单 governance.fieldLinkages 的优先级、深复制和设置继承保持不变。
+- P0：字典、远程、组织和对象引用联动到字段 cascade/dict/reference 元数据的翻译规则保持不变，停用规则和旧托管元数据继续正确清理。
+- P1：使用 Policy + Translator 隔离兼容决策和运行时元数据翻译；Facade 保留调用时序，新生产类少于 1000 行。
+- 验证：执行 generator Reactor 编译，重跑业务对象设计器/发布/数据库同步及运行布局相关测试，执行 `git diff --check` 和类行数检查；不启动真实服务。
+
+验证结果：联动配置解析、治理规则合并和字段 cascade 翻译已委托 `BusinessObjectLinkagePolicy`；相关 14 个测试类共 70 项通过，0 失败、0 错误。generator Reactor 编译与 `git diff --check` 通过；`BusinessObjectDesignerService` 2979 行，新 Policy 232 行。

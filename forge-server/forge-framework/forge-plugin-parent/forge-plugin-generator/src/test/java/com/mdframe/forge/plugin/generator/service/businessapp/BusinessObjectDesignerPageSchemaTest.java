@@ -37,7 +37,7 @@ class BusinessObjectDesignerPageSchemaTest {
     @DisplayName("bridges legacy linkage rules through form governance")
     @SuppressWarnings("unchecked")
     void bridgesLegacyLinkageRulesThroughFormGovernance() throws Exception {
-        BusinessObjectDesignerService service = designerService();
+        BusinessObjectLinkagePolicy policy = new BusinessObjectLinkagePolicy(new ObjectMapper());
         FormDesignerSchemaDTO formSchema = new FormDesignerSchemaDTO();
         LinkageSchemaDTO legacy = new LinkageSchemaDTO();
         legacy.setSettings(Map.of("strict", true));
@@ -48,10 +48,7 @@ class BusinessObjectDesignerPageSchemaTest {
                 "targetField", "city"
         )));
 
-        Method hydrate = BusinessObjectDesignerService.class.getDeclaredMethod(
-                "hydrateFormFieldLinkages", FormDesignerSchemaDTO.class, LinkageSchemaDTO.class);
-        hydrate.setAccessible(true);
-        FormDesignerSchemaDTO hydrated = (FormDesignerSchemaDTO) hydrate.invoke(service, formSchema, legacy);
+        FormDesignerSchemaDTO hydrated = policy.hydrateFormFieldLinkages(formSchema, legacy);
         Map<String, Object> governance = (Map<String, Object>) hydrated.getSettings().get("governance");
         assertEquals(legacy.getRules(), governance.get("fieldLinkages"));
 
@@ -62,10 +59,7 @@ class BusinessObjectDesignerPageSchemaTest {
         configuredRule.put("targetField", "city");
         governance.put("fieldLinkages", List.of(configuredRule));
 
-        Method unify = BusinessObjectDesignerService.class.getDeclaredMethod(
-                "resolveUnifiedLinkageSchema", FormDesignerSchemaDTO.class, LinkageSchemaDTO.class);
-        unify.setAccessible(true);
-        LinkageSchemaDTO unified = (LinkageSchemaDTO) unify.invoke(service, hydrated, legacy);
+        LinkageSchemaDTO unified = policy.resolveUnifiedLinkageSchema(hydrated, legacy);
 
         assertEquals("application_rule", unified.getRules().get(0).get("ruleId"));
         assertEquals(Map.of("strict", true), unified.getSettings());

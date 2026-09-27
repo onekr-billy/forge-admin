@@ -52,5 +52,6 @@
 - [x] 提取业务对象表单 Schema Assembler，集中默认表单、旧 Page Schema 与 form-create 规则迁移，使 `BusinessObjectDesignerService` 降至 3908 行。
 - [x] 提取业务对象运行时表单 Projector，集中字段设置、嵌套布局、动态可见性与弹窗/抽屉协议，使 `BusinessObjectDesignerService` 降至 3471 行。
 - [x] 提取业务对象视图 Schema Projector，集中搜索/列表/详情默认组装、字段清洗和页面区域投影，使 `BusinessObjectDesignerService` 降至 3131 行。
+- [x] 提取业务对象字段联动 Policy/Translator，集中旧联动兼容、治理规则合并和 cascade 元数据翻译，使 `BusinessObjectDesignerService` 降至 2979 行。
 - [ ] 完成业务流程服务级联调和运行配置真实页面验收。
 - [ ] 分阶段拆分动态 CRUD、设计态、发布、Flowable 任务/模型及业务动作/触发器；每阶段独立验证。

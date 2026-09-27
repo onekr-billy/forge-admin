@@ -2520,87 +2520,28 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         return new BusinessObjectViewSchemaProjector(objectMapper, this::resolveFormComponentKey);
     }
     private LinkageSchemaDTO resolveLinkageSchema(Map<String, Object> designerOptions) {
-        if (designerOptions != null && designerOptions.containsKey(LINKAGE_SCHEMA_OPTION_KEY)) {
-            Object value = designerOptions.get(LINKAGE_SCHEMA_OPTION_KEY);
-            try {
-                if (value instanceof String text && StringUtils.isNotBlank(text)) {
-                    return objectMapper.readValue(text, LinkageSchemaDTO.class);
-                }
-                if (value != null) {
-                    return objectMapper.convertValue(value, LinkageSchemaDTO.class);
-                }
-            } catch (Exception ignored) {
-                return new LinkageSchemaDTO();
-            }
-        }
-        return new LinkageSchemaDTO();
+        return linkagePolicy().resolveLinkageSchema(designerOptions);
     }
 
-    private FormDesignerSchemaDTO hydrateFormFieldLinkages(FormDesignerSchemaDTO formSchema,
-                                                            LinkageSchemaDTO legacyLinkageSchema) {
-        if (formSchema == null || hasFormFieldLinkages(formSchema)
-                || legacyLinkageSchema == null || legacyLinkageSchema.getRules() == null
-                || legacyLinkageSchema.getRules().isEmpty()) {
-            return formSchema;
-        }
-        Map<String, Object> settings = new LinkedHashMap<>(formSchema.getSettings() == null
-                ? Map.of()
-                : formSchema.getSettings());
-        Map<String, Object> governance = resolveGovernanceSettings(settings);
-        governance.put("fieldLinkages", copyLinkageRules(legacyLinkageSchema.getRules()));
-        settings.put("governance", governance);
-        formSchema.setSettings(settings);
-        return formSchema;
+    private FormDesignerSchemaDTO hydrateFormFieldLinkages(
+            FormDesignerSchemaDTO formSchema,
+            LinkageSchemaDTO legacyLinkageSchema) {
+        return linkagePolicy().hydrateFormFieldLinkages(formSchema, legacyLinkageSchema);
     }
 
-    private LinkageSchemaDTO resolveUnifiedLinkageSchema(FormDesignerSchemaDTO formSchema,
-                                                          LinkageSchemaDTO legacyLinkageSchema) {
-        if (!hasFormFieldLinkages(formSchema)) {
-            return legacyLinkageSchema;
-        }
-        Map<String, Object> governance = resolveGovernanceSettings(formSchema.getSettings());
-        Object configuredRules = governance.get("fieldLinkages");
-        LinkageSchemaDTO unified = new LinkageSchemaDTO();
-        if (legacyLinkageSchema != null) {
-            unified.setSchemaVersion(StringUtils.defaultIfBlank(
-                    legacyLinkageSchema.getSchemaVersion(), unified.getSchemaVersion()));
-            unified.setSettings(new LinkedHashMap<>(legacyLinkageSchema.getSettings() == null
-                    ? Map.of()
-                    : legacyLinkageSchema.getSettings()));
-        }
-        if (configuredRules instanceof List<?> rules) {
-            unified.setRules(objectMapper.convertValue(rules,
-                    new TypeReference<List<Map<String, Object>>>() { }));
-        }
-        return unified;
+    private LinkageSchemaDTO resolveUnifiedLinkageSchema(
+            FormDesignerSchemaDTO formSchema,
+            LinkageSchemaDTO legacyLinkageSchema) {
+        return linkagePolicy().resolveUnifiedLinkageSchema(formSchema, legacyLinkageSchema);
+    }
+
+    private BusinessObjectLinkagePolicy linkagePolicy() {
+        return new BusinessObjectLinkagePolicy(objectMapper);
     }
 
     private boolean hasFormFieldLinkages(FormDesignerSchemaDTO formSchema) {
-        if (formSchema == null || formSchema.getSettings() == null) {
-            return false;
-        }
-        Map<String, Object> governance = resolveGovernanceSettings(formSchema.getSettings());
-        return governance.containsKey("fieldLinkages")
-                && governance.get("fieldLinkages") instanceof List<?>;
+        return linkagePolicy().hasFormFieldLinkages(formSchema);
     }
-
-    private Map<String, Object> resolveGovernanceSettings(Map<String, Object> settings) {
-        if (settings == null) {
-            return new LinkedHashMap<>();
-        }
-        Object governance = settings.get("governance");
-        if (governance instanceof Map<?, ?> map) {
-            Map<String, Object> result = new LinkedHashMap<>();
-            map.forEach((key, value) -> result.put(String.valueOf(key), value));
-            return result;
-        }
-        return new LinkedHashMap<>();
-    }
-
-    private List<Map<String, Object>> copyLinkageRules(List<Map<String, Object>> rules) {
-        return objectMapper.convertValue(rules, new TypeReference<List<Map<String, Object>>>() { });
-    }
-
     private boolean hasDesignerOption(Map<String, Object> designerOptions, String key) {
         if (designerOptions == null || !designerOptions.containsKey(key)) {
             return false;
@@ -2628,104 +2569,11 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
             ViewSchemaDTO viewSchema) {
         viewSchemaProjector().applyViewSchemaToPageZones(pageSchema, modelSchema, viewSchema);
     }
-    private void applyLinkageSchemaToModel(LowcodeModelSchema modelSchema, LinkageSchemaDTO linkageSchema) {
-        if (modelSchema == null || modelSchema.getFields() == null || linkageSchema == null) {
-            return;
-        }
-        Map<String, Map<String, Object>> rulesByTarget = new LinkedHashMap<>();
-        if (linkageSchema.getRules() != null) {
-            for (Map<String, Object> rule : linkageSchema.getRules()) {
-                if (rule == null || isFalse(rule.get("enabled"))) {
-                    continue;
-                }
-                String targetField = text(rule.get("targetField"));
-                if (StringUtils.isNotBlank(targetField) && !rulesByTarget.containsKey(targetField)) {
-                    rulesByTarget.put(targetField, rule);
-                }
-            }
-        }
-        for (LowcodeFieldSchema field : modelSchema.getFields()) {
-            if (field == null || StringUtils.isBlank(field.getField())) {
-                continue;
-            }
-            Map<String, Object> basicProps = field.getBasicProps() == null
-                    ? new LinkedHashMap<>()
-                    : new LinkedHashMap<>(field.getBasicProps());
-            Map<String, Object> rule = rulesByTarget.get(field.getField());
-            if (rule == null) {
-                Map<String, Object> cascade = mapValue(basicProps.get("cascade"));
-                if (LINKAGE_SCHEMA_MANAGED_BY.equals(text(cascade.get("managedBy")))) {
-                    basicProps.remove("cascade");
-                }
-                field.setBasicProps(basicProps);
-                continue;
-            }
-            Map<String, Object> dictConfig = mapValue(rule.get("dictConfig"));
-            Map<String, Object> objectConfig = mapValue(rule.get("objectConfig"));
-            String targetDictType = text(dictConfig.get("targetDictType"));
-            if (StringUtils.isNotBlank(targetDictType)) {
-                field.setDictType(targetDictType);
-            }
-            String targetObjectCode = text(objectConfig.get("targetObjectCode"));
-            if (StringUtils.isNotBlank(targetObjectCode)) {
-                field.setReferenceObjectCode(targetObjectCode);
-            }
-            String displayField = text(objectConfig.get("displayField"));
-            if (StringUtils.isNotBlank(displayField)) {
-                field.setReferenceDisplayField(displayField);
-            }
-            basicProps.put("cascade", buildCascadeFromLinkageRule(rule, field));
-            field.setBasicProps(basicProps);
-        }
+    private void applyLinkageSchemaToModel(
+            LowcodeModelSchema modelSchema,
+            LinkageSchemaDTO linkageSchema) {
+        linkagePolicy().applyLinkageSchemaToModel(modelSchema, linkageSchema);
     }
-
-    private Map<String, Object> buildCascadeFromLinkageRule(Map<String, Object> rule, LowcodeFieldSchema targetField) {
-        String type = StringUtils.defaultIfBlank(text(rule.get("type")), text(rule.get("matchMode")));
-        String dataSourceType = StringUtils.defaultIfBlank(text(rule.get("dataSourceType")), resolveLinkageDataSourceType(type));
-        Map<String, Object> dictConfig = mapValue(rule.get("dictConfig"));
-        Map<String, Object> remoteConfig = mapValue(rule.get("remoteConfig"));
-        Map<String, Object> objectConfig = mapValue(rule.get("objectConfig"));
-        Map<String, Object> orgConfig = mapValue(rule.get("orgConfig"));
-        String mode = "dict".equals(dataSourceType) ? StringUtils.defaultIfBlank(text(rule.get("matchMode")), type) : "remoteParam";
-        Map<String, Object> cascade = new LinkedHashMap<>();
-        cascade.put("enabled", !isFalse(rule.get("enabled")));
-        cascade.put("managedBy", LINKAGE_SCHEMA_MANAGED_BY);
-        cascade.put("ruleId", text(rule.get("ruleId")));
-        cascade.put("sourceField", text(rule.get("sourceField")));
-        cascade.put("sourceDictType", text(dictConfig.get("sourceDictType")));
-        cascade.put("targetDictType", StringUtils.defaultIfBlank(text(dictConfig.get("targetDictType")),
-                targetField == null ? null : targetField.getDictType()));
-        cascade.put("linkedDictType", StringUtils.firstNonBlank(text(dictConfig.get("linkedDictType")),
-                text(dictConfig.get("sourceDictType"))));
-        cascade.put("mode", mode);
-        cascade.put("matchMode", mode);
-        cascade.put("paramName", StringUtils.firstNonBlank(text(remoteConfig.get("paramName")),
-                text(orgConfig.get("paramName")), text(rule.get("sourceField"))));
-        cascade.put("emptyStrategy", StringUtils.defaultIfBlank(text(rule.get("emptyStrategy")), "empty"));
-        cascade.put("clearOnParentChange", !isFalse(rule.get("clearOnSourceChange")));
-        cascade.put("clearOnSourceChange", !isFalse(rule.get("clearOnSourceChange")));
-        putIfNotBlank(cascade, "url", text(remoteConfig.get("url")));
-        putIfNotBlank(cascade, "method", text(remoteConfig.get("method")));
-        putIfNotBlank(cascade, "targetObjectCode", StringUtils.defaultIfBlank(text(objectConfig.get("targetObjectCode")),
-                targetField == null ? null : targetField.getReferenceObjectCode()));
-        putIfNotBlank(cascade, "displayField", StringUtils.defaultIfBlank(text(objectConfig.get("displayField")),
-                targetField == null ? null : targetField.getReferenceDisplayField()));
-        return cascade;
-    }
-
-    private String resolveLinkageDataSourceType(String type) {
-        if ("parentDictCode".equals(type) || "linkedDict".equals(type)) {
-            return "dict";
-        }
-        if ("orgScope".equals(type)) {
-            return "org";
-        }
-        if ("objectReference".equals(type)) {
-            return "object";
-        }
-        return "remote";
-    }
-
     private LowcodePageZone findOrCreateZone(LowcodePageSchema pageSchema, String zoneKey, String componentKey) {
         if (pageSchema.getZones() == null) {
             pageSchema.setZones(new ArrayList<>());

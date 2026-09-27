@@ -270,3 +270,9 @@
 - 使用 Projector 从 `BusinessObjectDesignerService` 迁出搜索、列表、详情视图的默认组装、字段引用清洗、区域属性投影和列表网格查询字段同步。子表 `modelCode__field` 引用仍纳入页面字段目录，避免发布时被主模型清洗误删。
 - 入口由 3471 行降至 3131 行，新 `BusinessObjectViewSchemaProjector` 548 行；组件类型解析通过窄函数复用表单 Assembler。旧反射测试改为直接验证 Projector，未保留测试专用 Facade 方法。generator Reactor 编译退出码 0。
 - 执行 `BusinessObject*Test,BusinessApplicationDraftPreviewContractTest,RuntimeDesignerLayoutReaderTest` 共 14 类 70 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实多子表列表、复杂查询区和详情分组仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第五十三个切口：业务对象字段联动策略
+
+- 使用 Policy + Translator 从 `BusinessObjectDesignerService` 迁出旧 linkageSchema 解析、表单治理规则桥接、统一联动快照构造，以及字典/远程/组织/对象引用规则到字段 cascade 元数据的翻译。
+- 入口由 3131 行降至 2979 行，新 `BusinessObjectLinkagePolicy` 232 行；旧反射测试改为直接验证 Policy。首次编译发现保存入口仍使用联动存在性判断，补为 Facade 窄委托后编译通过。
+- 执行 `BusinessObject*Test,BusinessApplicationDraftPreviewContractTest,RuntimeDesignerLayoutReaderTest` 共 14 类 70 项，0 失败、0 错误；`git diff --check` 通过。未启动 Admin/Flow 服务、未连接真实数据库；真实多级字典、远程接口和对象引用联动仍需服务环境验收，无服务 PID 需停止。
