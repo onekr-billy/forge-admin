@@ -421,3 +421,9 @@
 - 使用 Strategy 从 `LowcodeAiGenerateService` 迁出领域/对象候选目录、关键词推断、已有领域复用、禁用领域冲突后缀、单领域偏好、表名前缀和代码/表名归一；使用 Catalog/Factory 迁出对象字段模板、敏感类型、查询属性、字段工厂和页面区域工厂。
 - 保留原 Service 的六参数 Spring 构造边界，规划器与目录由私有工厂延迟创建；AI 调用、流式进度、结果归一、模型/页面组装和运行时验证仍由入口编排。入口由 1450 行降至 917 行，新 Strategy 452 行、Catalog 187 行，均低于 1000 行。
 - generator Reactor 干净编译退出码 0；规划策略、字段目录、编排入口、运行时配置和 Schema 校验相关 6 类 40 项通过，0 失败、0 错误；首次编译暴露页面区域与树父字段仍调用旧本地工厂，改为显式委托 Catalog 后编译通过。`git diff --check` 通过。未调用真实 AI、未启动 Admin 服务、未连接真实数据库；真实模型供应商流式响应和多领域复杂提示仍需服务环境验收，无服务 PID 需停止。
+
+## 2026-09-27 第七十八个切口：Velocity 注解上下文与关联元数据规划
+
+- 使用 Builder 从 `VelocityCodegenStrategy` 迁出字典、API 加解密和脱敏配置解析及列元数据回写；使用 Planner 迁出关联表列投影、主子表配置/页面关系双来源合并、主外键解析、树元数据和注入依赖去重。
+- 保留 Strategy 的公开 `RelatedTableMeta` / `TreeCodegenMeta` 类型、模板渲染、文件输出和所有权清单边界；Planner 经包内窄支持方法复用字段类型与命名规则。入口由 1401 行降至 993 行，新 Builder 151 行、Planner 387 行，均低于 1000 行。
+- generator Reactor 干净编译退出码 0；执行 `VelocityAnnotationContextBuilderTest,VelocityRelatedTablePlannerTest,BusinessApplicationCodegenContractTest,PrintCodegenContributorTest,LowcodeCodegenOptionUtilsTest` 共 5 类 26 项，0 失败、0 错误；源码契约同步改为在 Planner 校验页面关系兜底职责。`git diff --check` 通过。未启动 Admin 服务、未连接真实数据库；真实多层主子关系、大型模板包和多贡献器冲突仍需服务环境验收，无服务 PID 需停止。

@@ -535,6 +535,15 @@
 
 验证结果：领域/对象推断和命名策略已委托 `LowcodeAiDomainPlanningStrategy`，字段映射与字段/区域工厂已委托 `LowcodeAiFieldTemplateCatalog`；新增 7 项测试覆盖单领域合并、领域冲突、表名前缀、字段协议和规则回退端到端连接。相关 6 个测试类共 40 项通过，0 失败、0 错误；generator Reactor 干净编译与 `git diff --check` 通过。`LowcodeAiGenerateService` 917 行，新 Strategy 452 行、Catalog 187 行。
 
+## 2026-09-27 第七十八轮增量验证：Velocity 注解上下文与关联元数据规划
+
+- P0：字典、API 加解密、脱敏字段的上下文标志和列元数据回写保持不变，`NONE` 仍不生成无效脱敏注解。
+- P0：关联模型列投影、主子表配置/页面关系兜底、主外键列解析、独立树数据源和依赖注入去重保持不变。
+- P1：使用 Context Builder 隔离安全注解上下文，使用 Planner 隔离关联表/主子表/树元数据；模板渲染、文件所有权和公开元数据类型继续由 Strategy 提供，新生产类少于 1000 行。
+- 验证：执行 generator Reactor 干净编译，重跑 Builder、Planner、业务代码包、打印贡献器和输出选项测试，执行 `git diff --check` 与类行数检查；不启动真实服务。
+
+验证结果：安全注解配置已委托 `VelocityAnnotationContextBuilder`，关联表/主子表/树规划已委托 `VelocityRelatedTablePlanner`；新增 4 项测试覆盖安全标志、空脱敏、页面关系兜底和树源去重。相关 5 个测试类共 26 项通过，0 失败、0 错误；generator Reactor 干净编译与 `git diff --check` 通过。`VelocityCodegenStrategy` 993 行，新 Builder 151 行、Planner 387 行。
+
 ## 2026-09-27 第五十六轮增量验证：历史页面协议适配器
 
 - P0：旧 searchSchema/editSchema/columnsSchema 的字段引用、控件、字典、校验、列宽、排序、固定列和渲染配置迁移保持不变。
