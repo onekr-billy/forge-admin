@@ -24,7 +24,6 @@ import com.mdframe.forge.plugin.data.support.DbDialect;
 import com.mdframe.forge.plugin.data.support.DbDialectFactory;
 import com.mdframe.forge.plugin.data.support.JdbcDataSourceProvider;
 import com.mdframe.forge.plugin.data.support.SqlParameterBinder;
-import com.mdframe.forge.starter.core.enums.EnableStatus;
 import com.mdframe.forge.plugin.data.support.SqlSafetyValidator;
 import com.mdframe.forge.plugin.data.vo.DataConnectionFieldVO;
 import com.mdframe.forge.plugin.data.vo.DataDatasetDetailVO;
@@ -33,6 +32,7 @@ import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.annotation.log.OperationLog;
 import com.mdframe.forge.starter.core.domain.RespInfo;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
@@ -40,12 +40,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -104,7 +108,8 @@ public class DataDatasetController {
     }
 
     @PostMapping
-    @OperationLog(module = "数据资产", desc = "新增数据集：{{#dto.datasetName}}")
+    @OperationLog(module = "数据资产", desc = "新增数据集：{{#dto.datasetName}}",
+            saveRequestParams = false, saveResponseResult = false)
     public RespInfo<Void> add(@Validated @RequestBody DataDatasetSaveDTO dto) {
         validateDatasetDefinition(dto.getDatasetCode(), dto.getDatasetName(), dto.getConnectionId(), dto.getCategoryId(),
             dto.getDatasetType(), dto.getTableName(), dto.getSqlText(), dto.getParamSchemaJson());
@@ -124,7 +129,8 @@ public class DataDatasetController {
     }
 
     @PutMapping
-    @OperationLog(module = "数据资产", desc = "修改数据集：{{#dto.datasetName}}")
+    @OperationLog(module = "数据资产", desc = "修改数据集：{{#dto.datasetName}}",
+            saveRequestParams = false, saveResponseResult = false)
     public RespInfo<Void> edit(@Validated @RequestBody DataDatasetSaveDTO dto) {
         if (dto.getId() == null) {
             throw new BusinessException("数据集ID不能为空");
@@ -221,18 +227,23 @@ public class DataDatasetController {
     }
 
     @PostMapping("/{id}/preview")
-    @OperationLog(module = "数据资产", desc = "预览数据集")
+    @OperationLog(module = "数据资产", desc = "预览数据集",
+            saveRequestParams = false, saveResponseResult = false)
     public RespInfo<Map<String, Object>> preview(@PathVariable Long id, @RequestBody DataDatasetPreviewDTO dto) {
         DataDataset dataset = requireDataset(id);
         datasetAccessService.requireAccess(dataset, DataDatasetAccessLevelEnum.QUERY);
         ensureDatasetUsable(dataset);
         DataConnection connection = requireEnabledConnection(dataset.getConnectionId());
-        return RespInfo.success(executePreview(dataset, connection, dto));
+        Map<String, Object> result = executePreview(dataset, connection, dto);
+        auditPreview("SAVED_DATASET", dataset, connection, dto == null ? 0 : sizeOf(dto.getParams()),
+                result, null);
+        return RespInfo.success(result);
     }
 
     @PostMapping("/preview-sql")
     @SaCheckPermission("data:dataset:preview-sql")
-    @OperationLog(module = "数据资产", desc = "预览SQL数据集")
+    @OperationLog(module = "数据资产", desc = "预览SQL数据集",
+            saveRequestParams = false, saveResponseResult = false)
     public RespInfo<Map<String, Object>> previewSql(@RequestBody DataDatasetSaveDTO dto) {
         if (dto.getConnectionId() == null) {
             throw new BusinessException("数据连接不能为空");
@@ -250,8 +261,14 @@ public class DataDatasetController {
         dataset.setConnectionId(dto.getConnectionId());
         dataset.setDatasetType("SQL");
         dataset.setSqlText(dto.getSqlText());
-        Map<String, Object> result = executePreviewSqlOrThrow(dataset, connection, 10);
-        return RespInfo.success(result);
+        try {
+            Map<String, Object> result = executePreviewSqlOrThrow(dataset, connection, 10);
+            auditPreview("AD_HOC_SQL", dataset, connection, 0, result, null);
+            return RespInfo.success(result);
+        } catch (RuntimeException exception) {
+            auditPreview("AD_HOC_SQL", dataset, connection, 0, null, exception);
+            throw exception;
+        }
     }
 
     private DataDataset requireDataset(Long id) {
@@ -502,7 +519,7 @@ public class DataDatasetController {
                 conn.close();
             }
         } catch (Exception e) {
-            log.warn("Query fields failed: {}", e.getMessage());
+            log.warn("查询数据字段失败，errorType={}", e.getClass().getSimpleName());
         }
         return fields;
     }
@@ -548,7 +565,8 @@ public class DataDatasetController {
                 conn.close();
             }
         } catch (Exception e) {
-            log.warn("Preview table failed: {}", e.getMessage());
+            log.warn("数据表预览失败，datasetId={}, errorType={}",
+                    dataset.getId(), e.getClass().getSimpleName());
         }
         result.put("columns", columns);
         result.put("rows", rows);
@@ -563,7 +581,8 @@ public class DataDatasetController {
         try {
             return executePreviewSqlOrThrow(dataset, connection, maxRows);
         } catch (Exception e) {
-            log.warn("Preview SQL failed: {}", e.getMessage());
+            log.warn("SQL预览失败，datasetId={}, sqlDigest={}, errorType={}",
+                    dataset.getId(), sqlDigest(dataset.getSqlText()), e.getClass().getSimpleName());
         }
         result.put("columns", columns);
         result.put("rows", rows);
@@ -612,13 +631,47 @@ public class DataDatasetController {
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
-            log.warn("Preview SQL failed: {}", e.getMessage());
-            throw new BusinessException("SQL预览失败：" + e.getMessage());
+            log.warn("SQL预览失败，datasetId={}, sqlDigest={}, errorType={}",
+                    dataset.getId(), sqlDigest(dataset.getSqlText()), e.getClass().getSimpleName());
+            throw new BusinessException("SQL预览失败，请检查连接、语句和超时配置");
         }
         result.put("columns", columns);
         result.put("rows", rows);
         result.put("total", rows.size());
         return result;
+    }
+
+    private void auditPreview(String mode, DataDataset dataset, DataConnection connection, int parameterCount,
+                              Map<String, Object> result, RuntimeException exception) {
+        log.info("数据集预览审计，mode={}, tenantId={}, operatorId={}, datasetId={}, connectionId={}, "
+                        + "datasetType={}, parameterCount={}, rowCount={}, sqlDigest={}, result={}, errorType={}",
+                mode, SessionHelper.getTenantId(), SessionHelper.getUserId(), dataset.getId(), connection.getId(),
+                dataset.getDatasetType(), parameterCount, rowCount(result),
+                "SQL".equals(dataset.getDatasetType()) ? sqlDigest(dataset.getSqlText()) : null,
+                exception == null ? "SUCCESS" : "FAILED",
+                exception == null ? null : exception.getClass().getSimpleName());
+    }
+
+    private int sizeOf(Map<String, Object> params) {
+        return params == null ? 0 : params.size();
+    }
+
+    private int rowCount(Map<String, Object> result) {
+        if (result == null) {
+            return 0;
+        }
+        Object rows = result.get("rows");
+        return rows instanceof List<?> list ? list.size() : 0;
+    }
+
+    private String sqlDigest(String sql) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest((sql == null ? "" : sql).getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("JVM 不支持 SHA-256", exception);
+        }
     }
 
     private String mapDataType(String dbType) {

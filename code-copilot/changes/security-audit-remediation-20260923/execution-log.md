@@ -1,5 +1,24 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：A-07 数据连接与 SQL 预览审计脱敏
+
+### 实现
+
+- 为数据集运行查询、已保存数据集预览、临时 SQL 预览、数据连接新增/修改/已保存测试/临时测试显式配置元数据审计，禁止 `OperationLog` 持久化请求体和响应数据。
+- 数据连接测试日志移除 JDBC URL、用户名、密码和异常消息/堆栈，只保留租户、操作者、保存/临时范围、连接标识、结果和异常类型。
+- 数据集预览日志只保留数据集/连接标识、类型、参数数量、返回行数、SQL SHA-256 摘要、结果和异常类型；不记录 SQL、参数值或预览数据。
+- JDBC 异常返回改为固定诊断文案，避免驱动消息将密码、连接串或 SQL 反射到 API 响应及操作日志错误字段。
+
+### 验证
+
+- `DataConnectionControllerSecurityTest` 2、`DataDatasetControllerSecurityTest` 4、`DataQueryExecutorTest` 4：共 10/10 通过。
+- 测试验证敏感端点的请求/响应不进入操作日志，且包含 `password=super-secret` 和完整 SQL 的伪造 JDBC 错误不返回原文。
+- data 模块及 19 个依赖模块编译成功；Admin 聚合反应堆 46/46 编译成功；`git diff --check` 通过。
+
+### 未覆盖
+
+- 未连接真实 MySQL/外部数据源，未验证各 JDBC 驱动的所有错误文案；代码不再记录或返回驱动异常原文，因此默认 fail-closed。
+
 ## 2026-09-28：A-02 外部响应转换收敛为白名单字段映射
 
 ### 实现

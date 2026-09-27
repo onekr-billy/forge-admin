@@ -14,11 +14,12 @@ import com.mdframe.forge.plugin.data.vo.DataConnectionFieldVO;
 import com.mdframe.forge.plugin.data.vo.DataConnectionTableVO;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
+import com.mdframe.forge.starter.core.annotation.log.OperationLog;
 import com.mdframe.forge.starter.core.domain.RespInfo;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.LoginUser;
 import com.mdframe.forge.starter.core.session.SessionHelper;
-import com.mdframe.forge.starter.core.annotation.log.OperationLog;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.validation.annotation.Validated;
@@ -30,7 +31,6 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
-import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 @Slf4j
 @RestController
@@ -74,7 +74,8 @@ public class DataConnectionController {
     }
 
     @PostMapping
-    @OperationLog(module = "数据资产", desc = "新增数据连接：{{#dto.connectionName}}")
+    @OperationLog(module = "数据资产", desc = "新增数据连接：{{#dto.connectionName}}",
+            saveRequestParams = false, saveResponseResult = false)
     public RespInfo<Void> add(@Validated @RequestBody DataConnectionSaveDTO dto) {
         validateConnection(dto);
         connectionService.saveConnection(dto);
@@ -82,7 +83,8 @@ public class DataConnectionController {
     }
 
     @PutMapping
-    @OperationLog(module = "数据资产", desc = "修改数据连接：{{#dto.connectionName}}")
+    @OperationLog(module = "数据资产", desc = "修改数据连接：{{#dto.connectionName}}",
+            saveRequestParams = false, saveResponseResult = false)
     public RespInfo<Void> edit(@Validated @RequestBody DataConnectionSaveDTO dto) {
         if (dto.getId() == null) {
             throw new BusinessException("数据连接ID不能为空");
@@ -105,7 +107,8 @@ public class DataConnectionController {
     }
 
     @PostMapping("/{id}/test")
-    @OperationLog(module = "数据资产", desc = "测试数据连接")
+    @OperationLog(module = "数据资产", desc = "测试数据连接",
+            saveRequestParams = false, saveResponseResult = false)
     public RespInfo<Boolean> testSaved(@PathVariable Long id) {
         DataConnection connection = connectionService.getById(id);
         if (connection == null) {
@@ -120,6 +123,8 @@ public class DataConnectionController {
 
     @PostMapping("/test")
     @SaCheckPermission("data:connection:test-temp")
+    @OperationLog(module = "数据资产", desc = "测试临时数据连接",
+            saveRequestParams = false, saveResponseResult = false)
     public RespInfo<Boolean> testTemp(@RequestBody DataConnectionTestDTO dto) {
         LoginUser loginUser = SessionHelper.getLoginUser();
         if (loginUser == null || !loginUser.isAdmin()) {
@@ -224,17 +229,13 @@ public class DataConnectionController {
     private boolean doTestConnection(DataConnection connection) {
         try (Connection conn = dataSourceProvider.getConnection(connection);
              PreparedStatement ps = conn.prepareStatement("SELECT 1")) {
-            log.info("Testing saved connection id={}, dbType={}, url={}, username={}", 
-                    connection.getId(), connection.getDbType(), 
-                    maskJdbcUrl(connection.getJdbcUrl()), connection.getUsername());
             ps.setQueryTimeout(connectionSecurityPolicy.queryTimeoutSeconds());
             try (ResultSet ignored = ps.executeQuery()) {
-                log.info("Connection test success for id={}", connection.getId());
+                auditConnectionTest("SAVED", connection.getId(), true, null);
                 return true;
             }
         } catch (Exception e) {
-            log.error("Test saved connection failed for id={}: {}", 
-                    connection.getId(), e.getMessage(), e);
+            auditConnectionTest("SAVED", connection.getId(), false, e);
             return false;
         }
     }
@@ -247,11 +248,12 @@ public class DataConnectionController {
                  PreparedStatement ps = conn.prepareStatement("SELECT 1")) {
                 ps.setQueryTimeout(connectionSecurityPolicy.queryTimeoutSeconds());
                 try (ResultSet ignored = ps.executeQuery()) {
+                    auditConnectionTest("TEMP", null, true, null);
                     return true;
                 }
             }
         } catch (Exception e) {
-            log.warn("Test temp connection failed: {}", e.getMessage());
+            auditConnectionTest("TEMP", null, false, e);
             return false;
         } finally {
             if (ds instanceof com.zaxxer.hikari.HikariDataSource) {
@@ -294,7 +296,8 @@ public class DataConnectionController {
                 conn.close();
             }
         } catch (Exception e) {
-            log.warn("Query tables failed for connection id={}: {}", connection.getId(), e.getMessage());
+            log.warn("查询数据表失败，connectionId={}, errorType={}",
+                    connection.getId(), e.getClass().getSimpleName());
         }
         return tables;
     }
@@ -331,9 +334,16 @@ public class DataConnectionController {
                 conn.close();
             }
         } catch (Exception e) {
-            log.warn("Query fields failed for connection id={}, table={}: {}", connection.getId(), tableName, e.getMessage());
+            log.warn("查询数据字段失败，connectionId={}, errorType={}",
+                    connection.getId(), e.getClass().getSimpleName());
         }
         return fields;
+    }
+
+    private void auditConnectionTest(String scope, Long connectionId, boolean success, Exception exception) {
+        log.info("数据连接测试审计，scope={}, tenantId={}, operatorId={}, connectionId={}, result={}, errorType={}",
+                scope, SessionHelper.getTenantId(), SessionHelper.getUserId(), connectionId,
+                success ? "SUCCESS" : "FAILED", exception == null ? null : exception.getClass().getSimpleName());
     }
 
     private String extractSchemaFromUrl(String jdbcUrl) {

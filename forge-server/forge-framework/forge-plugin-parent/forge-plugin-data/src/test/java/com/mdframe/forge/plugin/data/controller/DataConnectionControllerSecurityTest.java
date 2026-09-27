@@ -1,11 +1,13 @@
 package com.mdframe.forge.plugin.data.controller;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.mdframe.forge.plugin.data.dto.DataConnectionSaveDTO;
 import com.mdframe.forge.plugin.data.dto.DataConnectionTestDTO;
 import com.mdframe.forge.plugin.data.service.DataConnectionService;
 import com.mdframe.forge.plugin.data.support.DbDialectFactory;
 import com.mdframe.forge.plugin.data.support.JdbcConnectionSecurityPolicy;
 import com.mdframe.forge.plugin.data.support.JdbcDataSourceProvider;
+import com.mdframe.forge.starter.core.annotation.log.OperationLog;
 import com.mdframe.forge.starter.core.context.ExecutionIdentity;
 import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.exception.BusinessException;
@@ -49,5 +51,20 @@ class DataConnectionControllerSecurityTest {
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("平台管理员");
         }
+    }
+
+    @Test
+    void sensitiveConnectionOperationsMustNotPersistRequestsOrResponses() throws Exception {
+        assertMetadataOnlyAudit(DataConnectionController.class.getMethod("add", DataConnectionSaveDTO.class));
+        assertMetadataOnlyAudit(DataConnectionController.class.getMethod("edit", DataConnectionSaveDTO.class));
+        assertMetadataOnlyAudit(DataConnectionController.class.getMethod("testSaved", Long.class));
+        assertMetadataOnlyAudit(DataConnectionController.class.getMethod("testTemp", DataConnectionTestDTO.class));
+    }
+
+    private void assertMetadataOnlyAudit(java.lang.reflect.Method method) {
+        OperationLog annotation = method.getAnnotation(OperationLog.class);
+        assertThat(annotation).as(method.toGenericString()).isNotNull();
+        assertThat(annotation.saveRequestParams()).isFalse();
+        assertThat(annotation.saveResponseResult()).isFalse();
     }
 }

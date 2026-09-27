@@ -51,6 +51,13 @@
 - 实际结果：`JsonPathAdapterTest`、`ExternalApiControllerTransformValidationTest`、`ExternalControllerPermissionContractTest`、`ExternalProxyServiceImplTest` 共 10/10 通过；Admin 聚合编译 46/46 成功。
 - 前端结果：`manage.vue` 新增部分 ESLint 通过（保留存量 template ref 规则例外），Vite 生产构建成功；只有仓库已有 CSS 注释和动态导入告警。
 
+## 1.5 2026-09-28 数据连接与 SQL 预览审计脱敏验证
+
+- `DataDatasetRuntimeController.query`、已保存数据集预览、临时 SQL 预览、数据连接新增/修改/测试必须显式配置 `OperationLog` 不保存请求参数和响应结果。
+- 运行查询日志只记录 datasetId、类型、分页、字段数、参数键和 SQL SHA-256 摘要；预览日志只记录操作者/租户、数据集/连接标识、参数数量、行数、SQL 摘要、结果和异常类型。
+- 连接与预览失败不得记录 JDBC URL、用户名、密码、完整 SQL 或 JDBC 异常消息；返回客户端的错误也使用固定诊断文案。
+- 实际结果：`DataConnectionControllerSecurityTest`、`DataDatasetControllerSecurityTest`、`DataQueryExecutorTest` 共 10/10 通过，包含携带伪造密码和 SQL 的 JDBC 异常不返回原文用例；Admin 聚合编译 46/46 成功。
+
 ## 2. P0 必跑验证
 
 ### 动态脚本与 HTML

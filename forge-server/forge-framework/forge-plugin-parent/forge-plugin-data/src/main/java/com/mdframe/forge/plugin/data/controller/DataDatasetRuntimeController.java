@@ -6,6 +6,7 @@ import com.mdframe.forge.plugin.data.vo.DataDatasetMetadataVO;
 import com.mdframe.forge.plugin.data.vo.DataDatasetQueryResultVO;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
+import com.mdframe.forge.starter.core.annotation.log.OperationLog;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -20,6 +21,8 @@ public class DataDatasetRuntimeController {
     private final DataDatasetRuntimeService runtimeService;
 
     @PostMapping("/query")
+    @OperationLog(module = "数据资产", desc = "运行数据集查询",
+            saveRequestParams = false, saveResponseResult = false)
     public RespInfo<DataDatasetQueryResultVO> query(@RequestBody DataDatasetQueryDTO dto) {
         return RespInfo.success(runtimeService.query(dto));
     }
