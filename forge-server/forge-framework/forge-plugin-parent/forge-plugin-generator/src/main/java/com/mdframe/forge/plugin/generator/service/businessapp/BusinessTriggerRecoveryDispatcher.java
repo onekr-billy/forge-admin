@@ -5,6 +5,7 @@ import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -21,23 +22,19 @@ import java.util.UUID;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(prefix = "forge.business.trigger-recovery", name = "enabled",
+        havingValue = "true", matchIfMissing = true)
 public class BusinessTriggerRecoveryDispatcher {
 
     private final BusinessTriggerService triggerService;
     private final BusinessTriggerExecutor triggerExecutor;
     private final String workerId = UUID.randomUUID().toString();
 
-    @Value("${forge.business.trigger-recovery.enabled:true}")
-    private boolean enabled = true;
-
     @Value("${forge.business.trigger-recovery.batch-size:100}")
     private int batchSize = 100;
 
-    @Scheduled(fixedDelayString = "${forge.business.trigger-recovery.scan-interval-ms:30000}")
+    @Scheduled(fixedDelayString = "${forge.business.trigger-recovery.scan-interval-ms:60000}")
     public void recoverPendingExecutions() {
-        if (!enabled) {
-            return;
-        }
         List<AiBusinessTriggerLog> candidates = triggerService.findRecoveryCandidates(
                 LocalDateTime.now(), Math.max(1, batchSize));
         for (AiBusinessTriggerLog candidate : candidates) {

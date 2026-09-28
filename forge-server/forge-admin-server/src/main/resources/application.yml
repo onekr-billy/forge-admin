@@ -177,6 +177,12 @@ forge:
   flow:
     timeout:
       time-zone: ${FORGE_FLOW_TIMEOUT_TIME_ZONE:Asia/Shanghai}
+    notify-outbox:
+      # 通知在事务提交后立即异步发送；定时器只补偿失败和超时租约。
+      scan-interval-ms: ${FORGE_FLOW_NOTIFY_OUTBOX_SCAN_INTERVAL_MS:30000}
+    projection-outbox:
+      # 流程镜像先在事件线程即时更新；定时器只补偿失败和中断记录。
+      scan-interval-ms: ${FORGE_FLOW_PROJECTION_OUTBOX_SCAN_INTERVAL_MS:30000}
     job:
       remote:
         enabled: ${FORGE_FLOW_JOB_REMOTE_ENABLED:false}
@@ -269,11 +275,28 @@ forge:
       cleanup-interval-millis: 60000
   business:
     event-outbox:
-      # 可靠事件空闲时按固定间隔扫描，降低无待办数据时的数据库轮询频率。
+      # 主投递通道：业务提交后异步投递，保留秒级延迟。
       scan-interval-ms: ${FORGE_BUSINESS_EVENT_OUTBOX_SCAN_INTERVAL_MS:5000}
+    flow-callback-inbox:
+      # 回调会在到达时立即消费；这里只恢复失败记录和超时租约。
+      scan-interval-ms: ${FORGE_BUSINESS_FLOW_CALLBACK_INBOX_SCAN_INTERVAL_MS:30000}
+    flow-remote-command:
+      # 远程命令由请求线程立即执行；这里只接管远端成功、本地落库失败等异常状态。
+      scan-interval-ms: ${FORGE_BUSINESS_FLOW_REMOTE_COMMAND_SCAN_INTERVAL_MS:30000}
+    flow-status-sync:
+      # 仅用于终态回调彻底丢失后的主动对账，不参与正常流程状态更新。
+      scan-interval-ms: ${FORGE_BUSINESS_FLOW_STATUS_SYNC_SCAN_INTERVAL_MS:60000}
+      running-interval-seconds: ${FORGE_BUSINESS_FLOW_STATUS_SYNC_RUNNING_INTERVAL_SECONDS:300}
+    trigger-recovery:
+      # 只恢复可安全重放的失败触发器；正常业务事件由 event-outbox 投递。
+      scan-interval-ms: ${FORGE_BUSINESS_TRIGGER_RECOVERY_SCAN_INTERVAL_MS:60000}
     datasource:
       enabled: true
       tenant-routing-enabled-default: true
+  lowcode:
+    publish-task:
+      # 在线发布由请求线程同步推进；扫描器只恢复中断、失败或过期租约。
+      scan-interval-ms: ${FORGE_LOWCODE_PUBLISH_TASK_SCAN_INTERVAL_MS:30000}
 
 management:
   metrics:

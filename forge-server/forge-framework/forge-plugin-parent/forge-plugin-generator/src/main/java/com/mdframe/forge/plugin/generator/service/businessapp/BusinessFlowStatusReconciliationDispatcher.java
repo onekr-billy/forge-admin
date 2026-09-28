@@ -44,7 +44,7 @@ public class BusinessFlowStatusReconciliationDispatcher {
     @Value("${forge.business.flow-status-sync.batch-size:50}")
     private int batchSize = 50;
 
-    @Scheduled(fixedDelayString = "${forge.business.flow-status-sync.scan-interval-ms:15000}")
+    @Scheduled(fixedDelayString = "${forge.business.flow-status-sync.scan-interval-ms:60000}")
     public void reconcile() {
         FlowClient flowClient = flowClientProvider.getIfAvailable();
         BusinessFlowService businessFlowService = businessFlowServiceProvider.getIfAvailable();

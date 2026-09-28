@@ -37,8 +37,8 @@ public class BusinessFlowStatusReconciliationService {
     @Value("${forge.business.flow-status-sync.retry-base-seconds:10}")
     private long retryBaseSeconds = 10;
 
-    @Value("${forge.business.flow-status-sync.running-interval-seconds:60}")
-    private long runningIntervalSeconds = 60;
+    @Value("${forge.business.flow-status-sync.running-interval-seconds:300}")
+    private long runningIntervalSeconds = 300;
 
     public List<AiBusinessFlowInstanceLink> findCandidates(LocalDateTime now, int batchSize) {
         LocalDateTime scanTime = now == null ? LocalDateTime.now() : now;

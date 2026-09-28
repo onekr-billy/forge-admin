@@ -22,7 +22,7 @@ public class BusinessFlowCallbackInboxDispatcher {
     @Value("${forge.business.flow-callback-inbox.batch-size:100}")
     private int batchSize = 100;
 
-    @Scheduled(fixedDelayString = "${forge.business.flow-callback-inbox.scan-interval-ms:2000}")
+    @Scheduled(fixedDelayString = "${forge.business.flow-callback-inbox.scan-interval-ms:30000}")
     public void recover() {
         for (AiBusinessFlowCallbackInbox candidate : inboxService.findRecoveryCandidates(
                 LocalDateTime.now(), Math.max(1, batchSize))) {

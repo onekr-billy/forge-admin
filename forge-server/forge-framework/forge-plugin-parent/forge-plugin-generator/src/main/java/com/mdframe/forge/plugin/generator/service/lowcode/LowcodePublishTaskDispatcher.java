@@ -29,7 +29,7 @@ public class LowcodePublishTaskDispatcher {
     @Value("${forge.lowcode.publish-task.batch-size:100}")
     private int batchSize = 100;
 
-    @Scheduled(fixedDelayString = "${forge.lowcode.publish-task.scan-interval-ms:1000}")
+    @Scheduled(fixedDelayString = "${forge.lowcode.publish-task.scan-interval-ms:30000}")
     public void dispatch() {
         if (!actionService.supportsExecution()) {
             return;

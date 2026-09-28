@@ -25,7 +25,7 @@ public class BusinessFlowRemoteCommandDispatcher {
     @Value("${forge.business.flow-remote-command.batch-size:50}")
     private int batchSize = 50;
 
-    @Scheduled(fixedDelayString = "${forge.business.flow-remote-command.scan-interval-ms:5000}")
+    @Scheduled(fixedDelayString = "${forge.business.flow-remote-command.scan-interval-ms:30000}")
     public void recover() {
         BusinessFlowService businessFlowService = businessFlowServiceProvider.getIfAvailable();
         if (businessFlowService == null) {

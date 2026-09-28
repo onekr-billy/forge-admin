@@ -1220,3 +1220,19 @@
 - 认证 Starter 全量测试 60/60 通过，失败 0、错误 0、跳过 0。
 - `logback.xml` 通过 XML 语法校验；`git diff --check` 通过。
 - `mvn -q -B -f forge-server/pom.xml -pl forge-admin-server -am -DskipTests package`：Admin 聚合构建通过。
+
+## 2026-09-28：流程中心拆分回归与补偿任务降频
+
+### 实现
+
+- 修复 `useFlowModel` 机械拆分遗漏的路由、字典和 `FlowDesignAsyncLoader` 初始化；第二段定义的挂起、激活、删除、版本历史动作通过共享实现表绑定并重新暴露给页面，避免修复首个 `ReferenceError` 后继续出现跨文件函数未定义。
+- 新增流程模型 composable 契约测试，覆盖异步设计器加载器、字典函数以及版本历史动作的跨分段委派。
+- 按“主投递”和“故障恢复”区分后台任务：业务事件 Outbox 保持 5 秒主投递；回调 Inbox、远程命令和发布恢复改为 30 秒；触发器恢复、状态恢复扫描改为 60 秒；运行中流程主动远程对账间隔改为 300 秒。
+- Flow 通知和镜像仍保留事务提交后/事件线程即时处理，30 秒任务只补偿失败和过期租约。Admin、Flow 的间隔均提供环境变量覆盖；触发器恢复关闭时不再创建调度 Bean。
+- 所有候选扫描继续使用状态、下次重试时间和租约时间组合索引，并保留批量上限、CAS claim、指数退避和死信，不以降频换取并发正确性。
+
+### 验证
+
+- Node 20.19.5 / pnpm 10.28.1：`useFlowModel.spec.js` 1/1 通过；目标 composable ESLint 通过；Admin 前端生产构建通过（保留既有 CSS 注释和动态导入警告）。
+- Admin/Flow `application.yml` 静态 YAML 解析通过；全量调度注解清单确认没有 1～2 秒恢复轮询；`git diff --check` 通过。
+- 新增 `RecoveryDispatcherCadenceTest` 固化五个 Admin 恢复任务的默认间隔。当前本机没有 JDK/Maven，临时 JDK 下载速度不可用而终止，本轮未重跑该 Java 测试或后端聚合构建；最近一次改动前 Admin 聚合构建基线已通过，但不能替代本轮后端验证。
