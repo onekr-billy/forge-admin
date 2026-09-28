@@ -326,15 +326,18 @@ public class AiCrudConfigService extends ServiceImpl<AiCrudConfigMapper, AiCrudC
     }
 
     /**
-     * 保存业务流程时 flowStatus 只写进对象草稿（并已建列），已发布快照不会自动重建，
-     * 应用发布又会沿用已有对象版本，导致列表流程状态列时有时无。
-     * 草稿已有平台托管的 flowStatus 而发布快照缺失时，补进发布副本的 modelSchema 与 columnsSchema，
-     * 让表头、列表取值与流程状态回写都能用上，不依赖再次发布对象。
+     * flowStatus 是平台默认列表列：只要草稿或已发布模型里存在该字段（按字段名/列名识别），
+     * 就在运行态副本上补齐 model 托管标记、columnsSchema 与 pageSchema.fieldRefs。
+     * 不依赖再次发布对象，也不要求 fieldRefs 历史快照里已经选过它。
      */
     private void healManagedFlowStatusField(AiCrudConfig published, AiCrudConfig draft) {
         try {
-            Map<String, Object> draftField = findManagedFlowStatusField(readMap(draft.getModelSchema()));
-            if (draftField == null) {
+            Map<String, Object> sourceField = findManagedFlowStatusField(
+                    readMap(draft == null ? null : draft.getModelSchema()));
+            if (sourceField == null) {
+                sourceField = findManagedFlowStatusField(readMap(published.getModelSchema()));
+            }
+            if (sourceField == null) {
                 return;
             }
             Map<String, Object> publishedModel = readMap(published.getModelSchema());
@@ -342,22 +345,61 @@ public class AiCrudConfigService extends ServiceImpl<AiCrudConfigMapper, AiCrudC
             boolean modelHasField = publishedFields.stream().anyMatch(this::isFlowStatusFieldMap);
             if (!modelHasField) {
                 List<Object> nextFields = new ArrayList<>(publishedFields);
-                nextFields.add(draftField);
+                nextFields.add(sourceField);
                 publishedModel.put("fields", nextFields);
                 published.setModelSchema(objectMapper.writeValueAsString(publishedModel));
+            }
+            else {
+                // 已有字段但缺托管标记时，规范化后写回，供前端目录识别
+                List<Object> nextFields = new ArrayList<>();
+                boolean modelChanged = false;
+                for (Map<String, Object> field : publishedFields) {
+                    if (isFlowStatusFieldMap(field)) {
+                        Map<String, Object> normalized = normalizeManagedFlowStatusField(field);
+                        nextFields.add(normalized);
+                        if (!normalized.equals(field)) {
+                            modelChanged = true;
+                        }
+                    }
+                    else {
+                        nextFields.add(field);
+                    }
+                }
+                if (modelChanged) {
+                    publishedModel.put("fields", nextFields);
+                    published.setModelSchema(objectMapper.writeValueAsString(publishedModel));
+                }
+            }
+            if (StringUtils.isNotBlank(published.getPageSchema())) {
+                Map<String, Object> page = readMap(published.getPageSchema());
+                if (!isFlowStatusExplicitlyHidden(page) && ensureFlowStatusPageFieldRefs(page)) {
+                    published.setPageSchema(objectMapper.writeValueAsString(page));
+                }
             }
             if (StringUtils.isBlank(published.getColumnsSchema()) || StringUtils.isBlank(published.getPageSchema())) {
                 return;
             }
+            Map<String, Object> pageForHide = readMap(published.getPageSchema());
+            if (isFlowStatusExplicitlyHidden(pageForHide)) {
+                // 列表设计器显式隐藏：去掉已发布快照里残留的流程状态列
+                List<Map<String, Object>> columns = objectMapper.readValue(
+                        published.getColumnsSchema(), new TypeReference<List<Map<String, Object>>>() {});
+                List<Map<String, Object>> filtered = columns.stream()
+                        .filter(column -> !isFlowStatusColumnMap(column))
+                        .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+                if (filtered.size() != columns.size()) {
+                    published.setColumnsSchema(objectMapper.writeValueAsString(filtered));
+                }
+                return;
+            }
             List<Map<String, Object>> columns = objectMapper.readValue(
                     published.getColumnsSchema(), new TypeReference<List<Map<String, Object>>>() {});
-            boolean columnPresent = columns.stream().anyMatch(this::isFlowStatusColumnMap);
-            if (columnPresent) {
+            if (columns.stream().anyMatch(this::isFlowStatusColumnMap)) {
                 return;
             }
             LowcodeModelSchema modelSchema = objectMapper.readValue(published.getModelSchema(), LowcodeModelSchema.class);
             LowcodePageSchema pageSchema = objectMapper.readValue(published.getPageSchema(), LowcodePageSchema.class);
-            LowcodeFieldSchema field = objectMapper.convertValue(draftField, LowcodeFieldSchema.class);
+            LowcodeFieldSchema field = objectMapper.convertValue(sourceField, LowcodeFieldSchema.class);
             Map<String, Object> column = lowcodeRuntimeConfigBuilder.buildManagedFlowStatusColumn(modelSchema, pageSchema, field);
             if (column == null) {
                 return;
@@ -371,30 +413,167 @@ public class AiCrudConfigService extends ServiceImpl<AiCrudConfigMapper, AiCrudC
             }
             if (actionsIndex >= 0) {
                 columns.add(actionsIndex, column);
-            } else {
+            }
+            else {
                 columns.add(column);
             }
             published.setColumnsSchema(objectMapper.writeValueAsString(columns));
-        } catch (Exception e) {
+        }
+        catch (Exception e) {
             log.warn("[AiCrudConfigService] 补齐托管流程状态字段失败, configKey={}", published.getConfigKey(), e);
         }
     }
 
+    /**
+     * 按字段名/列名识别平台流程状态字段，并补齐托管元数据。
+     * 历史数据可能只有 flowStatus / flow_status，没有 managedBy / dictType。
+     */
     private Map<String, Object> findManagedFlowStatusField(Map<String, Object> model) {
         for (Map<String, Object> field : mapList(model.get("fields"))) {
             if (!isFlowStatusFieldMap(field) || "DISABLED".equalsIgnoreCase(text(field.get("fieldStatus")))) {
                 continue;
             }
-            Map<String, Object> advancedProps = field.get("advancedProps") instanceof Map<?, ?> props
-                    ? castMap(props) : Map.of();
-            String managedBy = text(advancedProps.get("managedBy"));
-            String dictType = text(field.get("dictType"));
-            if ("BUSINESS_FLOW".equalsIgnoreCase(managedBy)
-                    || FLOW_STATUS_DICT_TYPE.equalsIgnoreCase(dictType)) {
-                return normalizeManagedFlowStatusField(field);
-            }
+            return normalizeManagedFlowStatusField(field);
         }
         return null;
+    }
+
+    /** 把 flowStatus 写回 table zone 与自由布局 AiCrudPage.fieldRefs，避免旧快照滤掉平台列。 */
+    @SuppressWarnings("unchecked")
+    private boolean ensureFlowStatusPageFieldRefs(Map<String, Object> page) {
+        if (page == null || page.isEmpty()) {
+            return false;
+        }
+        boolean changed = false;
+        Object zonesValue = page.get("zones");
+        if (zonesValue instanceof List<?> zones) {
+            for (Object zoneValue : zones) {
+                if (!(zoneValue instanceof Map<?, ?>)) {
+                    continue;
+                }
+                Map<Object, Object> zone = (Map<Object, Object>) zoneValue;
+                if (!"table".equals(text(zone.get("zoneKey")))) {
+                    continue;
+                }
+                List<String> refs = new ArrayList<>();
+                Object refsValue = zone.get("fieldRefs");
+                if (refsValue instanceof List<?> list) {
+                    for (Object ref : list) {
+                        String value = text(ref);
+                        if (StringUtils.isNotBlank(value)) {
+                            refs.add(value);
+                        }
+                    }
+                }
+                if (refs.stream().noneMatch(this::isFlowStatusCode)) {
+                    refs.add(FLOW_STATUS_FIELD);
+                    zone.put("fieldRefs", refs);
+                    changed = true;
+                }
+            }
+        }
+        Object layoutValue = page.get("listGridLayout");
+        if (layoutValue instanceof Map<?, ?>) {
+            Map<Object, Object> layout = (Map<Object, Object>) layoutValue;
+            Object itemsValue = layout.get("items");
+            if (itemsValue instanceof List<?> items) {
+                for (Object itemValue : items) {
+                    if (!(itemValue instanceof Map<?, ?> rawItem)
+                            || !"AiCrudPage".equals(text(rawItem.get("blockType")))) {
+                        continue;
+                    }
+                    Map<Object, Object> item = (Map<Object, Object>) rawItem;
+                    List<String> refs = new ArrayList<>();
+                    Object refsValue = item.get("fieldRefs");
+                    if (refsValue instanceof List<?> list) {
+                        for (Object ref : list) {
+                            String value = text(ref);
+                            if (StringUtils.isNotBlank(value)) {
+                                refs.add(value);
+                            }
+                        }
+                    }
+                    if (refs.stream().noneMatch(this::isFlowStatusCode)) {
+                        refs.add(FLOW_STATUS_FIELD);
+                        item.put("fieldRefs", refs);
+                        changed = true;
+                    }
+                }
+            }
+        }
+        return changed;
+    }
+
+    private boolean isFlowStatusCode(String value) {
+        String normalized = StringUtils.deleteWhitespace(StringUtils.defaultString(value))
+                .replace("_", "")
+                .replace("-", "");
+        return FLOW_STATUS_FIELD.equalsIgnoreCase(value)
+                || FLOW_STATUS_COLUMN.equalsIgnoreCase(value)
+                || "flowstatus".equalsIgnoreCase(normalized);
+    }
+
+    /** 列表设计器眼睛隐藏：AiCrudPage.props.fieldSettings.flowStatus.visible = false */
+    @SuppressWarnings("unchecked")
+    private boolean isFlowStatusExplicitlyHidden(Map<String, Object> page) {
+        if (page == null || page.isEmpty()) {
+            return false;
+        }
+        Object layoutValue = page.get("listGridLayout");
+        if (layoutValue instanceof Map<?, ?>) {
+            Map<Object, Object> layout = (Map<Object, Object>) layoutValue;
+            Object itemsValue = layout.get("items");
+            if (itemsValue instanceof List<?> items) {
+                for (Object itemValue : items) {
+                    if (!(itemValue instanceof Map<?, ?> rawItem)
+                            || !"AiCrudPage".equals(text(rawItem.get("blockType")))) {
+                        continue;
+                    }
+                    Object propsValue = rawItem.get("props");
+                    if (!(propsValue instanceof Map<?, ?> props)) {
+                        continue;
+                    }
+                    Object settingsValue = props.get("fieldSettings");
+                    if (!(settingsValue instanceof Map<?, ?> settings)) {
+                        continue;
+                    }
+                    for (Map.Entry<?, ?> entry : settings.entrySet()) {
+                        if (!isFlowStatusCode(text(entry.getKey())) || !(entry.getValue() instanceof Map<?, ?> setting)) {
+                            continue;
+                        }
+                        if (Boolean.FALSE.equals(setting.get("visible"))) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        Object zonesValue = page.get("zones");
+        if (zonesValue instanceof List<?> zones) {
+            for (Object zoneValue : zones) {
+                if (!(zoneValue instanceof Map<?, ?> zone)
+                        || !"table".equals(text(zone.get("zoneKey")))) {
+                    continue;
+                }
+                Object propsValue = zone.get("props");
+                if (!(propsValue instanceof Map<?, ?> props)) {
+                    continue;
+                }
+                Object settingsValue = props.get("fieldSettings");
+                if (!(settingsValue instanceof Map<?, ?> settings)) {
+                    continue;
+                }
+                for (Map.Entry<?, ?> entry : settings.entrySet()) {
+                    if (!isFlowStatusCode(text(entry.getKey())) || !(entry.getValue() instanceof Map<?, ?> setting)) {
+                        continue;
+                    }
+                    if (Boolean.FALSE.equals(setting.get("visible"))) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     private boolean isFlowStatusFieldMap(Map<String, Object> field) {
@@ -424,6 +603,20 @@ public class AiCrudConfigService extends ServiceImpl<AiCrudConfigMapper, AiCrudC
         }
         if (StringUtils.isBlank(text(normalized.get("fieldStatus")))) {
             normalized.put("fieldStatus", "ENABLED");
+        }
+        if (normalized.get("listVisible") == null) {
+            normalized.put("listVisible", true);
+        }
+        if (StringUtils.isBlank(text(normalized.get("field")))) {
+            normalized.put("field", FLOW_STATUS_FIELD);
+        }
+        if (StringUtils.isBlank(text(normalized.get("columnName")))) {
+            normalized.put("columnName", FLOW_STATUS_COLUMN);
+        }
+        if (StringUtils.isBlank(text(normalized.get("label")))
+                && StringUtils.isBlank(text(normalized.get("fieldName")))) {
+            normalized.put("label", "流程状态");
+            normalized.put("fieldName", "流程状态");
         }
         return normalized;
     }

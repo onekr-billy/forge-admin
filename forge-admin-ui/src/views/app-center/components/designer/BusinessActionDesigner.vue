@@ -501,7 +501,9 @@
                       添加数量处理
                     </NButton>
                   </div>
-                  <BusinessQuantityStepCard
+                  <!-- setup 内 defineComponent：Options API 需 :is 才能解析 -->
+                  <component
+                    :is="BusinessQuantityStepCard"
                     v-for="child in childBusinessSteps(rootStep)"
                     :key="child.key"
                     :step="child"
@@ -515,7 +517,8 @@
                 </div>
               </template>
 
-              <BusinessQuantityStepCard
+              <component
+                :is="BusinessQuantityStepCard"
                 v-else-if="isQuantityStep(rootStep.raw)"
                 :step="rootStep"
                 :field-options="fieldPathOptions(rootStep)"

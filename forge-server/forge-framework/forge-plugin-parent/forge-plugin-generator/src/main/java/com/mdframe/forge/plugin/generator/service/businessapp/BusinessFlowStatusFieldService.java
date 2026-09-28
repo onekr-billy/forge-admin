@@ -34,13 +34,13 @@ public class BusinessFlowStatusFieldService {
 
     @Transactional(rollbackFor = Exception.class)
     public BusinessFieldVO ensure(Long objectId) {
-        if (!hasDdlPermission()) {
-            throw new BusinessException("缺少同步数据库权限: " + DDL_PERMISSION);
-        }
         BusinessObjectDesignerService.DesignerContext context = designerService.loadContext(objectId);
         LowcodeFieldSchema existing = findFlowStatusField(context);
         boolean fieldCreated = existing == null;
         if (existing == null) {
+            if (!hasDdlPermission()) {
+                throw new BusinessException("缺少同步数据库权限: " + DDL_PERMISSION);
+            }
             fieldDesignService.addField(objectId, createField());
             context = designerService.loadContext(objectId);
             existing = findFlowStatusField(context);
@@ -53,7 +53,10 @@ public class BusinessFlowStatusFieldService {
             existing = findFlowStatusField(context);
             validateCompatible(existing);
         }
-        ddlService.executeAdditiveColumn(context.getModelSchema(), COLUMN_NAME);
+        // 字段已存在时，无 DDL 权限也允许只修列表选列；新建字段仍要求 DDL。
+        if (hasDdlPermission()) {
+            ddlService.executeAdditiveColumn(context.getModelSchema(), COLUMN_NAME);
+        }
         // 字段已存在时仍要把列表选列补齐：旧 listGridLayout 快照常缺 flowStatus。
         boolean listVisibilityChanged = fieldDesignService.ensureFieldListVisibility(objectId, FIELD_CODE);
         markPublishedObjectChanged(objectId, fieldCreated || metadataChanged || listVisibilityChanged);

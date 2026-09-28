@@ -333,6 +333,22 @@ describe('runtime CRUD design preview props', () => {
     ).map(item => item.key)).toEqual(['name'])
   })
 
+  it('treats name-only flowStatus as platform managed even without listVisible flag', () => {
+    expect(isManagedBusinessFlowField({ field: 'flowStatus' })).toBe(true)
+    const columns = ensureManagedFlowStatusColumns(
+      [
+        { key: 'name', prop: 'name', title: '名称' },
+        { key: 'actions', type: 'action', title: '操作', fixed: 'right' },
+      ],
+      [{ field: 'flowStatus', fieldStatus: 'ENABLED' }],
+    )
+    expect(columns.map(item => item.key || item.prop)).toEqual(['name', 'flowStatus', 'actions'])
+    expect(includeManagedRuntimeFieldRefs(
+      ['name'],
+      [{ field: 'flowStatus', fieldStatus: 'ENABLED' }],
+    )).toEqual(['name', 'flowStatus'])
+  })
+
   it('canonicalizes legacy flow_status metadata so stale refs cannot hide the column', () => {
     expect(isManagedBusinessFlowField({
       field: 'flow_status',
@@ -414,6 +430,18 @@ describe('runtime CRUD design preview props', () => {
       expect.objectContaining({ prop: 'name', align: 'center', titleAlign: 'center' }),
       expect.objectContaining({ prop: 'status', align: 'right', titleAlign: 'right' }),
     ])
+  })
+
+  it('drops columns that list designer explicitly hid via fieldSettings.visible=false', () => {
+    const columns = applyTableColumnLayout(
+      [
+        { prop: 'name', title: '名称' },
+        { prop: 'flowStatus', title: '流程状态' },
+        { prop: 'actions', type: 'action', fixed: 'right' },
+      ],
+      { fieldSettings: { flowStatus: { visible: false } } },
+    )
+    expect(columns.map(item => item.prop || item.key)).toEqual(['name', 'actions'])
   })
 
   it('passes compiled process runtime actions through to AiCrudPage', () => {

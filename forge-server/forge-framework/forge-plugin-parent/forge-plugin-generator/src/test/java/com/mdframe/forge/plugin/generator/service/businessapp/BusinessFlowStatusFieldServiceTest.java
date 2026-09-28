@@ -87,6 +87,36 @@ class BusinessFlowStatusFieldServiceTest {
     }
 
     @Test
+    @DisplayName("existing flowStatus can repair list visibility without DDL permission")
+    void repairsListVisibilityWithoutDdlPermission() {
+        BusinessObjectDesignerService designerService = mock(BusinessObjectDesignerService.class);
+        BusinessFieldDesignService fieldDesignService = mock(BusinessFieldDesignService.class);
+        LowcodeDdlService ddlService = mock(LowcodeDdlService.class);
+        LowcodeFieldSchema existing = field("flowStatus", "flow_status", "varchar", 32);
+        existing.setDictType(BusinessFlowStatusFieldService.DICT_TYPE);
+        existing.setListVisible(true);
+        existing.setFieldStatus("ENABLED");
+        existing.setAdvancedProps(java.util.Map.of(
+                "managedBy", "BUSINESS_FLOW",
+                "managedField", true));
+        when(designerService.loadContext(77L)).thenReturn(context(schema(existing)));
+        when(fieldDesignService.listFields(77L)).thenReturn(List.of(flowStatusVO()));
+        BusinessFlowStatusFieldService service = new BusinessFlowStatusFieldService(
+                designerService, fieldDesignService, ddlService);
+
+        try (MockedStatic<SessionHelper> session = mockStatic(SessionHelper.class)) {
+            session.when(() -> SessionHelper.hasPermission("ai:lowcode:deploy-ddl")).thenReturn(false);
+            service.ensure(77L);
+        }
+
+        verify(fieldDesignService, never()).addField(
+                org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any());
+        verify(ddlService, never()).executeAdditiveColumn(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString());
+        verify(fieldDesignService).ensureFieldListVisibility(77L, "flowStatus");
+    }
+
+    @Test
     @DisplayName("legacy flow status field receives managed metadata before runtime publication")
     void normalizesLegacyManagedMetadata() {
         BusinessObjectDesignerService designerService = mock(BusinessObjectDesignerService.class);

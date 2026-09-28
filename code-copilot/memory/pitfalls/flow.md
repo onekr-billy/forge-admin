@@ -1153,6 +1153,8 @@ CRUD 详情页的渲染逻辑是“主表 `AiForm` + 子表 `ChildTableEditor`�
 
 **补充（2026-09-25）**：上述修复只在「重新发布对象」时生效。保存流程时 `ensure` 只写对象草稿并建列，正式运行读已发布版本快照；应用发布对已发布对象只固定旧版本、不重建。另外有编辑权限的用户在门户走 `designPreview` 看草稿，所以同一应用有人有列有人没有。现在 `AiCrudConfigService.resolvePublishedRuntimeConfig` 在草稿已有托管 `flowStatus`、发布快照缺失时自愈补进 `modelSchema` 与 `columnsSchema`（表头、取值、回写共用）；流程保存时已绑定节点也会（有 DDL 权限时）重跑幂等 `ensure`。流程按钮仍以已发布流程版本为准。
 
+**补充（2026-09-28）**：把 `flowStatus` 按平台默认列表列处理。运行态自愈按字段名/列名识别（不再要求 `managedBy`/`dictType`），同时补 `pageSchema` 的 table zone 与 `listGridLayout.fieldRefs`；前端字段目录对流程状态默认 `listVisible=true`。字段已存在时，无 DDL 权限也可只修列表选列。列表丢失时不必再依赖「进流程设计点保存」才能恢复。
+
 ## 带排序和行数限制的流程锁查询会被 JSqlParser 重排
 
 **发现日期**：2026-09-22

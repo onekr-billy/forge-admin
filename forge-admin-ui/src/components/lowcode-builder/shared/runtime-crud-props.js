@@ -229,14 +229,23 @@ export function applyTableColumnLayout(columns = [], blockProps = {}) {
   const settings = blockProps.fieldSettings && typeof blockProps.fieldSettings === 'object'
     ? blockProps.fieldSettings
     : {}
-  return (Array.isArray(columns) ? columns : []).map((column) => {
-    const key = column?.prop || column?.key || column?.dataIndex || ''
-    const fieldAlign = normalizeAlign(settings[key]?.align)
-    const align = fieldAlign || globalAlign
-    return align
-      ? { ...column, align, titleAlign: align }
-      : { ...column }
-  })
+  return (Array.isArray(columns) ? columns : [])
+    .filter((column) => {
+      const key = canonicalFlowStatusCode(
+        String(column?.prop || column?.key || column?.dataIndex || '').trim(),
+        column,
+      )
+      // 列表设计器眼睛隐藏写入 fieldSettings.visible=false，运行态必须尊重
+      return key ? !isFieldExplicitlyHidden(settings, key) : true
+    })
+    .map((column) => {
+      const key = column?.prop || column?.key || column?.dataIndex || ''
+      const fieldAlign = normalizeAlign(settings[key]?.align)
+      const align = fieldAlign || globalAlign
+      return align
+        ? { ...column, align, titleAlign: align }
+        : { ...column }
+    })
 }
 
 export function normalizeTableRowGap(value, fallback = 8) {
@@ -301,6 +310,7 @@ export function includeManagedRuntimeFieldRefs(fieldRefs = [], fieldCatalog = []
 /**
  * 当后端旧发布配置的 columnsSchema 漏了 flowStatus，但字段目录里已有时，运行态补一列。
  * 显式隐藏仍尊重 fieldSettings.visible = false。
+ * 平台默认列：只要目录里有 flowStatus（按字段名），即使缺 managedBy / listVisible 也会补。
  */
 export function ensureManagedFlowStatusColumns(columns = [], fieldCatalog = [], fieldSettings = {}) {
   const list = (Array.isArray(columns) ? columns : []).map((column) => {
@@ -497,7 +507,7 @@ function buildRuntimeFieldCatalog(config = {}) {
       if (!field || ['action', 'actions', 'operation', 'operations'].includes(field))
         return
       const current = fields.get(field) || {}
-      fields.set(field, {
+      const merged = {
         ...current,
         ...item,
         ...patch,
@@ -506,9 +516,14 @@ function buildRuntimeFieldCatalog(config = {}) {
         sourceField: item.sourceField || current.sourceField || field,
         fieldName: item.fieldName || item.label || item.title || current.fieldName || field,
         label: item.label || item.title || item.fieldName || current.label || field,
-        listVisible: patch.listVisible ?? item.listVisible ?? current.listVisible ?? false,
-        formVisible: patch.formVisible ?? item.formVisible ?? current.formVisible ?? false,
         fieldStatus: item.fieldStatus || current.fieldStatus || 'ENABLED',
+      }
+      // 平台流程状态默认列表可见；其它字段仍按显式配置，缺省 false。
+      const defaultListVisible = isManagedBusinessFlowField(merged) ? true : false
+      fields.set(field, {
+        ...merged,
+        listVisible: patch.listVisible ?? item.listVisible ?? current.listVisible ?? defaultListVisible,
+        formVisible: patch.formVisible ?? item.formVisible ?? current.formVisible ?? false,
       })
     })
   }

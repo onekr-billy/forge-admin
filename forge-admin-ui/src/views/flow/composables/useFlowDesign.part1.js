@@ -50,8 +50,6 @@ export function applyFlowDesignPart1(props, emit) {
   const findElementsByLocalName = (...args) => __impl.findElementsByLocalName(...args)
   const getBpmnDisplayIssue = (...args) => __impl.getBpmnDisplayIssue(...args)
   const getBpmnNodeSize = (...args) => __impl.getBpmnNodeSize(...args)
-  const getElementIcon = (...args) => __impl.getElementIcon(...args)
-  const getElementTitle = (...args) => __impl.getElementTitle(...args)
   const getXmlForSave = (...args) => __impl.getXmlForSave(...args)
   const getXmlParseError = (...args) => __impl.getXmlParseError(...args)
   const goBackToBusinessApp = (...args) => __impl.goBackToBusinessApp(...args)
@@ -81,25 +79,18 @@ export function applyFlowDesignPart1(props, emit) {
   const handleSaveFormSchema = (...args) => __impl.handleSaveFormSchema(...args)
   const handleVersionHistoryRefresh = (...args) => __impl.handleVersionHistoryRefresh(...args)
   const hasBpmnDiagram = (...args) => __impl.hasBpmnDiagram(...args)
-  const isAppManagedFormType = (...args) => __impl.isAppManagedFormType(...args)
   const isBpmnFlowNode = (...args) => __impl.isBpmnFlowNode(...args)
   const layoutBpmnNodes = (...args) => __impl.layoutBpmnNodes(...args)
   const loadModel = (...args) => __impl.loadModel(...args)
   const normalizeAiBpmnXml = (...args) => __impl.normalizeAiBpmnXml(...args)
   const normalizeAiFlowDraft = (...args) => __impl.normalizeAiFlowDraft(...args)
-  const normalizeAppManagedFormType = (...args) => __impl.normalizeAppManagedFormType(...args)
-  const normalizeAutoApprovalMode = (...args) => __impl.normalizeAutoApprovalMode(...args)
   const normalizeBpmnId = (...args) => __impl.normalizeBpmnId(...args)
   const normalizeBusinessEntryRoute = (...args) => __impl.normalizeBusinessEntryRoute(...args)
   const normalizeBusinessFieldCatalog = (...args) => __impl.normalizeBusinessFieldCatalog(...args)
   const normalizeBusinessFormAssets = (...args) => __impl.normalizeBusinessFormAssets(...args)
   const normalizeBusinessFormMode = (...args) => __impl.normalizeBusinessFormMode(...args)
   const normalizeBusinessGlobalFormBeforeSave = (...args) => __impl.normalizeBusinessGlobalFormBeforeSave(...args)
-  const normalizeDesignerType = (...args) => __impl.normalizeDesignerType(...args)
-  const normalizeRejectStrategy = (...args) => __impl.normalizeRejectStrategy(...args)
   const parseAiFlowResponse = (...args) => __impl.parseAiFlowResponse(...args)
-  const parseBooleanWithDefault = (...args) => __impl.parseBooleanWithDefault(...args)
-  const parseBusinessGlobalFormRef = (...args) => __impl.parseBusinessGlobalFormRef(...args)
   const parseXmlDocument = (...args) => __impl.parseXmlDocument(...args)
   const readFlowableAttr = (...args) => __impl.readFlowableAttr(...args)
   const rebuildDiagramInfo = (...args) => __impl.rebuildDiagramInfo(...args)
@@ -107,7 +98,96 @@ export function applyFlowDesignPart1(props, emit) {
   const repairBpmnXml = (...args) => __impl.repairBpmnXml(...args)
   const resolveBusinessBindingForModel = (...args) => __impl.resolveBusinessBindingForModel(...args)
   const resolveLocalFormFieldCatalog = (...args) => __impl.resolveLocalFormFieldCatalog(...args)
-  const routeQueryText = (...args) => __impl.routeQueryText(...args)
+  // —— 纯工具：part1 的 computed 会在 part2/part3 挂 __impl 前求值，必须本地实现 ——
+  function routeQueryText(value) {
+    return String(Array.isArray(value) ? value[0] || '' : value || '').trim()
+  }
+  function parseBooleanWithDefault(value, fallback) {
+    if (value == null || value === '')
+      return fallback
+    const normalized = String(value).trim().toLowerCase()
+    if (['true', '1', 'y', 'yes'].includes(normalized))
+      return true
+    if (['false', '0', 'n', 'no'].includes(normalized))
+      return false
+    return fallback
+  }
+  function normalizeDesignerType(value) {
+    return value === 'business' ? 'business' : 'approval'
+  }
+  function normalizeAutoApprovalMode(value) {
+    return ['firstOnly', 'consecutive', 'none'].includes(value) ? value : 'none'
+  }
+  function normalizeRejectStrategy(value) {
+    const text = String(value || '').trim().toUpperCase()
+    if (!text)
+      return 'MANUAL'
+    if (text === 'TO_END' || text === 'END' || text === 'TERMINATE')
+      return 'TO_END'
+    if (text === 'MANUAL' || text === 'NONE' || text === 'OFF')
+      return 'MANUAL'
+    if (text === 'TO_INITIATOR_MODIFY' || text === 'TO_START' || text === 'MODIFY')
+      return 'TO_INITIATOR_MODIFY'
+    return 'MANUAL'
+  }
+  function isAppManagedFormType(value) {
+    return value === 'business'
+  }
+  function normalizeAppManagedFormType(_value) {
+    return 'business'
+  }
+  function getElementTitle(el) {
+    if (!el)
+      return '属性设置'
+    const typeNames = {
+      'bpmn:StartEvent': '开始节点',
+      'bpmn:EndEvent': '结束节点',
+      'bpmn:UserTask': '用户任务',
+      'bpmn:ServiceTask': '服务任务',
+      'bpmn:ScriptTask': '脚本任务',
+      'bpmn:BusinessRuleTask': '业务规则任务',
+      'bpmn:ManualTask': '手工任务',
+      'bpmn:ExclusiveGateway': '排他网关',
+      'bpmn:ParallelGateway': '并行网关',
+      'bpmn:InclusiveGateway': '包容网关',
+      'bpmn:SequenceFlow': '序列流',
+      'bpmn:SubProcess': '子流程',
+      'bpmn:CallActivity': '调用活动',
+    }
+    return el.businessObject?.name || typeNames[el.type] || '属性设置'
+  }
+  function getElementIcon(el) {
+    const iconMap = {
+      'bpmn:StartEvent': 'i-material-symbols:play-circle-outline',
+      'bpmn:EndEvent': 'i-material-symbols:stop-circle-outline',
+      'bpmn:UserTask': 'i-material-symbols:person-check-outline',
+      'bpmn:ServiceTask': 'i-material-symbols:settings-outline',
+      'bpmn:ScriptTask': 'i-material-symbols:code-blocks-outline',
+      'bpmn:BusinessRuleTask': 'i-material-symbols:rule-settings-outline',
+      'bpmn:ManualTask': 'i-material-symbols:pan-tool-outline',
+      'bpmn:ExclusiveGateway': 'i-material-symbols:conversion-path-outline',
+      'bpmn:ParallelGateway': 'i-material-symbols:call-split-outline',
+      'bpmn:InclusiveGateway': 'i-material-symbols:merge-type-outline',
+      'bpmn:SequenceFlow': 'i-material-symbols:arrow-right-alt',
+      'bpmn:SubProcess': 'i-material-symbols:account-tree-outline',
+      'bpmn:CallActivity': 'i-material-symbols:call-made',
+    }
+    return iconMap[el?.type] || 'i-material-symbols:tune'
+  }
+  Object.assign(__impl, {
+    routeQueryText,
+    parseBooleanWithDefault,
+    normalizeDesignerType,
+    normalizeAutoApprovalMode,
+    normalizeRejectStrategy,
+    isAppManagedFormType,
+    normalizeAppManagedFormType,
+    getElementTitle,
+    getElementIcon,
+    // part2 挂载前的安全桩；part2 会覆盖为真实实现
+    findBusinessFormAsset: () => null,
+    findBusinessFormAssetInList: () => null,
+  })
   const scrollActiveReasoningToBottom = (...args) => __impl.scrollActiveReasoningToBottom(...args)
   const scrollAiToBottom = (...args) => __impl.scrollAiToBottom(...args)
   const setReasoningContentRef = (...args) => __impl.setReasoningContentRef(...args)
@@ -148,20 +228,20 @@ export function applyFlowDesignPart1(props, emit) {
   const businessObjectCode = computed(() => explicitBusinessObjectCode.value
     || routeQueryText(resolvedBusinessBinding.value?.objectCode)
     || manualBusinessObjectCode.value
-    || mut.persistedBusinessObjectCode.value)
+    || routeQueryText(mut.persistedBusinessObjectCode?.value))
   const businessContextActive = computed(() => !!businessObjectCode.value)
   const businessContextName = computed(() => explicitBusinessObjectName.value
     || routeQueryText(resolvedBusinessBinding.value?.objectName)
     || manualBusinessObjectName.value
-    || routeQueryText(mut.persistedBusinessFormRef.value.objectName)
+    || routeQueryText(mut.persistedBusinessFormRef?.value?.objectName)
     || businessObjectCode.value)
   const businessEntryRoute = computed(() => explicitBusinessEntryRoute.value || routeQueryText(resolvedBusinessBinding.value?.entryRoute))
   const effectiveApplicationId = computed(() => explicitBusinessApplicationId.value
     || manualBusinessApplicationId.value
-    || routeQueryText(mut.persistedBusinessFormRef.value.applicationId)
+    || routeQueryText(mut.persistedBusinessFormRef?.value?.applicationId)
     || routeQueryText(resolvedBusinessBinding.value?.applicationId))
   const businessApplicationName = computed(() => manualBusinessApplicationName.value
-    || routeQueryText(mut.persistedBusinessFormRef.value.applicationName)
+    || routeQueryText(mut.persistedBusinessFormRef?.value?.applicationName)
     || routeQueryText(resolvedBusinessBinding.value?.applicationName)
     || businessApplicationOptions.value.find(item => item.value === effectiveApplicationId.value)?.application?.applicationName
     || '')
@@ -235,6 +315,53 @@ export function applyFlowDesignPart1(props, emit) {
     notifyType: 'redis',
     notifyConfig: null,
   })
+
+  // 必须在 persistedBusinessFormRef 之前定义：该 computed 会在 part2 挂 __impl 前被求值。
+  function parseBusinessGlobalFormRef(value, fallbackObjectCode) {
+    const text = routeQueryText(value)
+    if (!text)
+      return {}
+    try {
+      const parsed = JSON.parse(text)
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+        return {}
+      const formRef = parsed.formRef && typeof parsed.formRef === 'object' && !Array.isArray(parsed.formRef)
+        ? parsed.formRef
+        : {}
+      const resolvedObjectCode = formRef.objectCode || parsed.objectCode
+        || (fallbackObjectCode !== undefined ? fallbackObjectCode : businessObjectCode.value)
+      const normalizedFormRef = {
+        ...formRef,
+        objectCode: resolvedObjectCode,
+        objectName: formRef.objectName || parsed.objectName,
+        formMode: formRef.formMode || formRef.type || parsed.formMode || parsed.type,
+        type: formRef.type || formRef.formMode || parsed.type || parsed.formMode,
+        formKey: formRef.formKey || parsed.formKey,
+        formName: formRef.formName || parsed.formName,
+        providerKey: formRef.providerKey || parsed.providerKey,
+        formUrl: formRef.formUrl || parsed.formUrl,
+        viewKey: formRef.viewKey || parsed.viewKey,
+        applicationId: formRef.applicationId || parsed.applicationId,
+        applicationName: formRef.applicationName || parsed.applicationName,
+        pageId: formRef.pageId || parsed.pageId,
+        pageCode: formRef.pageCode || parsed.pageCode,
+        pageName: formRef.pageName || parsed.pageName,
+        pageType: formRef.pageType || parsed.pageType,
+        sourceFormKey: formRef.sourceFormKey || parsed.sourceFormKey,
+      }
+      return {
+        ...formRef,
+        ...parsed,
+        ...normalizedFormRef,
+        formRef: normalizedFormRef,
+      }
+    }
+    catch (error) {
+      console.warn('[FlowDesign] 解析业务全局表单引用失败:', error?.message || error)
+      return {}
+    }
+  }
+  __impl.parseBusinessGlobalFormRef = parseBusinessGlobalFormRef
 
   // 业务表单引用会把应用和对象上下文一起持久化，独立打开流程模型时可据此恢复级联选择。
   mut.persistedBusinessFormRef = computed(() => parseBusinessGlobalFormRef(modelInfo.formJson, ''))

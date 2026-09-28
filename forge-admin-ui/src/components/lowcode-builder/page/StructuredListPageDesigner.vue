@@ -762,7 +762,9 @@
             <div class="quick-config-help">
               快速配置只服务默认 CRUD 组件：新增/删除字段、排序、列宽会同步到自由画布里的 AiCrudPage。
             </div>
-            <FieldOrderEditor
+            <!-- setup 内 defineComponent：Options API 需 :is 才能解析 -->
+            <component
+              :is="FieldOrderEditor"
               v-if="activeFieldEditor"
               :title="activeFieldEditor.title"
               :empty-text="activeFieldEditor.emptyText"

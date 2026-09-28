@@ -74,4 +74,48 @@ class AiCrudConfigServiceDesignPreviewTest {
         assertTrue(published.getModelSchema().contains("BUSINESS_FLOW"));
         assertTrue(published.getColumnsSchema().contains("flowStatus"));
     }
+
+    @Test
+    @DisplayName("name-only flowStatus without dictType/managedBy still heals published columns and fieldRefs")
+    void nameOnlyFlowStatusFieldHealsPublishedRuntimeColumns() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        AiCrudConfigVersionMapper versions = mock(AiCrudConfigVersionMapper.class);
+        LowcodeRuntimeConfigBuilder runtimeBuilder = mock(LowcodeRuntimeConfigBuilder.class);
+        AiCrudConfigService service = new AiCrudConfigService(
+                objectMapper, null, runtimeBuilder, null, versions, null);
+
+        AiCrudConfig draft = new AiCrudConfig();
+        draft.setId(88L);
+        draft.setTenantId(1L);
+        draft.setConfigKey("name_only_order");
+        draft.setBuildMode("LOWCODE");
+        draft.setPublishStatus("PUBLISHED");
+        draft.setPublishedVersion(2);
+        // 历史字段只有名字，没有 managedBy / dictType
+        draft.setModelSchema("{\"fields\":[{\"field\":\"flowStatus\",\"columnName\":\"flow_status\","
+                + "\"fieldStatus\":\"ENABLED\"}]}");
+        draft.setPageSchema("{\"layoutType\":\"simple-crud\",\"zones\":[{\"zoneKey\":\"table\","
+                + "\"fieldRefs\":[\"orderNo\"]}],\"listGridLayout\":{\"items\":[{\"blockType\":\"AiCrudPage\","
+                + "\"fieldRefs\":[\"orderNo\"]}]}}");
+
+        AiCrudConfigVersion version = new AiCrudConfigVersion();
+        version.setVersionNo(2);
+        version.setModelSchema("{\"fields\":[{\"field\":\"orderNo\",\"columnName\":\"order_no\"}]}");
+        version.setPageSchema(draft.getPageSchema());
+        version.setColumnsSchema("[{\"key\":\"orderNo\",\"dataIndex\":\"orderNo\"},"
+                + "{\"key\":\"actions\",\"dataIndex\":\"actions\"}]");
+        version.setSearchSchema("[]");
+        version.setEditSchema("[]");
+        version.setApiConfig("{}");
+        when(versions.selectVersionByNo(1L, 88L, 2)).thenReturn(version);
+        when(runtimeBuilder.buildManagedFlowStatusColumn(any(), any(), any()))
+                .thenReturn(Map.of("key", "flowStatus", "dataIndex", "flowStatus", "title", "流程状态"));
+
+        AiCrudConfig published = service.resolvePublishedRuntimeConfig(draft);
+
+        assertTrue(published.getModelSchema().contains("BUSINESS_FLOW"));
+        assertTrue(published.getModelSchema().contains("business_flow_status"));
+        assertTrue(published.getColumnsSchema().contains("flowStatus"));
+        assertTrue(published.getPageSchema().contains("\"flowStatus\""));
+    }
 }
