@@ -9,11 +9,24 @@ server {
     listen 80;
     server_name your-domain.com;  # 替换为你的域名或IP
 
-    # 前端静态资源
+    # PC 管理端静态资源
     location /forge/ {
         alias   /www/wwwroot/html/dist/;
         index  index.html index.htm;
         try_files $uri $uri/ /forge/index.html;
+    }
+
+    # H5 移动端（Vite base=/forge-h5，hash 路由）
+    location /forge-h5/ {
+        alias   /www/wwwroot/html/forge-h5/;
+        index  index.html index.htm;
+        try_files $uri $uri/ /forge-h5/index.html;
+    }
+
+    # 误链兜底：有人把 uni 路由当站点根路径打开（/pages/login/...）会 404
+    # 纠正到 H5 子路径 + hash 路由
+    location ^~ /pages/ {
+        return 302 /forge-h5/#$request_uri;
     }
 
     # 流程服务 API（如部署了 forge-flow 服务）
@@ -29,6 +42,17 @@ server {
 
     # 后端主服务 API
     location /forge-api/ {
+        proxy_send_timeout 3000;
+        proxy_read_timeout 3000;
+        proxy_connect_timeout 3000;
+        proxy_pass http://127.0.0.1:8580/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    # H5 API（如单独走 forge-h5-api 前缀）
+    location /forge-h5-api/ {
         proxy_send_timeout 3000;
         proxy_read_timeout 3000;
         proxy_connect_timeout 3000;
@@ -63,13 +87,29 @@ server {
 
 ### 3. 前端构建配置
 
-`.env.test` 或 `.env.production` 文件配置：
+PC（`.env.test` / `.env.production`）：
 
 ```env
 VITE_PUBLIC_PATH=/forge
 VITE_BASE_URL=/forge
 VITE_REQUEST_PREFIX=/forge-api
 ```
+
+H5（`forge-h5-ui/.env.production`）：
+
+```env
+VITE_PUBLIC_PATH=/forge-h5
+VITE_BASE_URL=/forge-h5
+VITE_REQUEST_PREFIX=/forge-h5-api
+```
+
+正确登录地址示例：
+
+```text
+http://your-domain/forge-h5/#/pages/login/index?redirect=%2Fpages%2Ftodo
+```
+
+不要使用站点根路径 `/pages/login/index`（会 404）。
 
 ### 4. 后端端口说明
 
@@ -82,10 +122,11 @@ VITE_REQUEST_PREFIX=/forge-api
 
 ```
 /www/wwwroot/html/
-└── dist/              # 前端构建产物
+├── dist/              # PC 前端构建产物
+│   ├── index.html
+│   └── assets/
+└── forge-h5/          # H5 前端构建产物（对应 /forge-h5/）
     ├── index.html
     ├── assets/
-    │   ├── index-xxx.js
-    │   └── index-xxx.css
-    └── favicon.png
+    └── static/
 ```

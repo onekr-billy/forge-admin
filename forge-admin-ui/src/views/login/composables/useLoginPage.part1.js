@@ -958,7 +958,7 @@ export function applyLoginPagePart1() {
     sendResetCode, sendSmsCode, setSocialTenantMap, startResetCountdown, startSmsCountdown, submitResetPassword, syncSelectedTenantToStorage, toggleQrcodePopover,
     authStore, userStore, appStore, router, route, userClient, LOGIN_TENANT_STORAGE_KEY, SOCIAL_TENANT_MAP_KEY,
     LOGIN_TENANT_SELECTION_REQUIRED, tenantOptions, selectedTenantId, showWorkspaceModal, lastUsedTenantId, skipTenantContextRefresh, tenantConfigApplying, brandLogoUrl,
-    loginConfig, selectedTenantOption, tenantSelectOptions, showTenantSelect, brandSystemName, loginSubtitle, copyrightInfo, loginInfo,
+    loginCarouselImage, loginConfig, selectedTenantOption, tenantSelectOptions, showTenantSelect, brandSystemName, loginSubtitle, copyrightInfo, loginInfo,
     captchaImage, captchaExpires, captchaType, captchaEnabled, groupQrcodeEnabled, activeCaptchaTab, groupQrcodeImage, groupQrcodeName,
     groupQrcodeHint, qrcodePopoverVisible, qrcodePreviewVisible, resetPasswordChannels, canResetPassword, showResetForm, resetSending, resetSubmitting,
     resetCountdown, resetTimer, resetForm, resetSubtitle, resetAccountLabel, resetAccountPlaceholder, resetAccountValid, slideVerifyRef,

@@ -30,7 +30,8 @@ public class LoginPasswordDecoder {
 
         RsaKeyPairHolder rsaKeyPairHolder = rsaKeyPairHolderProvider.getIfAvailable();
         if (rsaKeyPairHolder == null) {
-            throw new BusinessException("密码加密服务不可用，请稍后重试");
+            // 服务端未就绪：客户端应刷新后重试，不是系统崩溃
+            throw new BusinessException(503, "密码加密服务不可用，请稍后重试");
         }
 
         try {
@@ -41,9 +42,10 @@ public class LoginPasswordDecoder {
         } catch (Exception exception) {
             log.warn("登录密码 RSA 解密失败，已拒绝明文降级: exceptionType={}",
                     exception.getClass().getSimpleName());
-            throw new BusinessException("密码加密校验失败，请刷新后重试");
+            // 常见于：服务端重启后密钥轮换，或前端缓存了旧公钥
+            throw new BusinessException(400, "密码加密校验失败，请刷新后重试");
         }
 
-        throw new BusinessException("密码加密校验失败，请刷新后重试");
+        throw new BusinessException(400, "密码加密校验失败，请刷新后重试");
     }
 }

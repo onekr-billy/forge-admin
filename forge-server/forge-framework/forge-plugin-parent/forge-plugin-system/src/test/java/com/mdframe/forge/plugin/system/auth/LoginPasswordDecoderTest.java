@@ -25,7 +25,9 @@ class LoginPasswordDecoderTest {
 
         LoginPasswordDecoder decoder = new LoginPasswordDecoder(policy, keyPairHolderProvider);
 
-        assertThrows(BusinessException.class, () -> decoder.decode("invalid-ciphertext"));
+        BusinessException exception = assertThrows(BusinessException.class, () -> decoder.decode("invalid-ciphertext"));
+        assertEquals(400, exception.getCode());
+        assertEquals("密码加密校验失败，请刷新后重试", exception.getMessage());
     }
 
     @Test

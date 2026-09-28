@@ -39,6 +39,26 @@ export function buildLoginUrl(redirect = getCurrentRoutePath()) {
   return buildUrl(LOGIN_PAGE, redirect ? { redirect } : {})
 }
 
+/**
+ * 把 uni 路由（如 /pages/login/index?redirect=...）转成浏览器可打开的地址。
+ * 生产 H5 挂在 /forge-h5 且默认 hash 路由，直接 location=/pages/... 会打到站点根并 404。
+ */
+export function resolveBrowserRouteUrl(url) {
+  const value = String(url || '').trim()
+  if (!value) {
+    return ''
+  }
+  if (/^(https?:|data:|blob:)/i.test(value)) {
+    return value
+  }
+
+  const routePath = value.startsWith('/') ? value : `/${value}`
+  const rawBase = import.meta.env.BASE_URL || import.meta.env.VITE_PUBLIC_PATH || '/'
+  const base = String(rawBase || '/').replace(/\/+$/, '')
+  const basePrefix = !base || base === '/' || base === '.' ? '' : base
+  return `${basePrefix}/#${routePath}`
+}
+
 function callUniRoute(method, options = {}, fallbackMethod = 'reLaunch') {
   if (typeof uni !== 'undefined' && typeof uni?.[method] === 'function') {
     uni[method](options)
@@ -51,7 +71,7 @@ function callUniRoute(method, options = {}, fallbackMethod = 'reLaunch') {
   }
 
   if (typeof window !== 'undefined' && options.url) {
-    window.location.href = options.url
+    window.location.href = resolveBrowserRouteUrl(options.url)
   }
 }
 

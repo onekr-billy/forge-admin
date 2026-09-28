@@ -1,6 +1,15 @@
 # 踩坑：安全 / 加密 / 租户 / 鉴权
 
-> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 19 条。
+> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 20 条。
+
+## 业务码 4091 不能当 HTTP status，否则登录选工作区会显示 500
+
+
+**发现日期**：2026-09-28
+
+`/auth/login` 密码校验通过后，多租户账号会抛 `BusinessException(4091, 请选择要进入的工作区, options)`。`GlobalExceptionHandler.setHttpStatus` 若把非 400–599 的业务码一律落成 HTTP 500，Network 面板会显示 500，但响应体仍是 `code:4091` 和租户列表。
+
+处理原则：只有业务码本身是合法 HTTP 状态码时才写入 `response.setStatus`；像 4091 这类语义码应返回 HTTP 200，由响应体 `code` 表达业务含义。前端用 `applyWorkspaceChallenge` 识别 4091 弹工作区选择。
 
 ## 多租户拦截器会破坏 LIMIT 1 FOR UPDATE 顺序
 

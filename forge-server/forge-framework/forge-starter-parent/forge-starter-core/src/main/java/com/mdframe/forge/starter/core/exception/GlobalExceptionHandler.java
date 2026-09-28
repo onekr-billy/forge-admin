@@ -352,7 +352,9 @@ public class GlobalExceptionHandler {
         if (response == null || code == null) {
             return;
         }
-        int status = code >= 400 && code <= 599 ? code : 500;
+        // 仅当业务码本身是合法 HTTP 状态码时写入 HTTP status；
+        // 像 4091（选工作区）这类业务语义码不能落成 500，否则网关/浏览器会误判为系统故障。
+        int status = (code >= 400 && code <= 599) ? code : 200;
         response.setStatus(status);
         if (status == 429 && !response.containsHeader("Retry-After")) {
             response.setHeader("Retry-After", "60");
