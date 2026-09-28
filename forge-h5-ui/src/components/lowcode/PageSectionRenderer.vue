@@ -484,6 +484,23 @@ function isDeletedRow(row = {}) {
   flex-wrap: wrap;
 }
 
+/* 子表头/行操作是行内工具，不走底部栏 44px 触控高度，避免把「1 条」行撑得过高。 */
+.section-child-head__tools :deep(.ai-button--sm),
+.section-child-head__tools :deep(.wd-button.is-small),
+.section-child-row__head :deep(.ai-button--sm),
+.section-child-row__head :deep(.wd-button.is-small) {
+  min-height: 28px !important;
+  height: 28px !important;
+  padding: 0 10px !important;
+  font-size: 12px !important;
+  line-height: 28px !important;
+}
+
+.section-child-head__tools :deep(.ai-button__content),
+.section-child-row__head :deep(.ai-button__content) {
+  min-height: 28px;
+}
+
 .section-child-count {
   color: #475569;
   font-size: 23rpx;

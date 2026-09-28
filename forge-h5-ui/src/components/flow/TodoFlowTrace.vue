@@ -58,9 +58,9 @@ function itemMeta(item) {
 </script>
 
 <style lang="scss" scoped>
-.trace-panel { margin-top: 14rpx; padding: 18px; border: 1px solid var(--border-light); border-radius: var(--radius-card); background: #fff; box-shadow: var(--shadow-soft); }
+.trace-panel { margin-top: 14rpx; padding: 18px; border: 1px solid var(--border-light); border-radius: var(--radius-card); background: #fff}
 .trace-heading, .trace-title-row { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12rpx; }
-.trace-heading { margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1rpx solid var(--border-light); }
+.trace-heading { margin-bottom: 10px; padding-bottom: 12px; border-bottom: 1rpx solid var(--border-light); }
 .trace-heading__title { color: var(--text-strong); font-size: 14px; font-weight: 700; }
 .trace-heading__count { color: var(--text-muted); font-size: 21rpx; }
 .trace-list { padding: 4rpx 0; }

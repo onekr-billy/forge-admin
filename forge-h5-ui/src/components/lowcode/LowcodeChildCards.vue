@@ -109,6 +109,20 @@ function isDeletedRow(row = {}) {
 .runtime-child-card__title { color: var(--text-strong); font-size: 32rpx; font-weight: 500; }
 .runtime-child-card__count { color: var(--text-muted); font-size: 20rpx; }
 .runtime-child-card__tools, .runtime-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12rpx; }
+.runtime-child-card__tools :deep(.ai-button--sm),
+.runtime-child-card__tools :deep(.wd-button.is-small),
+.runtime-child-row__head :deep(.ai-button--sm),
+.runtime-child-row__head :deep(.wd-button.is-small) {
+  min-height: 28px !important;
+  height: 28px !important;
+  padding: 0 10px !important;
+  font-size: 12px !important;
+  line-height: 28px !important;
+}
+.runtime-child-card__tools :deep(.ai-button__content),
+.runtime-child-row__head :deep(.ai-button__content) {
+  min-height: 28px;
+}
 .runtime-child-list { display: flex; flex-direction: column; gap: 10rpx; }
 .runtime-child-row { padding: 18rpx; border: 1rpx solid var(--border-light); border-radius: var(--radius-control); background: var(--surface-subtle); }
 .runtime-child-row__head { display: flex; align-items: center; justify-content: space-between; gap: 12rpx; margin-bottom: 14rpx; }

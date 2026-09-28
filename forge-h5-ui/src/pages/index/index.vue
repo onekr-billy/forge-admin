@@ -35,12 +35,12 @@
               </button>
             </view>
             <view class="overview-list">
-              <button class="overview-item" @click="goTodo">
+              <button class="overview-item" type="button" @click.stop="goTodo">
                 <text class="overview-title">待办任务</text>
                 <view class="overview-metric"><text>{{ todoCount > 99 ? '99+' : todoCount }}</text><text>项</text></view>
                 <text class="overview-desc">查看并处理</text>
               </button>
-              <button class="overview-item" @click="goMessages">
+              <button class="overview-item" type="button" @click.stop="goUnreadMessages">
                 <text class="overview-title">未读消息</text>
                 <view class="overview-metric"><text>{{ unreadCount > 99 ? '99+' : unreadCount }}</text><text>条</text></view>
                 <text class="overview-desc">查看最新提醒</text>
@@ -266,8 +266,15 @@ function goMessages() {
   uni.navigateTo({ url: '/pages/message/index' })
 }
 
+function goUnreadMessages() {
+  uni.navigateTo({ url: '/pages/message/index?tab=unread' })
+}
+
 function goTodo() {
-  uni.switchTab({ url: '/pages/todo' })
+  uni.switchTab({
+    url: '/pages/todo',
+    fail: () => uni.reLaunch({ url: '/pages/todo' }),
+  })
 }
 
 function handleShortcut(item) {

@@ -70,6 +70,7 @@ test('message and todo pages keep the handling round trip continuous', () => {
   assert.match(detailSource, /api\.markMessageRead\(sourceMessageId\.value\)\.catch/)
   assert.match(detailSource, /if \(actionLoading\.value\) return/)
   assert.match(detailSource, /returnAfterSuccessfulAction\(\)/)
-  assert.match(detailSource, /const fallback = sourceMessageId\.value \? '\/pages\/message\/index' : '\/pages\/todo'/)
+  assert.match(detailSource, /safeNavigateBack\(/)
+  assert.match(detailSource, /fallback: fromMessage \? '\/pages\/message\/index' : '\/pages\/todo'/)
   assert.match(apiSource, /url: '\/api\/message\/read\/batch'/)
 })

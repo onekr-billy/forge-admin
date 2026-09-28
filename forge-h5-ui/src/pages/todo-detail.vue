@@ -257,6 +257,7 @@ import { showConfirmDialog } from '@/utils/dialog'
 import { createFlowActionCredentials } from '@/utils/flow-action-idempotency'
 import { compactObject as compact, parseNestedJson as parseJson, resolveApiErrorMessage as resolveErrorMessage } from '@/utils/flow-page'
 import { toast } from '@/utils/notify'
+import { safeNavigateBack } from '@/utils/route'
 import { hasDeclaredFormCreateRules } from '@/utils/form-create-mobile'
 import { resolveTaskUiDocument } from '@/utils/task-ui-document'
 import { normalizeDictOptions } from '@/utils/lowcode-runtime'
@@ -848,11 +849,12 @@ async function resolveSignature(value, signatureRef) {
 }
 function readCachedTask(id) { try { return uni.getStorageSync(`flow-task:${id}`) || null } catch { return null } }
 function returnAfterSuccessfulAction() {
-  const fallback = sourceMessageId.value ? '/pages/message/index' : '/pages/todo'
-  uni.navigateBack({
-    fail: () => sourceMessageId.value
-      ? uni.reLaunch({ url: fallback })
-      : uni.switchTab({ url: fallback }),
+  // 企微卡片 / 直链打开时页面栈常只有本页；H5 上盲目 navigateBack 会 history.back 到同 URL，看起来像刷新。
+  // 先看栈深，能退就退；否则落到待办 Tab 或消息页。
+  const fromMessage = Boolean(sourceMessageId.value)
+  safeNavigateBack({
+    fallback: fromMessage ? '/pages/message/index' : '/pages/todo',
+    fallbackType: fromMessage ? 'reLaunch' : 'switchTab',
   })
 }
 </script>

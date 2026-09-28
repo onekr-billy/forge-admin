@@ -111,10 +111,11 @@ function handleBlur(event) {
   min-width: 0;
   align-items: center;
   padding: 0 12px;
-  border: 1px solid transparent;
+  border: 1px solid var(--border-light, #e2e8f0);
   border-radius: 999px;
-  background: #f1f5f9;
-  transition: border-color .16s ease, background-color .16s ease;
+  background: #fff;
+  box-sizing: border-box;
+  transition: border-color .16s ease, background-color .16s ease, box-shadow .16s ease;
 }
 
 .ai-search-bar--focused :deep(.wd-search__block) {

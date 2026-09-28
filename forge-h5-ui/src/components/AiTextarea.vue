@@ -61,10 +61,8 @@ function handleBlur(event) {
 <style lang="scss" scoped>
 .ai-textarea {
   width: 100%;
-  padding: 4px 8px;
   border: 1px solid var(--forge-color-border-subtle, #f1f5f9);
   border-radius: 12px;
-  background: #f8fafc;
   box-sizing: border-box;
   transition: border-color .16s ease, background-color .16s ease;
 }

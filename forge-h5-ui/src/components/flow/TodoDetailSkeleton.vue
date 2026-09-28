@@ -53,19 +53,19 @@ defineProps({ formOnly: { type: Boolean, default: false } })
 </script>
 
 <style lang="scss" scoped>
-.todo-detail-skeleton { display: flex; flex-direction: column; gap: 14px; padding: 16px; }
+.todo-detail-skeleton { display: flex; flex-direction: column; gap: 14px; padding: 10px; }
 .detail-skeleton-card { padding: 18px; border: 1px solid var(--border-light); border-radius: var(--radius-card); background: #fff; box-shadow: var(--shadow-soft); }
 .detail-skeleton-head, .detail-skeleton-section-head, .detail-skeleton-field, .detail-skeleton-node { display: flex; min-width: 0; align-items: center; gap: 10px; }
 .detail-skeleton-head { min-height: 36px; }
 .detail-skeleton-icon { width: 20px; height: 20px; flex: 0 0 20px; border-radius: 6px; }
 .detail-skeleton-pill { width: 72px; height: 32px; margin-left: auto; border-radius: 999px; }
 .detail-skeleton-badge { width: 62px; height: 22px; margin-top: 8px; border-radius: 999px; }
-.detail-skeleton-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-light); }
+.detail-skeleton-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-light); }
 .detail-skeleton-fact, .detail-skeleton-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 7px; }
 .detail-skeleton-section-head { padding-bottom: 13px; border-bottom: 1px solid var(--border-light); }
 .detail-skeleton-field { display: grid; grid-template-columns: 78px minmax(0, 1fr); margin-top: 12px; }
 .detail-skeleton-control { height: 44px; border-radius: var(--radius-control); }
-.detail-skeleton-node { align-items: flex-start; margin-top: 16px; }
+.detail-skeleton-node { align-items: flex-start; margin-top: 10px; }
 .detail-skeleton-dot { width: 12px; height: 12px; flex: 0 0 12px; margin-top: 3px; border: 3px solid #dbe4ef; border-radius: 50%; background: #fff; box-sizing: border-box; }
 .detail-skeleton-line { height: 10px; border-radius: 999px; }
 .detail-skeleton-line.is-title { width: 42%; height: 16px; }

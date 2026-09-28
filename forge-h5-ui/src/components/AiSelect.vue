@@ -113,7 +113,6 @@ function handleClear() {
   display: flex;
   width: 100%;
   min-width: 0;
-  min-height: 42px;
   align-items: center;
   line-height: 1.5;
 }

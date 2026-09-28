@@ -31,7 +31,7 @@ const title = computed(() => props.task.title || props.task.businessTitle || pro
 </script>
 
 <style lang="scss" scoped>
-.task-summary { position: relative; overflow: hidden; margin: 16px 16px 0; padding: 20px; border: 1px solid var(--border-light); border-radius: var(--radius-card); background: linear-gradient(135deg, #fff 0%, #f8fbff 100%); box-shadow: var(--shadow-soft); }
+.task-summary { position: relative; overflow: hidden; margin: 10px 10px 0; padding: 20px; border: 1px solid var(--border-light); border-radius: var(--radius-card); background: linear-gradient(135deg, #fff 0%, #f8fbff 100%); box-shadow: var(--shadow-soft); }
 .task-summary::after { position: absolute; top: -48px; right: -40px; width: 132px; height: 132px; border-radius: 50%; background: rgba(59, 130, 246, .06); content: ''; pointer-events: none; }
 .task-summary__head { display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 12rpx; }
 .task-summary__title-wrap, .task-fact__label { display: flex; min-width: 0; align-items: center; }
@@ -43,7 +43,7 @@ const title = computed(() => props.task.title || props.task.businessTitle || pro
 .task-summary__refresh { position: relative; z-index: 1; display: flex; min-width: 44px; min-height: 36px; flex: 0 0 auto; align-items: center; justify-content: center; gap: 5px; margin: -3px -6px 0 0; padding: 0 10px; border: 0; border-radius: 999px; color: var(--primary-color); font-size: 12px; font-weight: 600; line-height: 1.3; white-space: nowrap; background: rgba(255, 255, 255, .82); }
 .task-summary__refresh::after { border: 0; }
 .task-node { position: relative; z-index: 1; width: fit-content; margin-top: 7px; padding: 4px 9px; border-radius: 999px; color: var(--primary-color); font-size: 11px; font-weight: 600; background: var(--primary-soft); }
-.task-facts { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 16px; margin-top: 16px; padding-top: 16px; border-top: 1rpx solid var(--border-light); }
+.task-facts { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 16px; margin-top: 10px; padding-top: 10px; border-top: 1rpx solid var(--border-light); }
 .task-fact { min-width: 0; }
 .task-fact__label { gap: 5px; color: var(--text-muted); }
 .task-fact__label :deep(.ai-icon) { width: 12px; height: 12px; }

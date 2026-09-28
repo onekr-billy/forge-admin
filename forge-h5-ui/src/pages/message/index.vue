@@ -2,18 +2,28 @@
   <view class="message-page">
     <AiFeedbackHost />
     <view class="message-content">
-      <!-- 会话类型与查询 -->
-      <view class="filter-panel">
-        <view class="tab-row">
-          <button v-for="tab in tabs" :key="tab.key" class="filter-tab" :class="{ active: activeTab === tab.key }" @click="switchTab(tab.key)">{{ tab.label }}</button>
-        </view>
+      <!-- 查询与类型切换：对齐待办页工具区，避免首屏标题重复占位。 -->
+      <view class="message-tools">
         <view class="message-query-row">
-          <view class="message-search-wrap">
-            <AiSearchBar v-model="keyword" placeholder="搜索消息" @search="refresh" @clear="refresh" />
-          </view>
+          <AiSearchBar v-model="keyword" placeholder="搜索消息" @search="refresh" @clear="refresh" />
           <button class="message-filter-trigger" :class="{ 'is-active': readFilter !== 'all' }" aria-label="筛选消息" @click="openFilters">
             <AiIcon name="filter" :color="readFilter !== 'all' ? '#3b82f6' : '#475569'" size="sm" />
             <text class="message-filter-text">筛选</text>
+          </button>
+        </view>
+        <view class="message-scope-tabs">
+          <button
+            v-for="tab in tabs"
+            :key="tab.key"
+            class="message-scope-tab"
+            :class="{ active: activeTab === tab.key }"
+            @click="switchTab(tab.key)"
+          >
+            {{ tab.label }}
+            <text
+              v-if="tabBadgeVisible[tab.key]"
+              class="scope-count"
+            >{{ tabBadgeText[tab.key] }}</text>
           </button>
         </view>
         <button v-if="markableUnreadMessages.length" class="mark-read-button" @click="markAllRead">
@@ -22,13 +32,13 @@
         </button>
       </view>
 
-      <view class="message-list">
+      <scroll-view class="message-list" scroll-y :show-scrollbar="false">
         <AiListSkeleton v-if="loading" :rows="6" />
 
         <AiEmpty
           v-else-if="filteredMessages.length === 0"
-          title="暂无消息"
-          description="当前筛选条件下没有站内消息。"
+          :title="activeTab === 'unread' ? '暂无未读' : '暂无消息'"
+          :description="activeTab === 'unread' ? '当前没有未读站内消息。' : '当前筛选条件下没有站内消息。'"
           icon="inbox"
         />
 
@@ -37,27 +47,28 @@
             v-for="item in filteredMessages"
             :key="item.id"
             class="message-card"
-            :class="{ unread: item.readFlag === 0 }"
+            :class="{ unread: isUnreadMessage(item) }"
             @click="openMessage(item)"
           >
-            <view class="message-icon">
-              <AiIcon :name="isApprovalMessage(item) ? 'check-square' : 'message-square'" color="#3b82f6" size="sm" />
-            </view>
-            <view class="message-main">
-              <view class="message-title-row">
-                <text class="message-title">{{ item.title || '消息通知' }}</text>
+            <view class="message-card__head">
+              <view class="message-card__identity">
+                <text class="message-category" :class="messageCategoryTone(item)">{{ getMessageCategory(item) }}</text>
+                <text v-if="isUnreadMessage(item)" class="message-unread">未读</text>
                 <text class="message-time">{{ formatMessageTime(item.createTime || item.receiveTime) }}</text>
               </view>
-              <text class="message-desc">{{ stripHtml(item.content || item.description || '-') }}</text>
-              <view class="message-meta">
-                <text class="message-category">{{ getMessageCategory(item) }}</text>
-                <view v-if="item.readFlag === 0" class="message-unread"><view class="unread-dot" /><text>未读</text></view>
+            </view>
+            <text class="message-title">{{ item.title || '消息通知' }}</text>
+            <text class="message-desc">{{ stripHtml(item.content || item.description || '-') }}</text>
+            <view class="message-card__footer">
+              <text class="message-card__hint">{{ isApprovalMessage(item) ? '流程待办' : '站内消息' }}</text>
+              <view class="message-primary-action">
+                <text>查看</text>
+                <AiIcon name="chevron-right" color="#3b82f6" size="sm" />
               </view>
             </view>
-            <AiIcon name="chevron-right" color="#94a3b8" size="sm" />
           </view>
         </template>
-      </view>
+      </scroll-view>
     </view>
     <AiFilterSheet v-model="filterVisible" title="筛选消息" @reset="resetFilters" @apply="applyFilters">
       <view class="message-filter-field">
@@ -105,21 +116,30 @@ const openingMessageId = ref('')
 
 const tabs = [
   { key: 'all', label: '全部' },
-  { key: 'system', label: '系统消息' },
-  { key: 'business', label: '业务消息' },
+  { key: 'unread', label: '未读' },
+  { key: 'system', label: '系统' },
+  { key: 'business', label: '业务' },
 ]
 const readOptions = [
   { label: '全部', value: 'all' },
-  { label: '未读', value: 'unread' },
   { label: '已读', value: 'read' },
 ]
 
+function isUnreadMessage(item = {}) {
+  return Number(item?.readFlag) !== 1
+}
+
+function getMessageGroup(item) {
+  return ['SYSTEM', 'SMS', 'EMAIL'].includes(String(item?.type || '').toUpperCase()) && !isApprovalMessage(item) ? 'system' : 'business'
+}
+
 const filteredMessages = computed(() => {
   return messages.value.filter((item) => {
-    if (readFilter.value === 'unread' && item.readFlag !== 0) {
-      return false
+    // 「未读」Tab 优先；其余 Tab 可再叠加筛选抽屉的已读条件。
+    if (activeTab.value === 'unread') {
+      return isUnreadMessage(item)
     }
-    if (readFilter.value === 'read' && item.readFlag !== 1) {
+    if (readFilter.value === 'read' && isUnreadMessage(item)) {
       return false
     }
     if (activeTab.value === 'system' && getMessageGroup(item) !== 'system') {
@@ -131,12 +151,47 @@ const filteredMessages = computed(() => {
     return true
   })
 })
-const markableUnreadMessages = computed(() => messages.value.filter(item => item.readFlag === 0 && !isApprovalMessage(item)))
-const markAllReadLabel = computed(() => messages.value.some(item => item.readFlag === 0 && isApprovalMessage(item))
+
+const tabCounts = computed(() => ({
+  all: messages.value.length,
+  unread: messages.value.filter(item => isUnreadMessage(item)).length,
+  system: messages.value.filter(item => getMessageGroup(item) === 'system').length,
+  business: messages.value.filter(item => getMessageGroup(item) === 'business').length,
+}))
+
+const tabBadgeVisible = computed(() => {
+  const visible = {}
+  tabs.forEach((tab) => {
+    const count = Number(tabCounts.value[tab.key] || 0)
+    // 未读角标始终可见；其它 Tab 仅在选中时显示数量。
+    visible[tab.key] = count > 0 && (tab.key === 'unread' || activeTab.value === tab.key)
+  })
+  return visible
+})
+
+const tabBadgeText = computed(() => {
+  const text = {}
+  tabs.forEach((tab) => {
+    const count = Number(tabCounts.value[tab.key] || 0)
+    text[tab.key] = count > 99 ? '99+' : String(count)
+  })
+  return text
+})
+
+const markableUnreadMessages = computed(() => messages.value.filter(item => isUnreadMessage(item) && !isApprovalMessage(item)))
+const markAllReadLabel = computed(() => messages.value.some(item => isUnreadMessage(item) && isApprovalMessage(item))
   ? '其他消息全部已读'
   : '全部标为已读')
 onLoad((query = {}) => {
   pendingOpenId.value = query.id ? String(query.id) : ''
+  const tab = String(query.tab || query.readFilter || '').toLowerCase()
+  if (['all', 'unread', 'system', 'business'].includes(tab)) {
+    activeTab.value = tab === 'read' ? 'all' : tab
+  }
+  if (tab === 'unread') {
+    readFilter.value = 'all'
+    draftReadFilter.value = 'all'
+  }
 })
 
 onShow(async () => {
@@ -211,7 +266,8 @@ function normalizeRecords(data) {
     : data?.records || data?.list || data?.rows || []
   return records.map(item => ({
     ...item,
-    readFlag: Number(item.readFlag ?? item.readStatus ?? 0),
+    // 仅明确已读记为 1；其余一律按未读，避免接口缺字段/字符串导致未读被滤掉。
+    readFlag: Number(item.readFlag ?? item.readStatus ?? item.read_flag) === 1 ? 1 : 0,
   }))
 }
 
@@ -229,10 +285,6 @@ function switchTab(key) {
 function openFilters() { draftReadFilter.value = readFilter.value; filterVisible.value = true }
 function resetFilters() { draftReadFilter.value = 'all' }
 function applyFilters() { readFilter.value = draftReadFilter.value; filterVisible.value = false }
-
-function getMessageGroup(item) {
-  return ['SYSTEM', 'SMS', 'EMAIL'].includes(String(item?.type || '').toUpperCase()) && !isApprovalMessage(item) ? 'system' : 'business'
-}
 
 async function openMessage(item) {
   if (!item?.id || openingMessageId.value) return
@@ -255,7 +307,7 @@ async function openMessage(item) {
       }
       return
     }
-    if (message.readFlag === 0) await markRead(message, { silent: true })
+    if (isUnreadMessage(message)) await markRead(message, { silent: true })
     if (route.startsWith('/pages/') && !route.startsWith('/pages/message/')) {
       uni.navigateTo({ url: route, fail: () => openMessagePage(message.id) })
       return
@@ -274,7 +326,7 @@ function openMessagePage(id) {
 }
 
 async function markRead(item, options = {}) {
-  if (!item?.id || item.readFlag !== 0) {
+  if (!item?.id || !isUnreadMessage(item)) {
     return
   }
   try {
@@ -354,6 +406,20 @@ function getMessageCategory(item) {
     CUSTOM: '通知',
   }
   return map[item?.type] || '通知'
+}
+
+function messageCategoryTone(item = {}) {
+  if (isApprovalMessage(item)) return 'tone-blue'
+  const identity = `${getMessageCategory(item)} ${item.type || ''} ${item.bizType || ''}`.toLowerCase()
+  const semanticTones = [
+    [/(系统|system)/, 'tone-purple'],
+    [/(短信|sms)/, 'tone-cyan'],
+    [/(邮件|email)/, 'tone-emerald'],
+    [/(通知|公告|notice|message|custom)/, 'tone-orange'],
+  ]
+  const matched = semanticTones.find(([pattern]) => pattern.test(identity))
+  if (matched) return matched[1]
+  return 'tone-rose'
 }
 
 function stripHtml(value) {
