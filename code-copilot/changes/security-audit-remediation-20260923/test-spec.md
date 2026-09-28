@@ -620,4 +620,11 @@ rg -n "new Function|AsyncFunction|engine\.eval|StrictHostKeyChecking=no|fastjson
 - 正常路径延迟：流程回调到达时立即消费，远程命令在请求路径立即执行，在线发布同步推进，流程镜像在事件线程即时应用，通知在事务提交后异步发送；恢复扫描频率不得被用作正常路径 SLA。
 - 默认恢复频率：回调 Inbox、远程命令、发布任务为 30 秒，触发器恢复和状态恢复扫描为 60 秒，运行中流程主动远程对账为 300 秒；业务事件 Outbox 作为主投递通道保持 5 秒。
 - 性能边界：扫描 SQL 必须命中状态/重试时间/租约组合索引，批量数量有上限，多实例通过 CAS claim 收敛；关闭恢复任务时不得继续空唤醒。
-- 自动化结果：Node 20 定向 Vitest 1/1、目标 ESLint、Admin 生产构建、YAML 静态解析和调度清单检查通过。Java 调度频率契约测试已新增，但因本机无 JDK/Maven 未在本轮执行，后端测试状态不得记为通过。
+- 自动化结果：Node 20 定向 Vitest 1/1、Java 调度频率契约测试 1/1、目标 ESLint、Admin 前端生产构建、Admin 后端聚合打包、YAML 静态解析和调度清单检查均通过。
+
+## 14. 2026-09-28 Maven 本地兼容回归
+
+- 默认 `validate/package/spring-boot:run` 不得再解析或执行 Maven Enforcer 与 Maven Toolchains 插件，也不得因其插件级 Maven 3.6.3 前置条件失败。
+- Java 编译目标继续为 17；取消构建前置门禁不代表项目支持 Java 17 以下运行时。
+- 使用用户旧 Maven 执行 `validate`，并使用当前 Maven 执行同一命令，确认 POM 模型和反应堆均可加载。
+- 实际结果：Maven 3.5.4/3.9.16 的 52 模块 `validate` 均通过；Maven 3.5.4 下 Admin 聚合 `package -DskipTests` 46/46 通过。
