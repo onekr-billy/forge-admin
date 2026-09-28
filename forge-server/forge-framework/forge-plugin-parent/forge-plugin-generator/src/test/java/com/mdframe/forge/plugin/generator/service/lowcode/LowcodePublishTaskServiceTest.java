@@ -6,6 +6,7 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfigVersion;
 import com.mdframe.forge.plugin.generator.domain.entity.AiLowcodePublishTask;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePublishDTO;
 import com.mdframe.forge.plugin.generator.enums.LowcodePublishTaskStatus;
+import com.mdframe.forge.plugin.generator.mapper.AiCrudConfigVersionMapper;
 import com.mdframe.forge.plugin.generator.mapper.LowcodePublishTaskMapper;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,12 +29,15 @@ import static org.mockito.Mockito.when;
 class LowcodePublishTaskServiceTest {
 
     private LowcodePublishTaskMapper mapper;
+    private AiCrudConfigVersionMapper versionMapper;
     private LowcodePublishTaskService service;
 
     @BeforeEach
     void setUp() {
         mapper = mock(LowcodePublishTaskMapper.class);
-        service = new LowcodePublishTaskService(mapper, new ObjectMapper());
+        versionMapper = mock(AiCrudConfigVersionMapper.class);
+        service = new LowcodePublishTaskService(
+                mapper, versionMapper, new ObjectMapper());
         ReflectionTestUtils.setField(service, "maxRetryCount", 3);
         ReflectionTestUtils.setField(service, "lockTimeoutSeconds", 120L);
         ReflectionTestUtils.setField(service, "retryBaseSeconds", 5L);
@@ -107,6 +111,25 @@ class LowcodePublishTaskServiceTest {
                 eq("IllegalStateException"), any(LocalDateTime.class));
     }
 
+    @Test
+    void onlinePublishIsPersistedAsClaimedDdlStageBeforeExecution() {
+        when(versionMapper.selectMaxVersionNo(7L, 10L)).thenReturn(1);
+        when(mapper.insert(any(AiLowcodePublishTask.class))).thenReturn(1);
+
+        AiLowcodePublishTask task = service.stageOnlinePublish(onlinePlan(), "request-worker");
+
+        assertEquals("ONLINE_PUBLISH", task.getOperationType());
+        assertEquals("DDL_PENDING", task.getCurrentStage());
+        assertEquals("PROCESSING", task.getTaskStatus());
+        assertEquals(3, task.getVersionNo());
+        assertEquals("request-worker", task.getLockOwner());
+        assertEquals(1, task.getRetryCount());
+        assertEquals(64, task.getSchemaHash().length());
+        LowcodeOnlinePublishCommand restored = service.restoreOnlinePublish(task);
+        assertEquals(4, restored.expectedDraftVersion());
+        assertEquals(task.getVersionId(), restored.versionId());
+    }
+
     private AiCrudConfig config() {
         AiCrudConfig config = new AiCrudConfig();
         config.setId(10L);
@@ -139,5 +162,17 @@ class LowcodePublishTaskServiceTest {
         task.setRetryCount(retryCount);
         task.setOperatorId(42L);
         return task;
+    }
+
+    private LowcodeOnlinePublishPlan onlinePlan() {
+        LowcodeOnlinePublishConfigSnapshot snapshot = new LowcodeOnlinePublishConfigSnapshot();
+        snapshot.setModelSchema("{\"tableName\":\"biz_order\",\"fields\":[]}");
+        snapshot.setPageSchema("{\"layoutType\":\"simple-crud\"}");
+        snapshot.setRuntimeDatasourceId(12L);
+        snapshot.setRuntimeDatasourceCode("master");
+        snapshot.setRuntimeTableName("biz_order");
+        return new LowcodeOnlinePublishPlan(
+                1, 7L, 10L, "orders", 4, 2, 42L, snapshot,
+                true, 99L, "sales", "order", "订单", "在线发布");
     }
 }

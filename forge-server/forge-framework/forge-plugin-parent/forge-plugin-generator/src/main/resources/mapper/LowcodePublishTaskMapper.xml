@@ -139,4 +139,35 @@
           AND lock_owner = #{task.lockOwner}
     </update>
 
+    <update id="advanceStage">
+        UPDATE ai_lowcode_publish_task
+        SET current_stage = #{nextStage},
+            error_type = NULL,
+            update_by = #{task.operatorId},
+            update_time = #{now}
+        WHERE tenant_id = #{task.tenantId}
+          AND id = #{task.id}
+          AND current_stage = #{expectedStage}
+          AND task_status = 'PROCESSING'
+          AND lock_owner = #{task.lockOwner}
+    </update>
+
+    <update id="releaseStage">
+        UPDATE ai_lowcode_publish_task
+        SET current_stage = #{nextStage},
+            task_status = 'PENDING',
+            retry_count = 0,
+            next_retry_time = NULL,
+            lock_owner = NULL,
+            lock_time = NULL,
+            error_type = NULL,
+            update_by = #{task.operatorId},
+            update_time = #{now}
+        WHERE tenant_id = #{task.tenantId}
+          AND id = #{task.id}
+          AND current_stage = #{expectedStage}
+          AND task_status = 'PROCESSING'
+          AND lock_owner = #{task.lockOwner}
+    </update>
+
 </mapper>

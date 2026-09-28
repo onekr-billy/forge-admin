@@ -422,6 +422,14 @@
 - 实际结果：任务服务、Dispatcher、动作服务、Mapper、迁移和发布契约定向测试 23/23，Admin 菜单适配器测试 5/5；允许 MockWebServer 绑定本机临时端口后，Generator 依赖反应堆 33/33 模块成功，`forge-plugin-generator` 1416/1416，0 失败、0 错误、0 跳过。沙箱内首次全量运行仅因 MockWebServer 无权绑定端口中止。
 - 阶段限制：本批仅闭环发布后的菜单/业务入口/配置同步。在线 DDL 仍在发布事务中执行，尚未迁入持久化任务；也未提供发布任务 DEAD 人工重放 API。未连接真实 MySQL 执行 V1.0.202/Flyway，未执行 DDL 成功后配置失败、双节点租约、进程 kill -9 或菜单成功后入口失败的实库故障注入，因此 T4.5 保持未完成。
 
+## 1.48 2026-09-28 T4.5 在线 DDL 分阶段恢复
+
+- 事务边界：`ONLINE_CREATE_TABLE` 在执行任何 DDL 前先以独立事务持久化 `ONLINE_PUBLISH` 任务及不可变命令；DDL 入口使用 `Propagation.NOT_SUPPORTED` 显式挂起调用方本地事务，配置/版本提交和每次任务阶段迁移分别使用 `REQUIRES_NEW`。不再以发布方法的 `@Transactional` 暗示跨数据源 DDL 可回滚。
+- 恢复状态：任务按 `DDL_PENDING -> CONFIG_PENDING -> POST_SYNC` 推进。DDL 后进程中断会从不可变模型快照幂等重检/补齐；配置提交后但阶段未推进会按预留版本 ID 识别已提交结果；配置失败会保留 `CONFIG_PENDING`，由既有租约、退避和 DEAD 状态机恢复。
+- 并发 fencing：版本号同时参考历史最大版本与当前已发布版本；配置提交锁定租户内配置行并校验预期草稿/发布版本。并发任务预留相同版本号时，精确匹配预留版本 ID 的任务可幂等完成，其他任务识别 winner 后转 `SUPERSEDED`，不重复插入版本或覆盖新配置。
+- 实际结果：阶段执行器、配置动作、事务传播、任务服务、Dispatcher、Mapper、发布契约和元数据身份定向测试 35/35；Generator 依赖反应堆 33/33 模块成功，`forge-plugin-generator` 1429/1429，0 失败、0 错误、0 跳过。
+- 阶段限制：未连接真实 MySQL/外部业务数据源执行 V1.0.202 Flyway 和真实 DDL，未做 DDL 部分成功、进程 kill -9、双节点租约、菜单成功后入口失败及补偿/回滚脚本演练；发布任务 DEAD 的授权人工重放 API 仍待实现，因此 T4.5 保持进行中。
+
 ## 2. P0 必跑验证
 
 ### 动态脚本与 HTML

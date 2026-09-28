@@ -141,7 +141,8 @@ class LowcodeMetadataIdentitySecurityTest {
                 mock(LowcodeSchemaValidator.class), mock(LowcodeDdlService.class),
                 mock(LowcodePolicyService.class), mock(MenuRegisterAdapter.class),
                 versionMapper, mock(LowcodeRuntimeDataSourceResolver.class),
-                mock(LowcodePublishTaskService.class));
+                mock(LowcodePublishTaskService.class),
+                mock(LowcodeOnlinePublishCoordinator.class));
         return new PublishFixture(service, appService, versionMapper);
     }
 

@@ -1,5 +1,25 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：T4.5 在线 DDL 分阶段恢复
+
+### 实现
+
+- 将 `ONLINE_CREATE_TABLE` 从发布主事务拆入持久化状态机。请求先以 `REQUIRES_NEW` 写入 `ONLINE_PUBLISH` 任务和不可变命令，再按 `DDL_PENDING -> CONFIG_PENDING -> POST_SYNC` 推进；任务继续复用 V1.0.202 的 requestId 唯一约束、租户 CAS 租约、退避、DEAD 和摘要校验。
+- 在线 DDL 入口显式使用 `Propagation.NOT_SUPPORTED` 挂起本地事务；DDL 成功后的配置与不可变发布版本在独立 `REQUIRES_NEW` 事务内提交，配置行使用显式租户条件和 `FOR UPDATE`。阶段迁移同样独立提交，因此 DDL、配置或进程中断后均可从最后持久化阶段继续，而不是假设跨数据源原子回滚。
+- 配置阶段增加草稿/发布版本 fencing、预留版本 ID 幂等复验和并发 winner 识别。版本号取历史最大版本与当前已发布版本的较大者再递增；两个并发计划即使预留相同版本号，后提交者也会转 `SUPERSEDED`，不会撞唯一键或覆盖新发布。
+- HTTP 路径同步推进至配置提交后，将 `POST_SYNC` 释放回可靠队列；Dispatcher 可从 DDL、配置或后置同步任一持久化阶段恢复。发布快照保持 null 语义，不把缺失领域/对象身份改写成 `0` 或空串。
+
+### 验证
+
+- 阶段执行器、配置动作、事务传播、任务服务、Dispatcher、Mapper、发布契约和元数据身份定向测试 35/35，覆盖配置阶段失败保留、DDL 不重复执行、已提交配置幂等恢复和并发同版本 winner fencing。
+- Generator 全量回归 33/33 个依赖反应堆模块成功，`forge-plugin-generator` 1429/1429，0 失败、0 错误、0 跳过。
+- `LowcodePublishService` 802 行、`LowcodePublishTaskService` 529 行，其余新增状态/动作类均低于 220 行，继续满足后端单类不超过 1000 行约束。
+
+### 未覆盖
+
+- 未连接真实 MySQL 或外部业务数据源执行 V1.0.202/Flyway 和真实在线 DDL；未注入 DDL 部分成功、双节点竞争、租约后 kill -9、菜单成功后入口失败，也未演练补偿/回滚脚本。
+- 发布任务 DEAD 的授权人工重放接口尚未实现，T4.5 继续进行。T4.2/T4.3 巨型组件/巨型类改造继续按用户要求排除。
+
 ## 2026-09-28：T4.5 发布后置同步可靠任务
 
 ### 实现

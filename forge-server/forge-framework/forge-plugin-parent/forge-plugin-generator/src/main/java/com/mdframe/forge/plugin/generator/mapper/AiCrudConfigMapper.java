@@ -15,6 +15,9 @@ public interface AiCrudConfigMapper extends BaseMapper<AiCrudConfig> {
     AiCrudConfig selectByConfigId(@Param("tenantId") Long tenantId,
                                   @Param("configId") Long configId);
 
+    AiCrudConfig selectByConfigIdForUpdate(@Param("tenantId") Long tenantId,
+                                           @Param("configId") Long configId);
+
     /** 当前启停/删除守卫，只返回数量；历史打印配置仍来自不可变版本。 */
     long countActiveRuntimeConfig(@Param("tenantId") Long tenantId, @Param("configId") Long configId,
                                   @Param("objectCode") String objectCode);

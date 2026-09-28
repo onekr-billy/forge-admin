@@ -62,6 +62,7 @@ public class LowcodePublishService {
     private final AiCrudConfigVersionMapper versionMapper;
     private final LowcodeRuntimeDataSourceResolver runtimeDataSourceResolver;
     private final LowcodePublishTaskService publishTaskService;
+    private final LowcodeOnlinePublishCoordinator onlinePublishCoordinator;
     /**
      * 领域菜单父级缓存（domainId → menuParentId），发布过程中多次递归查询时避免重复读写 sys_resource。
      */
@@ -78,7 +79,8 @@ public class LowcodePublishService {
                                  MenuRegisterAdapter menuRegisterAdapter,
                                  AiCrudConfigVersionMapper versionMapper,
                                  LowcodeRuntimeDataSourceResolver runtimeDataSourceResolver,
-                                 LowcodePublishTaskService publishTaskService) {
+                                 LowcodePublishTaskService publishTaskService,
+                                 LowcodeOnlinePublishCoordinator onlinePublishCoordinator) {
         this.objectMapper = objectMapper;
         this.configService = configService;
         this.appService = appService;
@@ -91,6 +93,7 @@ public class LowcodePublishService {
         this.versionMapper = versionMapper;
         this.runtimeDataSourceResolver = runtimeDataSourceResolver;
         this.publishTaskService = publishTaskService;
+        this.onlinePublishCoordinator = onlinePublishCoordinator;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -106,6 +109,7 @@ public class LowcodePublishService {
 
         // 一次解析运行时数据源上下文，后续所有依赖都复用同一份 context，避免 3-4 次重复查询
         LowcodeRuntimeDataSourceContext runtimeContext = runtimeDataSourceResolver.resolve(modelSchema);
+        boolean onlineDdl = isOnlineDdl(dto);
         ensureTableReady(modelSchema, dto, runtimeContext);
         // 去掉列校验（FOLLOW_SYSTEM 策略列已由设计器保证，不必再走 listColumns information_schema 查询）
         policyService.normalizeModelSchema(modelSchema);
@@ -120,8 +124,32 @@ public class LowcodePublishService {
         Long menuParentId = null;
         boolean syncMenu = shouldSyncMenu(dto);
         if (syncMenu && shouldMountAdmin(config.getMountTarget())) {
-            applyPublishMenuParent(config, dto, domainContext.domain());
-            menuParentId = config.getMenuParentId();
+            if (onlineDdl) {
+                menuParentId = dto == null ? null : dto.getMenuParentId();
+            } else {
+                applyPublishMenuParent(config, dto, domainContext.domain());
+                menuParentId = config.getMenuParentId();
+            }
+        }
+
+        if (onlineDdl) {
+            Long operatorId = SessionHelper.getUserId();
+            LowcodeOnlinePublishPlan plan = new LowcodeOnlinePublishPlan(
+                    LowcodePublishTaskService.COMMAND_PROTOCOL_VERSION,
+                    tenantId,
+                    config.getId(),
+                    config.getConfigKey(),
+                    config.getDraftVersion(),
+                    config.getPublishedVersion(),
+                    operatorId,
+                    LowcodeOnlinePublishConfigSnapshot.capture(config),
+                    syncMenu,
+                    dto == null ? null : dto.getMenuParentId(),
+                    dto == null ? null : dto.getBusinessSuiteCode(),
+                    dto == null ? null : dto.getBusinessObjectCode(),
+                    dto == null ? null : dto.getBusinessObjectName(),
+                    dto == null ? null : dto.getRemark());
+            return onlinePublishCoordinator.publish(plan);
         }
 
         int versionNo = nextVersionNo(config, tenantId);
@@ -235,7 +263,10 @@ public class LowcodePublishService {
             if (!SessionHelper.hasPermission(DDL_PERMISSION)) {
                 throw new BusinessException("缺少在线建表发布权限: " + DDL_PERMISSION);
             }
-            ddlService.executeCreateTable(modelSchema);
+            if (!runtimeContext.isAllowDdl()
+                    || !Boolean.TRUE.equals(ddlService.previewCreateTable(modelSchema).getExecutable())) {
+                throw new BusinessException("在线DDL预检不可执行");
+            }
             return;
         }
         // 复用外部已解析的 runtimeContext，避免每个 ddl 校验方法再单独 resolve 一次
@@ -245,6 +276,10 @@ public class LowcodePublishService {
         if (!ddlService.hasSinglePrimaryKey(modelSchema, runtimeContext)) {
             throw new BusinessException("数据表缺少单字段主键，请先在数据模型页修正表结构");
         }
+    }
+
+    private boolean isOnlineDdl(LowcodePublishDTO dto) {
+        return dto != null && DEPLOY_ONLINE_CREATE_TABLE.equals(dto.getDeployMode());
     }
 
     private void applyRuntimeConfig(AiCrudConfig config,

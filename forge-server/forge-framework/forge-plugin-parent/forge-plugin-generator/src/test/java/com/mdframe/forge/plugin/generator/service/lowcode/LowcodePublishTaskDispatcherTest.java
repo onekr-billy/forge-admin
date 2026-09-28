@@ -18,14 +18,16 @@ class LowcodePublishTaskDispatcherTest {
 
     private LowcodePublishTaskService taskService;
     private LowcodePublishPostActionService actionService;
+    private LowcodeOnlinePublishWorkflowExecutor workflowExecutor;
     private LowcodePublishTaskDispatcher dispatcher;
 
     @BeforeEach
     void setUp() {
         taskService = mock(LowcodePublishTaskService.class);
         actionService = mock(LowcodePublishPostActionService.class);
+        workflowExecutor = mock(LowcodeOnlinePublishWorkflowExecutor.class);
         when(actionService.supportsExecution()).thenReturn(true);
-        dispatcher = new LowcodePublishTaskDispatcher(taskService, actionService);
+        dispatcher = new LowcodePublishTaskDispatcher(taskService, actionService, workflowExecutor);
     }
 
     @Test
@@ -83,6 +85,21 @@ class LowcodePublishTaskDispatcherTest {
         dispatcher.dispatch();
 
         verifyNoInteractions(taskService);
+    }
+
+    @Test
+    void onlinePublishTaskResumesItsPersistedWorkflowStage() {
+        AiLowcodePublishTask candidate = task(4L);
+        AiLowcodePublishTask claimed = task(4L);
+        when(taskService.claim(eq(candidate), anyString(), any(LocalDateTime.class)))
+                .thenReturn(claimed);
+        when(taskService.isOnlinePublishTask(claimed)).thenReturn(true);
+        when(workflowExecutor.execute(claimed, false))
+                .thenReturn(LowcodeOnlinePublishWorkflowExecutor.Result.COMPLETED);
+
+        dispatcher.dispatch(candidate);
+
+        verify(taskService).markCompleted(claimed, false);
     }
 
     private AiLowcodePublishTask task(Long id) {

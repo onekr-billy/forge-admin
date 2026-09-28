@@ -21,6 +21,8 @@ class LowcodePublishTaskMapperContractTest {
         assertTrue(xml.contains("retry_count = retry_count + 1"));
         assertTrue(xml.contains("task_status = 'RETRY'"));
         assertTrue(xml.contains("task_status = 'PENDING'"));
+        assertTrue(xml.contains("current_stage = #{expectedStage}"));
+        assertTrue(xml.contains("current_stage = #{nextStage}"));
         assertFalse(xml.contains("${"));
     }
 

@@ -275,10 +275,10 @@
 
 ### T4.5 低代码发布任务、DDL 与后置同步
 
-- [ ] 将在线 DDL 从本地业务事务中拆出，增加发布任务/Outbox，记录 requestId、schemaHash、数据源、租户、版本、操作者和结果。（已新增 V1.0.202 和发布后置同步可靠任务，完整记录上述身份与摘要；在线 DDL 仍在发布事务中，尚未迁入任务）
-- [ ] 发布状态至少覆盖预检、DDL 待执行/执行中/成功/失败、配置待同步/成功/失败和人工重试；不以 `@Transactional` 声明提供跨数据源原子性。（后置同步已具备 PENDING/PROCESSING/RETRY/COMPLETED/SUPERSEDED/DEAD、租约、过期接管和版本 fencing；DDL/配置分阶段状态与人工重试仍待补齐）
+- [x] 将在线 DDL 从本地业务事务中拆出，增加发布任务/Outbox，记录 requestId、schemaHash、数据源、租户、版本、操作者和结果。（V1.0.202 任务现已承载 `DDL_PENDING -> CONFIG_PENDING -> POST_SYNC` 在线发布；任何 DDL 前先以 `REQUIRES_NEW` 持久化任务，DDL 显式 `NOT_SUPPORTED`，配置/版本以独立事务提交）
+- [ ] 发布状态至少覆盖预检、DDL 待执行/执行中/成功/失败、配置待同步/成功/失败和人工重试；不以 `@Transactional` 声明提供跨数据源原子性。（已用持久化阶段加 `PENDING/PROCESSING/RETRY/COMPLETED/SUPERSEDED/DEAD` 表达 DDL 执行、DDL 成功后的配置待同步、阶段失败与自动恢复，并明确挂起本地事务执行 DDL；授权人工重试仍待补齐）
 - [ ] 菜单、应用入口和运行配置同步使用幂等键；增加指数退避、死信、对账和人工重放。（已用稳定 requestId、现有幂等写入、摘要校验、指数退避、DEAD 和旧版本 SUPERSEDED 实现自动恢复；仅 Admin 消费且租户缺失失败关闭，授权人工重放仍待补齐）
-- [ ] 测试 DDL 成功后配置失败、菜单成功后入口失败、重复 post processor 事件、重试耗尽和补偿/回滚脚本。（已覆盖任务重复收敛、重试耗尽、租约接管、版本 fencing、仅 Admin 消费和独立本地事务；真实 DDL/配置分阶段失败、菜单/入口部分失败与补偿脚本仍待测试）
+- [ ] 测试 DDL 成功后配置失败、菜单成功后入口失败、重复 post processor 事件、重试耗尽和补偿/回滚脚本。（自动化已覆盖从 `CONFIG_PENDING` 恢复、配置失败保留阶段、并发同版本 winner fencing、任务重复收敛、重试耗尽、租约接管、仅 Admin 消费和独立事务；真实 MySQL DDL、菜单/入口部分失败与补偿脚本仍待测试）
 
 ### T4.6 流程监控、事件镜像与 BPMN 解析安全
 

@@ -51,6 +51,17 @@ class LowcodePublishReliableTaskContractTest {
         assertTrue(claim > capabilityGuard);
     }
 
+    @Test
+    void onlineDdlPublishIsStagedInsteadOfExecutedInsidePublishTransaction() throws Exception {
+        String source = Files.readString(resolveSource("LowcodePublishService.java"), StandardCharsets.UTF_8);
+
+        int onlinePlan = source.indexOf("new LowcodeOnlinePublishPlan(");
+        int stagedPublish = source.indexOf("onlinePublishCoordinator.publish(plan)");
+        assertTrue(onlinePlan > 0);
+        assertTrue(stagedPublish > onlinePlan);
+        assertFalse(source.contains("ddlService.executeCreateTable(modelSchema)"));
+    }
+
     private int count(String source, String token) {
         int count = 0;
         int position = 0;

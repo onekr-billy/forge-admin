@@ -44,4 +44,14 @@ public interface LowcodePublishTaskMapper extends BaseMapper<AiLowcodePublishTas
                    @Param("nextRetryTime") LocalDateTime nextRetryTime,
                    @Param("errorType") String errorType,
                    @Param("now") LocalDateTime now);
+
+    int advanceStage(@Param("task") AiLowcodePublishTask task,
+                     @Param("expectedStage") String expectedStage,
+                     @Param("nextStage") String nextStage,
+                     @Param("now") LocalDateTime now);
+
+    int releaseStage(@Param("task") AiLowcodePublishTask task,
+                     @Param("expectedStage") String expectedStage,
+                     @Param("nextStage") String nextStage,
+                     @Param("now") LocalDateTime now);
 }

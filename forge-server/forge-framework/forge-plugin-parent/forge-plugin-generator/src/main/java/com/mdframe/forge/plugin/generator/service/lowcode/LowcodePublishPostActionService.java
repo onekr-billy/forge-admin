@@ -87,7 +87,10 @@ public class LowcodePublishPostActionService {
         }
         if (mountAdmin) {
             Long parentId = resolvedParentId != null
-                    ? resolvedParentId : menuRegisterAdapter.resolveDefaultLowcodeParentId();
+                    ? resolvedParentId
+                    : config.getMenuParentId() != null
+                            ? config.getMenuParentId()
+                            : menuRegisterAdapter.resolveDefaultLowcodeParentId();
             if (config.getMenuResourceId() == null) {
                 config.setMenuResourceId(menuRegisterAdapter.registerMenu(
                         menuName, parentId, config.getConfigKey(), sort));

@@ -23,6 +23,7 @@ public class LowcodePublishTaskDispatcher {
 
     private final LowcodePublishTaskService taskService;
     private final LowcodePublishPostActionService actionService;
+    private final LowcodeOnlinePublishWorkflowExecutor workflowExecutor;
     private final String workerId = UUID.randomUUID().toString();
 
     @Value("${forge.lowcode.publish-task.batch-size:100}")
@@ -49,6 +50,13 @@ public class LowcodePublishTaskDispatcher {
             return;
         }
         try {
+            if (taskService.isOnlinePublishTask(claimed)) {
+                LowcodeOnlinePublishWorkflowExecutor.Result result =
+                        workflowExecutor.execute(claimed, false);
+                taskService.markCompleted(
+                        claimed, result == LowcodeOnlinePublishWorkflowExecutor.Result.SUPERSEDED);
+                return;
+            }
             LowcodePublishPostCommand command = taskService.restore(claimed);
             LowcodePublishPostActionService.Result result = actionService.execute(command);
             taskService.markCompleted(

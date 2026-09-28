@@ -7,6 +7,7 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfigVersion;
 import com.mdframe.forge.plugin.generator.domain.entity.AiLowcodePublishTask;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePublishDTO;
 import com.mdframe.forge.plugin.generator.enums.LowcodePublishTaskStatus;
+import com.mdframe.forge.plugin.generator.mapper.AiCrudConfigVersionMapper;
 import com.mdframe.forge.plugin.generator.mapper.LowcodePublishTaskMapper;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
@@ -35,10 +36,14 @@ public class LowcodePublishTaskService {
 
     static final int COMMAND_PROTOCOL_VERSION = 1;
     static final String STAGE_POST_SYNC = "POST_SYNC";
+    static final String STAGE_DDL_PENDING = "DDL_PENDING";
+    static final String STAGE_CONFIG_PENDING = "CONFIG_PENDING";
+    static final String OPERATION_ONLINE_PUBLISH = "ONLINE_PUBLISH";
     private static final String OPERATION_PUBLISH = "PUBLISH";
     private static final String OPERATION_ROLLBACK = "ROLLBACK";
 
     private final LowcodePublishTaskMapper taskMapper;
+    private final AiCrudConfigVersionMapper versionMapper;
     private final ObjectMapper objectMapper;
 
     @Value("${forge.lowcode.publish-task.max-retry-count:8}")
@@ -125,6 +130,88 @@ public class LowcodePublishTaskService {
         }
     }
 
+    /** 在任何在线 DDL 之前提交恢复任务，并为首次调用者持有初始租约。 */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
+    public AiLowcodePublishTask stageOnlinePublish(LowcodeOnlinePublishPlan plan, String owner) {
+        validateOnlinePlan(plan, owner);
+        String planPayload = writeJson(plan, "在线发布计划序列化失败");
+        String requestDigest = sha256(planPayload);
+        String requestId = "lowcode-online:" + requestDigest;
+        AiLowcodePublishTask existing = TenantContextHolder.executeIgnore(
+                () -> taskMapper.selectByRequestId(plan.tenantId(), requestId));
+        if (existing != null) {
+            return assertSameOnlineTask(existing, plan, requestDigest);
+        }
+
+        Integer maxVersionNo = TenantContextHolder.executeIgnore(
+                () -> versionMapper.selectMaxVersionNo(plan.tenantId(), plan.configId()));
+        int latestVersionNo = Math.max(maxVersionNo == null ? 0 : maxVersionNo,
+                plan.expectedPublishedVersion());
+        Integer versionNo = latestVersionNo + 1;
+        Long versionId = IdWorker.getId();
+        LowcodeOnlinePublishCommand command = new LowcodeOnlinePublishCommand(
+                COMMAND_PROTOCOL_VERSION,
+                plan.tenantId(),
+                plan.configId(),
+                plan.configKey(),
+                plan.expectedDraftVersion(),
+                plan.expectedPublishedVersion(),
+                versionId,
+                versionNo,
+                plan.operatorId(),
+                requestDigest,
+                plan.configSnapshot(),
+                plan.syncMenu(),
+                plan.requestedMenuParentId(),
+                plan.businessSuiteCode(),
+                plan.businessObjectCode(),
+                plan.businessObjectName(),
+                plan.remark());
+        String payload = writeJson(command, "在线发布命令序列化失败");
+        LocalDateTime now = LocalDateTime.now();
+        AiLowcodePublishTask task = new AiLowcodePublishTask();
+        task.setId(IdWorker.getId());
+        task.setTenantId(plan.tenantId());
+        task.setRequestId(requestId);
+        task.setOperationType(OPERATION_ONLINE_PUBLISH);
+        task.setConfigId(plan.configId());
+        task.setConfigKey(plan.configKey());
+        task.setVersionId(versionId);
+        task.setVersionNo(versionNo);
+        task.setSchemaHash(schemaHash(plan.configSnapshot()));
+        task.setRuntimeDatasourceId(plan.configSnapshot().getRuntimeDatasourceId());
+        task.setRuntimeDatasourceCode(StringUtils.trimToNull(
+                plan.configSnapshot().getRuntimeDatasourceCode()));
+        task.setRuntimeTableName(StringUtils.trimToNull(
+                plan.configSnapshot().getRuntimeTableName()));
+        task.setOperatorId(plan.operatorId());
+        task.setCommandPayload(payload);
+        task.setCommandDigest(sha256(payload));
+        task.setCurrentStage(STAGE_DDL_PENDING);
+        task.setTaskStatus(LowcodePublishTaskStatus.PROCESSING.getCode());
+        task.setRetryCount(1);
+        task.setLockOwner(owner);
+        task.setLockTime(now);
+        task.setCreateBy(plan.operatorId());
+        task.setUpdateBy(plan.operatorId());
+        task.setCreateTime(now);
+        task.setUpdateTime(now);
+        try {
+            int inserted = TenantContextHolder.executeIgnore(() -> taskMapper.insert(task));
+            if (inserted != 1) {
+                throw new BusinessException("在线发布任务持久化失败");
+            }
+            return task;
+        } catch (DuplicateKeyException duplicateKey) {
+            AiLowcodePublishTask duplicate = TenantContextHolder.executeIgnore(
+                    () -> taskMapper.selectByRequestId(plan.tenantId(), requestId));
+            if (duplicate != null) {
+                return assertSameOnlineTask(duplicate, plan, requestDigest);
+            }
+            throw duplicateKey;
+        }
+    }
+
     public List<AiLowcodePublishTask> findCandidates(LocalDateTime now, int batchSize) {
         LocalDateTime scanTime = now == null ? LocalDateTime.now() : now;
         int safeBatchSize = Math.max(1, Math.min(batchSize, 500));
@@ -185,6 +272,62 @@ public class LowcodePublishTaskService {
         return command;
     }
 
+    public LowcodeOnlinePublishCommand restoreOnlinePublish(AiLowcodePublishTask task) {
+        validateTaskIdentity(task);
+        if (!OPERATION_ONLINE_PUBLISH.equals(task.getOperationType())
+                || StringUtils.isAnyBlank(task.getCommandPayload(), task.getCommandDigest())) {
+            throw new BusinessException("在线发布任务类型或命令快照无效");
+        }
+        if (!digestEquals(task.getCommandDigest(), sha256(task.getCommandPayload()))) {
+            throw new BusinessException("在线发布任务命令摘要校验失败");
+        }
+        LowcodeOnlinePublishCommand command;
+        try {
+            command = objectMapper.readValue(
+                    task.getCommandPayload(), LowcodeOnlinePublishCommand.class);
+        } catch (Exception invalidJson) {
+            throw new BusinessException("在线发布任务命令格式无效");
+        }
+        if (command.protocolVersion() == null || command.protocolVersion() != COMMAND_PROTOCOL_VERSION
+                || !Objects.equals(task.getTenantId(), command.tenantId())
+                || !Objects.equals(task.getConfigId(), command.configId())
+                || !Objects.equals(task.getConfigKey(), command.configKey())
+                || !Objects.equals(task.getVersionId(), command.versionId())
+                || !Objects.equals(task.getVersionNo(), command.versionNo())
+                || !Objects.equals(task.getOperatorId(), command.operatorId())
+                || !Objects.equals(task.getRequestId(), "lowcode-online:" + command.requestDigest())
+                || command.configSnapshot() == null) {
+            throw new BusinessException("在线发布任务命令身份校验失败");
+        }
+        return command;
+    }
+
+    public boolean isOnlinePublishTask(AiLowcodePublishTask task) {
+        return task != null && OPERATION_ONLINE_PUBLISH.equals(task.getOperationType());
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
+    public void advanceStage(AiLowcodePublishTask task, String expectedStage, String nextStage) {
+        validateClaim(task);
+        int updated = TenantContextHolder.executeIgnore(() -> taskMapper.advanceStage(
+                task, expectedStage, nextStage, LocalDateTime.now()));
+        requireSingleUpdate(updated, "在线发布任务阶段已被其他节点更新");
+        task.setCurrentStage(nextStage);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
+    public void releaseStage(AiLowcodePublishTask task, String expectedStage, String nextStage) {
+        validateClaim(task);
+        int updated = TenantContextHolder.executeIgnore(() -> taskMapper.releaseStage(
+                task, expectedStage, nextStage, LocalDateTime.now()));
+        requireSingleUpdate(updated, "在线发布任务释放阶段已被其他节点更新");
+        task.setCurrentStage(nextStage);
+        task.setTaskStatus(LowcodePublishTaskStatus.PENDING.getCode());
+        task.setRetryCount(0);
+        task.setLockOwner(null);
+        task.setLockTime(null);
+    }
+
     @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
     public void markCompleted(AiLowcodePublishTask task, boolean superseded) {
         validateClaim(task);
@@ -194,6 +337,9 @@ public class LowcodePublishTaskService {
         int updated = TenantContextHolder.executeIgnore(
                 () -> taskMapper.markTerminal(task, status, LocalDateTime.now()));
         requireSingleUpdate(updated, "低代码发布任务完成状态已被其他节点更新");
+        task.setTaskStatus(status);
+        task.setLockOwner(null);
+        task.setLockTime(null);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
@@ -208,6 +354,10 @@ public class LowcodePublishTaskService {
         int updated = TenantContextHolder.executeIgnore(() -> taskMapper.markFailed(
                 task, status, nextRetryTime, safeFailureType(failure), LocalDateTime.now()));
         requireSingleUpdate(updated, "低代码发布任务失败状态已被其他节点更新");
+        task.setTaskStatus(status);
+        task.setNextRetryTime(nextRetryTime);
+        task.setLockOwner(null);
+        task.setLockTime(null);
     }
 
     private void validateAppendIdentity(AiCrudConfig config,
@@ -239,6 +389,36 @@ public class LowcodePublishTaskService {
         return existing;
     }
 
+    private AiLowcodePublishTask assertSameOnlineTask(AiLowcodePublishTask existing,
+                                                      LowcodeOnlinePublishPlan plan,
+                                                      String requestDigest) {
+        if (!OPERATION_ONLINE_PUBLISH.equals(existing.getOperationType())
+                || !Objects.equals(existing.getTenantId(), plan.tenantId())
+                || !Objects.equals(existing.getConfigId(), plan.configId())
+                || !Objects.equals(existing.getConfigKey(), plan.configKey())
+                || !Objects.equals(existing.getOperatorId(), plan.operatorId())
+                || !Objects.equals(existing.getRequestId(), "lowcode-online:" + requestDigest)) {
+            throw new BusinessException("在线发布请求ID与任务身份冲突");
+        }
+        return existing;
+    }
+
+    private void validateOnlinePlan(LowcodeOnlinePublishPlan plan, String owner) {
+        if (plan == null || plan.protocolVersion() == null
+                || plan.protocolVersion() != COMMAND_PROTOCOL_VERSION
+                || plan.tenantId() == null || plan.tenantId() <= 0
+                || plan.configId() == null || StringUtils.isBlank(plan.configKey())
+                || plan.expectedDraftVersion() == null || plan.expectedDraftVersion() < 0
+                || plan.expectedPublishedVersion() == null || plan.expectedPublishedVersion() < 0
+                || plan.operatorId() == null || plan.operatorId() <= 0
+                || plan.configSnapshot() == null
+                || StringUtils.isAnyBlank(plan.configSnapshot().getModelSchema(),
+                        plan.configSnapshot().getPageSchema())
+                || StringUtils.isBlank(owner)) {
+            throw new BusinessException("在线发布计划身份不完整");
+        }
+    }
+
     private void validateClaim(AiLowcodePublishTask task) {
         if (task == null || task.getTenantId() == null || task.getId() == null
                 || StringUtils.isBlank(task.getLockOwner())
@@ -247,11 +427,26 @@ public class LowcodePublishTaskService {
         }
     }
 
+    private void validateTaskIdentity(AiLowcodePublishTask task) {
+        if (task == null || task.getTenantId() == null || task.getTenantId() <= 0
+                || task.getId() == null || StringUtils.isBlank(task.getRequestId())) {
+            throw new BusinessException("低代码发布任务身份无效");
+        }
+    }
+
     private String writeCommand(LowcodePublishPostCommand command) {
         try {
             return objectMapper.writeValueAsString(command);
         } catch (Exception serializationFailure) {
             throw new BusinessException("低代码发布任务命令序列化失败");
+        }
+    }
+
+    private String writeJson(Object value, String message) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (Exception serializationFailure) {
+            throw new BusinessException(message);
         }
     }
 
@@ -268,6 +463,14 @@ public class LowcodePublishTaskService {
                 StringUtils.defaultString(config.getPageSchema()),
                 StringUtils.defaultString(config.getRuntimeDatasourceCode()),
                 StringUtils.defaultString(config.getRuntimeTableName())));
+    }
+
+    private String schemaHash(LowcodeOnlinePublishConfigSnapshot snapshot) {
+        return sha256(String.join("\u001f",
+                StringUtils.defaultString(snapshot.getModelSchema()),
+                StringUtils.defaultString(snapshot.getPageSchema()),
+                StringUtils.defaultString(snapshot.getRuntimeDatasourceCode()),
+                StringUtils.defaultString(snapshot.getRuntimeTableName())));
     }
 
     private String sha256(String value) {
