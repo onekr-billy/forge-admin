@@ -2,114 +2,117 @@
   <view class="home-page">
     <AiFeedbackHost />
     <view class="home-content">
-      <view class="home-header">
-        <view class="user-block" @click="goMine">
-          <view class="avatar-wrap">
-            <AiAuthImage v-if="rawAvatarUrl" class="avatar-image" :src="rawAvatarUrl" :fallback="brandLogoUrl || '/static/logo.png'" mode="aspectFill" />
-            <image v-else class="avatar-image" :src="brandLogoUrl || '/static/logo.png'" mode="aspectFit" />
-          </view>
-          <view class="user-copy">
-            <text class="hello-title">{{ authStore.displayName }}</text>
-            <text class="hello-subtitle">{{ authStore.roleText || '移动工作台' }}</text>
-          </view>
-        </view>
-        <button class="bell-button" @click="goMessages">
-          <view class="icon-mask bell-icon" :style="iconMask('/static/icons/ai-icon/bell.svg', '#475569')" />
-          <view v-if="unreadCount > 0" class="bell-badge">
-            <text>{{ unreadCount > 99 ? '99+' : unreadCount }}</text>
-          </view>
-        </button>
-      </view>
-
-      <view class="home-dashboard">
-        <view class="workbench-panel">
-          <view class="section-head">
-            <view class="section-heading">
-              <text class="section-title">工作概览</text>
-              <text class="section-subtitle">待处理事项与未读消息</text>
+      <HomeWorkspaceSkeleton v-if="workspaceLoading" />
+      <template v-else>
+        <view class="home-header">
+          <view class="user-block" @click="goMine">
+            <view class="avatar-wrap">
+              <AiAuthImage v-if="rawAvatarUrl" class="avatar-image" :src="rawAvatarUrl" :fallback="brandLogoUrl || '/static/logo.png'" mode="aspectFill" />
+              <image v-else class="avatar-image" :src="brandLogoUrl || '/static/logo.png'" mode="aspectFit" />
             </view>
-            <button class="section-action" aria-label="刷新工作概览" @click="refreshWorkspace">
-              <AiIcon icon="/static/icons/ai-icon/refresh-cw.svg" color="#3b82f6" size="sm" />
-            </button>
-          </view>
-          <view class="overview-list">
-            <button class="overview-item" @click="goTodo">
-              <text class="overview-title">待办任务</text>
-              <view class="overview-metric"><text>{{ todoCount > 99 ? '99+' : todoCount }}</text><text>项</text></view>
-              <text class="overview-desc">查看并处理</text>
-            </button>
-            <button class="overview-item" @click="goMessages">
-              <text class="overview-title">未读消息</text>
-              <view class="overview-metric"><text>{{ unreadCount > 99 ? '99+' : unreadCount }}</text><text>条</text></view>
-              <text class="overview-desc">查看最新提醒</text>
-            </button>
-          </view>
-        </view>
-
-        <view class="shortcut-section">
-          <view class="section-head">
-            <view class="section-heading">
-              <text class="section-title">常用应用</text>
-              <text class="section-subtitle">快速进入已授权功能</text>
+            <view class="user-copy">
+              <text class="hello-title">{{ authStore.displayName }}</text>
+              <text class="hello-subtitle">{{ authStore.roleText || '移动工作台' }}</text>
             </view>
           </view>
-          <view class="shortcut-grid">
-            <button
-              v-for="item in menuItems"
-              :key="item.key"
-              class="shortcut-item"
-              @click="handleShortcut(item)"
-            >
-              <view class="shortcut-icon"><AiIcon :icon="item.icon" :color="item.color" size="md" /></view>
-              <text class="shortcut-label">{{ item.label }}</text>
-            </button>
-            <button v-if="allMenuItems.length" class="shortcut-item shortcut-more" @click="openMenuSheet">
-              <view class="shortcut-icon"><AiIcon icon="/static/icons/ai-icon/grid.svg" color="#94a3b8" size="md" /></view>
-              <text class="shortcut-label">更多</text>
-            </button>
-          </view>
-          <view v-if="!menuItems.length" class="menu-empty-inline">暂无可在移动端打开的授权应用</view>
+          <button class="bell-button" @click="goMessages">
+            <view class="icon-mask bell-icon" :style="iconMask('/static/icons/ai-icon/bell.svg', '#475569')" />
+            <view v-if="unreadCount > 0" class="bell-badge">
+              <text>{{ unreadCount > 99 ? '99+' : unreadCount }}</text>
+            </view>
+          </button>
         </view>
 
-        <view class="feed-section">
-          <view class="section-head">
-            <view class="section-heading">
-              <text class="section-title">最新提醒</text>
-              <text class="section-subtitle">最近收到的业务消息</text>
-            </view>
-            <button class="section-link" @click="goMessages">
-              <text>全部消息</text>
-              <view class="icon-mask arrow-icon" :style="iconMask('/static/icons/ai-icon/arrow-right.svg', '#3b82f6')" />
-            </button>
-          </view>
-
-          <view class="message-list">
-            <button
-              v-for="message in messages"
-              :key="message.id"
-              class="message-card"
-              @click="openMessage(message)"
-            >
-              <view class="message-icon">
-                <view class="icon-mask" :style="iconMask(message.icon, message.color)" />
-                <view v-if="message.unread" class="message-dot" />
+        <view class="home-dashboard">
+          <view class="workbench-panel">
+            <view class="section-head">
+              <view class="section-heading">
+                <text class="section-title">工作概览</text>
+                <text class="section-subtitle">待处理事项与未读消息</text>
               </view>
-              <view class="message-main">
-                <view class="message-title-row">
-                  <text class="message-title">{{ message.title }}</text>
-                  <text class="message-time">{{ message.time }}</text>
+              <button class="section-action" aria-label="刷新工作概览" @click="refreshWorkspace">
+                <AiIcon icon="/static/icons/ai-icon/refresh-cw.svg" color="#3b82f6" size="sm" />
+              </button>
+            </view>
+            <view class="overview-list">
+              <button class="overview-item" @click="goTodo">
+                <text class="overview-title">待办任务</text>
+                <view class="overview-metric"><text>{{ todoCount > 99 ? '99+' : todoCount }}</text><text>项</text></view>
+                <text class="overview-desc">查看并处理</text>
+              </button>
+              <button class="overview-item" @click="goMessages">
+                <text class="overview-title">未读消息</text>
+                <view class="overview-metric"><text>{{ unreadCount > 99 ? '99+' : unreadCount }}</text><text>条</text></view>
+                <text class="overview-desc">查看最新提醒</text>
+              </button>
+            </view>
+          </view>
+
+          <view class="shortcut-section">
+            <view class="section-head">
+              <view class="section-heading">
+                <text class="section-title">常用应用</text>
+                <text class="section-subtitle">快速进入已授权功能</text>
+              </view>
+            </view>
+            <view class="shortcut-grid">
+              <button
+                v-for="item in menuItems"
+                :key="item.key"
+                class="shortcut-item"
+                @click="handleShortcut(item)"
+              >
+                <view class="shortcut-icon"><AiIcon :icon="item.icon" :color="item.color" size="md" /></view>
+                <text class="shortcut-label">{{ item.label }}</text>
+              </button>
+              <button v-if="allMenuItems.length" class="shortcut-item shortcut-more" @click="openMenuSheet">
+                <view class="shortcut-icon"><AiIcon icon="/static/icons/ai-icon/grid.svg" color="#94a3b8" size="md" /></view>
+                <text class="shortcut-label">更多</text>
+              </button>
+            </view>
+            <view v-if="!menuItems.length" class="menu-empty-inline">暂无可在移动端打开的授权应用</view>
+          </view>
+
+          <view class="feed-section">
+            <view class="section-head">
+              <view class="section-heading">
+                <text class="section-title">最新提醒</text>
+                <text class="section-subtitle">最近收到的业务消息</text>
+              </view>
+              <button class="section-link" @click="goMessages">
+                <text>全部消息</text>
+                <view class="icon-mask arrow-icon" :style="iconMask('/static/icons/ai-icon/arrow-right.svg', '#3b82f6')" />
+              </button>
+            </view>
+
+            <view class="message-list">
+              <button
+                v-for="message in messages"
+                :key="message.id"
+                class="message-card"
+                @click="openMessage(message)"
+              >
+                <view class="message-icon">
+                  <view class="icon-mask" :style="iconMask(message.icon, message.color)" />
+                  <view v-if="message.unread" class="message-dot" />
                 </view>
-                <text class="message-desc">{{ message.desc }}</text>
+                <view class="message-main">
+                  <view class="message-title-row">
+                    <text class="message-title">{{ message.title }}</text>
+                    <text class="message-time">{{ message.time }}</text>
+                  </view>
+                  <text class="message-desc">{{ message.desc }}</text>
+                </view>
+                <AiIcon icon="/static/icons/ai-icon/chevron-right.svg" color="#94a3b8" size="sm" />
+              </button>
+              <view v-if="!messages.length" class="message-empty-card">
+                <AiIcon icon="/static/icons/ai-icon/check-circle.svg" color="#10b981" size="md" />
+                <text>暂无新提醒</text>
               </view>
-              <AiIcon icon="/static/icons/ai-icon/chevron-right.svg" color="#94a3b8" size="sm" />
-            </button>
-            <view v-if="!messages.length" class="message-empty-card">
-              <AiIcon icon="/static/icons/ai-icon/check-circle.svg" color="#10b981" size="md" />
-              <text>暂无新提醒</text>
             </view>
           </view>
         </view>
-      </view>
+      </template>
     </view>
 
     <AiPopupSheet
@@ -163,7 +166,7 @@
       </scroll-view>
     </AiPopupSheet>
 
-    <AiTabBar active="home" :unread-count="unreadCount" />
+    <AiTabBar active="home" />
   </view>
 </template>
 
@@ -176,6 +179,7 @@ import AiIcon from '@/components/AiIcon.vue'
 import AiPopupSheet from '@/components/AiPopupSheet.vue'
 import AiSearchBar from '@/components/AiSearchBar.vue'
 import AiTabBar from '@/components/AiTabBar.vue'
+import HomeWorkspaceSkeleton from '@/components/home/HomeWorkspaceSkeleton.vue'
 import api from '@/api'
 import { useAppStore, useAuthStore } from '@/store'
 import { resolveStaticUrl } from '@/utils/assets'
@@ -192,6 +196,7 @@ const latestMessages = ref([])
 const menuSheetVisible = ref(false)
 const menuSearchKeyword = ref('')
 const menuRefreshing = ref(false)
+const workspaceLoading = ref(true)
 
 const rawAvatarUrl = computed(() => authStore.avatar)
 const brandLogoUrl = computed(() => appStore.brandLogoUrl || defaultBrandLogo)
@@ -258,7 +263,7 @@ function goMine() {
 }
 
 function goMessages() {
-  uni.switchTab({ url: '/pages/message/index' })
+  uni.navigateTo({ url: '/pages/message/index' })
 }
 
 function goTodo() {
@@ -320,6 +325,10 @@ async function refreshWorkspace(options = {}) {
   }
   catch (error) {
     console.error('刷新首页信息失败:', error)
+  }
+  finally {
+    // 骨架屏只负责首次进入；后续 onShow/下拉刷新保留现有内容，避免页面闪烁。
+    workspaceLoading.value = false
   }
 }
 

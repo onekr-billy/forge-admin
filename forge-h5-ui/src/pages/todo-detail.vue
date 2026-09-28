@@ -1,7 +1,15 @@
 <template>
   <view class="todo-detail-page">
     <AiFeedbackHost />
-    <scroll-view class="detail-scroll" scroll-y :show-scrollbar="true">
+    <!-- 审批动作属于不可并行的状态流转，接口返回前统一阻止重复操作。 -->
+    <AiLoadingOverlay :visible="actionLoading" :text="actionLoadingText" />
+    <scroll-view
+      class="detail-scroll"
+      scroll-y
+      :show-scrollbar="true"
+      :scroll-into-view="scrollTarget"
+      scroll-with-animation
+    >
       <TodoDetailSkeleton v-if="loading" />
       <template v-else-if="task">
         <TodoTaskSummary :task="task" @refresh="refresh" />
@@ -103,7 +111,7 @@
           </view>
 
           <!-- 处理模式下才展示审批意见和签名 -->
-          <view v-if="!readonlyMode" class="approval-comment-panel">
+          <view v-if="!readonlyMode" id="approval-comment-panel" class="approval-comment-panel">
             <view class="detail-section-head">
               <view class="detail-section-heading">
                 <view class="detail-section-icon"><AiIcon icon="/static/icons/ai-icon/edit-3.svg" color="#3b82f6" size="sm" /></view>
@@ -138,7 +146,16 @@
           <AiIcon icon="/static/icons/ai-icon/more-horizontal.svg" color="#475569" size="sm" />
           <text>更多</text>
         </button>
-        <AiButton v-if="canReject" size="sm" variant="danger" :disabled="Boolean(blockedReason) || actionLoading" @click="canChooseReturnTarget ? openRejectTarget() : submitAction('reject')">驳回</AiButton>
+        <AiButton
+          v-if="canReject"
+          size="sm"
+          variant="danger"
+          :loading="actionLoading && pendingAction === 'reject'"
+          :disabled="Boolean(blockedReason) || actionLoading"
+          @click="canChooseReturnTarget ? openRejectTarget() : submitAction('reject')"
+        >
+          驳回
+        </AiButton>
         <AiButton v-if="canApprove" size="sm" :loading="actionLoading && pendingAction === 'approve'" :disabled="Boolean(blockedReason) || actionLoading" @click="submitAction('approve')">同意</AiButton>
       </template>
     </view>
@@ -216,13 +233,14 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, nextTick, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import AiButton from '@/components/AiButton.vue'
 import AiAuthImage from '@/components/AiAuthImage.vue'
 import AiFeedbackHost from '@/components/feedback/AiFeedbackHost.vue'
 import AiIcon from '@/components/AiIcon.vue'
 import AiListSkeleton from '@/components/AiListSkeleton.vue'
+import AiLoadingOverlay from '@/components/AiLoadingOverlay.vue'
 import AiPopupSheet from '@/components/AiPopupSheet.vue'
 import AiSearchBar from '@/components/AiSearchBar.vue'
 import AiSignaturePad from '@/components/AiSignaturePad.vue'
@@ -254,6 +272,15 @@ import {
   hasWritableBusinessTaskForm,
 } from '@/utils/business-task-form-adapter'
 
+const ACTION_LABELS = Object.freeze({
+  approve: '同意',
+  reject: '驳回',
+  rejectToStart: '退回发起人修改',
+  return: '退回',
+  terminate: '终结流程',
+  delegate: '转办',
+})
+
 const authStore = useAuthStore()
 const taskId = ref('')
 const sourceMessageId = ref('')
@@ -279,6 +306,7 @@ const dictOptions = reactive({})
 const mainSectionFormRefs = new Map()
 const childFormRefs = new Map()
 const actionLoading = ref(false)
+const scrollTarget = ref('')
 const pendingAction = ref('')
 const claimLoading = ref(false)
 const moreVisible = ref(false)
@@ -295,6 +323,7 @@ const delegateSignature = ref('')
 const delegateSignatureRef = ref(null)
 
 const userId = computed(() => String(authStore.userInfo?.id || authStore.userInfo?.userId || authStore.userInfo?.user_id || ''))
+const actionLoadingText = computed(() => `${ACTION_LABELS[pendingAction.value] || '提交'}中...`)
 // 业务表单上下文携带服务端最终策略，Flow 表单快照仅覆盖其中明确返回的属性。
 const taskPolicySource = computed(() => ({ ...(businessContext.value || {}), ...(formInfo.value || {}) }))
 const requireComment = computed(() => taskPolicySource.value?.requireComment !== false)
@@ -647,6 +676,7 @@ async function fetchUsers() {
 }
 
 async function submitAction(action) {
+  if (actionLoading.value) return
   if (blockedReason.value) return
   if (action === 'delegate' && !delegateUser.value) {
     toast('请选择转办人员', { type: 'warning' })
@@ -665,6 +695,11 @@ async function submitAction(action) {
   const signatureRef = action === 'delegate' ? delegateSignatureRef.value : approvalSignatureRef.value
   if (requireComment.value && !actionComment.trim()) {
     toast('请输入审批意见', { type: 'warning' })
+    if (action !== 'delegate') {
+      moreVisible.value = false
+      rejectTargetVisible.value = false
+      scrollToApprovalComment()
+    }
     return
   }
   if (action === 'approve' && approvalPoints.value.some(point => point?.required === true && !approvalPointChecks.value?.[point.id])) {
@@ -672,11 +707,15 @@ async function submitAction(action) {
     return
   }
   if (!validateRequiredFields() || !hasSignature(actionSignature, signatureRef)) return
-  const labels = { approve: '同意', reject: '驳回', rejectToStart: '退回发起人修改', return: '退回', terminate: '终结流程', delegate: '转办' }
   const descriptions = {
     rejectToStart: '当前流程会保留并退回发起人，修改后可沿原流程重新提交。',
   }
-  const confirmed = await showConfirmDialog({ title: `确认${labels[action]}`, description: descriptions[action] || '提交后将按当前流程策略执行，不能撤销。', confirmText: labels[action], isDestructive: ['reject', 'terminate'].includes(action) })
+  const confirmed = await showConfirmDialog({
+    title: `确认${ACTION_LABELS[action]}`,
+    description: descriptions[action] || '提交后将按当前流程策略执行，不能撤销。',
+    confirmText: ACTION_LABELS[action],
+    isDestructive: ['reject', 'terminate'].includes(action),
+  })
   if (!confirmed) return
 
   actionLoading.value = true
@@ -696,17 +735,17 @@ async function submitAction(action) {
     else if (action === 'return') await api.returnFlowTask({ ...payload, targetActivityId: selectedReturnTarget.value || undefined })
     else if (action === 'terminate') await api.terminateFlowTask(payload)
     else await api.delegateFlowTask(payload)
-    if (sourceMessageId.value) {
-      await api.markMessageRead(sourceMessageId.value).catch(error => console.warn('来源消息将由流程完成事件同步已读:', error))
-    }
-    toast(`${labels[action]}成功`, { type: 'success' })
+    if (sourceMessageId.value)
+      api.markMessageRead(sourceMessageId.value).catch(error => console.warn('来源消息将由流程完成事件同步已读:', error))
+    toast(`${ACTION_LABELS[action]}成功`, { type: 'success' })
     delegateVisible.value = false
     rejectTargetVisible.value = false
-    setTimeout(goBack, 500)
+    // 主操作成功立即返回，不再被消息已读同步阻塞；来源列表 onShow 会立即重查。
+    returnAfterSuccessfulAction()
   }
   catch (error) {
     console.error('提交审批动作失败:', error)
-    toast(resolveErrorMessage(error, `${labels[action] || '提交'}失败`), { type: 'error' })
+    toast(resolveErrorMessage(error, `${ACTION_LABELS[action] || '提交'}失败`), { type: 'error' })
   }
   finally {
     actionLoading.value = false
@@ -796,13 +835,26 @@ function hasSignature(value, signatureRef) {
   toast('请完成手写签名', { type: 'warning' })
   return false
 }
+function scrollToApprovalComment() {
+  scrollTarget.value = ''
+  nextTick(() => {
+    scrollTarget.value = 'approval-comment-panel'
+  })
+}
 async function resolveSignature(value, signatureRef) {
   if (!taskPolicySource.value?.requireSignature) return value || ''
   if (String(value || '').trim() && !signatureRef?.hasSignature?.()) return value
   return signatureRef?.upload ? signatureRef.upload() : value || ''
 }
 function readCachedTask(id) { try { return uni.getStorageSync(`flow-task:${id}`) || null } catch { return null } }
-function goBack() { uni.navigateBack({ fail: () => uni.switchTab({ url: '/pages/todo' }) }) }
+function returnAfterSuccessfulAction() {
+  const fallback = sourceMessageId.value ? '/pages/message/index' : '/pages/todo'
+  uni.navigateBack({
+    fail: () => sourceMessageId.value
+      ? uni.reLaunch({ url: fallback })
+      : uni.switchTab({ url: fallback }),
+  })
+}
 </script>
 
 <style lang="scss" scoped src="./styles/todo-detail.scss"></style>

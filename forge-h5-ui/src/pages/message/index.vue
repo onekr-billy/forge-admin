@@ -65,7 +65,7 @@
         <AiSelect v-model="draftReadFilter" :options="readOptions" title="选择阅读状态" placeholder="全部" />
       </view>
     </AiFilterSheet>
-    <AiTabBar active="message" :unread-count="unreadCount" />
+    <AiTabBar active="message" />
   </view>
 </template>
 

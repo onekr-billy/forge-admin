@@ -90,6 +90,9 @@ test('native navigation and backend brand resources are used across H5 pages', (
   assert.match(auth, /api\.getLoginConfig/)
   assert.match(auth, /state\.userInfo\?\.avatar/)
   assert.match(login, /brandLogoSrc/)
+  assert.match(login, /\/static\/images\/login-bg\.png/)
+  assert.match(login, /mode="scaleToFill"/)
+  assert.doesNotMatch(login, /AiCheckboxGroup|agreementOptions|this\.agreed/)
   assert.match(home, /v-if="rawAvatarUrl"[\s\S]*:src="rawAvatarUrl" :fallback="brandLogoUrl \|\| '\/static\/logo\.png'"/)
   assert.match(home, /v-else class="avatar-image" :src="brandLogoUrl \|\| '\/static\/logo\.png'"/)
   assert.match(mine, /v-if="rawAvatarUrl"[\s\S]*:src="rawAvatarUrl" :fallback="brandLogoUrl \|\| '\/static\/logo\.png'"/)
@@ -113,8 +116,12 @@ test('authenticated images retry once per file id and deduplicate access-url req
 
 test('home uses real metrics, four-column shortcuts and notifications', () => {
   const source = readSource('pages/index/index.vue')
+  const skeleton = readSource('components/home/HomeWorkspaceSkeleton.vue')
   const styles = readSource('pages/styles/home.scss')
 
+  assert.match(source, /<HomeWorkspaceSkeleton v-if="workspaceLoading"/)
+  assert.match(source, /workspaceLoading\.value = false/)
+  assert.match(skeleton, /aria-busy="true"/)
   assert.match(source, /class="home-dashboard"/)
   assert.match(source, /class="overview-list"/)
   assert.match(source, /class="shortcut-section"/)
@@ -125,6 +132,25 @@ test('home uses real metrics, four-column shortcuts and notifications', () => {
   assert.doesNotMatch(source, /class="attention-grid"/)
   assert.match(styles, /grid-template-areas:\s*\n\s*"overview apps"\s*\n\s*"feed apps"/)
   assert.match(styles, /@media \(max-width: 1023px\)[\s\S]*\.shortcut-grid\s*\{\s*grid-template-columns:\s*repeat\(4,/)
+})
+
+test('approval validation scrolls to comments and login is single-flight', () => {
+  const detail = readSource('pages/todo-detail.vue')
+  const actionLoading = readSource('components/AiLoadingOverlay.vue')
+  const login = readSource('pages/login/index.vue')
+  const auth = readSource('store/modules/auth.js')
+
+  assert.match(detail, /:scroll-into-view="scrollTarget"/)
+  assert.match(detail, /id="approval-comment-panel"/)
+  assert.match(detail, /scrollToApprovalComment\(\)/)
+  assert.match(detail, /<AiLoadingOverlay :visible="actionLoading" :text="actionLoadingText"/)
+  assert.match(detail, /:loading="actionLoading && pendingAction === 'reject'"/)
+  assert.match(actionLoading, /<wd-loading/)
+  assert.match(login, /if \(this\.loading\)\s*return/)
+  assert.match(login, /:disabled="loading"/)
+  assert.match(auth, /let passwordLoginPromise = null/)
+  assert.match(auth, /if \(passwordLoginPromise\)\s*return passwordLoginPromise/)
+  assert.match(auth, /loginConfigRequests/)
 })
 
 test('interactive H5 primitives use Wot components without uView or uni-ui fallbacks', () => {
@@ -184,17 +210,22 @@ test('production page styles use only the reference palette for decorative gradi
   assert.match(source, /linear-gradient\s*\(/)
 })
 
-test('four-tab navigation and multi-condition filters follow the mobile contract', () => {
+test('three-tab navigation and multi-condition filters follow the mobile contract', () => {
   const pages = readSource('pages.json')
   const tabbar = readSource('components/AiTabBar.vue')
   const todo = readSource('pages/todo.vue')
   const message = readSource('pages/message/index.vue')
   const runtime = readSource('components/lowcode/LowcodeRuntimeList.vue')
 
-  assert.match(pages, /"pagePath":\s*"pages\/message\/index"/)
-  for (const key of ['home', 'todo', 'message', 'mine']) assert.match(tabbar, new RegExp(`key: '${key}'`))
-  assert.match(tabbar, /ai-tabbar__badge/)
+  assert.doesNotMatch(pages, /"pagePath":\s*"pages\/message\/index"/)
+  for (const key of ['home', 'todo', 'mine']) assert.match(tabbar, new RegExp(`key: '${key}'`))
+  assert.doesNotMatch(tabbar, /key: 'message'/)
+  assert.doesNotMatch(tabbar, /ai-tabbar__badge/)
   assert.match(todo, /<AiFilterSheet[\s\S]*draftCategoryFilter[\s\S]*draftStatusFilter/)
+  for (const tone of ['blue', 'orange', 'emerald', 'purple', 'cyan', 'rose']) {
+    assert.match(todo, new RegExp(`tone-${tone}`))
+  }
+  assert.match(todo, /statusToneClass\(task\)/)
   assert.match(message, /<AiFilterSheet[\s\S]*draftReadFilter/)
   assert.match(runtime, /searchFields\.length > 1[\s\S]*<AiFilterSheet/)
   assert.match(message, /buildFlowTaskDetailUrl\(taskId, resolveFlowMessageMode\(message\), message\.id\)/)
@@ -218,6 +249,7 @@ test('authenticated workspaces keep controls compact and avoid clipped nested sh
   assert.match(select, /<wd-select-picker[\s\S]*root-portal/)
   assert.doesNotMatch(todo, /task-card__meta-grid/)
   assert.match(todoStyle, /\.task-card__footer[\s\S]*min-height:\s*44px/)
+  assert.match(todoStyle, /\.claim-button[\s\S]*width:\s*64px[\s\S]*height:\s*36px[\s\S]*line-height:\s*1/)
   assert.match(detail, /<TodoTaskSummary :task="task" @refresh="refresh"/)
   assert.match(summary, /class="task-summary__refresh"[\s\S]*emit\('refresh'\)/)
   assert.match(detailStyle, /\.user-row\s*\{[^}]*line-height:\s*1\.4/)
@@ -245,7 +277,7 @@ test('query pages refresh their actual scroll surface and approval loads managed
   assert.match(message, /onPullDownRefresh[\s\S]*await refresh\(\)/)
   assert.match(runtime, /:refresher-enabled="mode === 'list'"[\s\S]*@refresh="refreshListByPull"/)
   assert.match(layout, /:refresher-triggered="refreshing"/)
-  assert.match(detail, /class="detail-scroll" scroll-y :show-scrollbar="true"/)
+  assert.match(detail, /class="detail-scroll"[\s\S]*scroll-y[\s\S]*:show-scrollbar="true"/)
   assert.match(detail, /<FlowCommentPhraseInput/)
   assert.match(phraseInput, /api\.listUsableCommentPhrases/)
   assert.match(phraseInput, /api\.listMyCommentPhrases/)

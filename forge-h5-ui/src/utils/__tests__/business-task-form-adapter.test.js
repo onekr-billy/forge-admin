@@ -49,6 +49,30 @@ test('BPMN readable and writable keys take precedence over legacy aliases', () =
   assert.equal(fields[0].required, false)
 })
 
+test('writable permission cannot override an explicit editable false field', () => {
+  const fields = adaptBusinessTaskFields([{
+    field: 'fieldInput',
+    type: 'input',
+    editable: false,
+    props: { placeholder: '请填写输入框' },
+  }], [{
+    field: 'fieldInput',
+    readable: true,
+    writable: true,
+    required: true,
+  }])
+
+  assert.equal(fields[0].writable, false)
+  assert.equal(fields[0].editable, false)
+  assert.equal(fields[0].readonly, true)
+  assert.equal(fields[0].disabled, true)
+  assert.equal(fields[0].required, false)
+  assert.deepEqual(buildBusinessTaskFormData({
+    fields,
+    mainData: { fieldInput: '不应提交' },
+  }), {})
+})
+
 test('accepts JSON permission payloads and removes unreadable fields', () => {
   const fields = adaptBusinessTaskFields([
     { field: 'visibleField', type: 'input', writable: true },

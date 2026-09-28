@@ -33,11 +33,11 @@
           >
             <view class="task-card__head">
               <view class="task-card__identity">
-                <text class="task-type-tag">{{ taskTypeText(task) }}</text>
+                <text class="task-type-tag" :class="taskTypeTone(task)">{{ taskTypeText(task) }}</text>
                 <text class="task-time">{{ formatFlowDateTime(task.createTime || task.startTime) }}</text>
                 <text v-if="isUrgentTask(task)" class="priority-tag">紧急</text>
               </view>
-              <text class="status-tag" :class="{ pending: isCandidateTask(task), done: activeScope === 'done' }">{{ statusText(task) }}</text>
+              <text class="status-tag" :class="statusToneClass(task)">{{ statusText(task) }}</text>
             </view>
             <text class="task-card__title">{{ taskTitle(task) }}</text>
             <text class="task-card__node">{{ task.taskName || task.name || '审批节点' }}</text>
@@ -295,6 +295,21 @@ function isCandidateTask(task = {}) { return Number(task.status) === 0 && !task.
 function taskKey(task) { return task.taskId || task.id || task.processInstanceId || task.title }
 function taskTitle(task = {}) { return task.title || task.businessTitle || task.processName || task.processDefinitionName || task.taskName || '审批任务' }
 function taskTypeText(task = {}) { return task.categoryName || task.category || task.processName || task.processDefinitionName || '流程审批' }
+function taskTypeTone(task = {}) {
+  const identity = `${taskTypeText(task)} ${task.businessType || ''} ${task.objectCode || ''}`.toLowerCase()
+  const semanticTones = [
+    [/(采购|订单|报销|费用|财务|purchase|expense|finance)/, 'tone-orange'],
+    [/(请假|考勤|人事|入职|leave|attendance|hr)/, 'tone-emerald'],
+    [/(资产|物料|库存|领用|asset|inventory)/, 'tone-purple'],
+    [/(客户|销售|商机|合同|customer|sales|contract)/, 'tone-cyan'],
+    [/(公告|通知|消息|notice|message)/, 'tone-rose'],
+  ]
+  const matched = semanticTones.find(([pattern]) => pattern.test(identity))
+  if (matched) return matched[1]
+  const tones = ['tone-blue', 'tone-orange', 'tone-emerald', 'tone-purple', 'tone-cyan', 'tone-rose']
+  const hash = [...identity].reduce((total, char) => ((total * 31) + char.charCodeAt(0)) >>> 0, 0)
+  return tones[hash % tones.length]
+}
 function applicantName(task = {}) { return task.startUserName || task.createByName || '未知申请人' }
 function applicantInitial(task = {}) { return String(applicantName(task)).trim().slice(0, 1) || '申' }
 function statusText(task) {
@@ -302,6 +317,11 @@ function statusText(task) {
   if (activeScope.value === 'done') return '已处理'
   if (activeScope.value === 'started') return canWithdraw(task) ? '进行中' : '已结束'
   return Number(task.status) === 1 ? '处理中' : '待处理'
+}
+function statusToneClass(task) {
+  if (activeScope.value === 'done') return 'status-done'
+  if (activeScope.value === 'started') return canWithdraw(task) ? 'status-running' : 'status-neutral'
+  return isCandidateTask(task) ? 'status-waiting' : 'status-pending'
 }
 function taskActionText(task) {
   if (activeScope.value === 'todo') return isCandidateTask(task) ? '签收并处理' : '立即处理'

@@ -1,6 +1,7 @@
 <template>
   <view class="login-page">
     <AiFeedbackHost />
+    <image class="login-background" :src="assetUrl('/static/images/login-bg.png')" mode="scaleToFill" />
     <view v-if="wecomPending" class="wecom-loading-shell">
       <view class="wecom-loading-content">
         <image class="wecom-loading-logo" :src="brandLogoSrc" mode="aspectFit" @error="brandLogoFailed = true" />
@@ -9,48 +10,39 @@
       </view>
     </view>
 
-    <view v-else class="page-shell">
-      <view class="login-masthead">
-        <view class="brand-bar">
-          <view class="brand-main">
+    <view v-else class="page-shell login-shell">
+      <view class="login-main">
+        <view class="login-panel">
+          <!-- 品牌与登录说明 -->
+          <view class="login-brand">
             <view class="brand-mark">
               <image class="brand-logo" :src="brandLogoSrc" mode="aspectFit" @error="brandLogoFailed = true" />
             </view>
-            <view class="brand-copy">
-              <text class="brand-title">{{ brandName }}</text>
-              <text class="brand-subtitle">企业应用统一入口</text>
+            <view class="login-brand-copy">
+              <view class="login-product-row">
+                <text class="brand-title">{{ brandName }}</text>
+                <text class="client-badge">{{ userClient.toUpperCase() }}</text>
+              </view>
+              <text class="panel-title">欢迎使用工作台</text>
+              <text class="panel-subtitle">登录以处理您的待办审批与工作流</text>
             </view>
           </view>
-          <text class="client-badge">{{ userClient.toUpperCase() }}</text>
-        </view>
-      </view>
 
-      <view class="login-main">
-        <view class="masthead-copy">
-          <text class="masthead-kicker">统一身份认证</text>
-          <text class="masthead-title">登录移动工作台</text>
-          <text class="masthead-desc">访问企业应用、审批任务与消息通知</text>
-        </view>
-        <view class="login-panel">
-          <view class="panel-head">
-            <text class="panel-title">企业账号登录</text>
-            <text class="panel-subtitle">请输入账号信息完成身份验证</text>
-          </view>
-
+          <!-- 账号表单 -->
           <view class="form-stack">
-            <AiField v-model="form.username" clearable placeholder="请输入用户名">
+            <AiField v-model="form.username" clearable :disabled="loading" placeholder="请输入用户名">
               <template #leftIcon><AiIcon name="user" color="#94a3b8" size="sm" /></template>
             </AiField>
 
-            <AiField v-model="form.password" type="password" placeholder="请输入密码" @confirm="handleLogin">
+            <AiField v-model="form.password" type="password" :disabled="loading" placeholder="请输入密码" @confirm="handleLogin">
               <template #leftIcon><AiIcon name="lock" color="#94a3b8" size="sm" /></template>
             </AiField>
 
             <view class="captcha-row">
-              <AiField v-model="form.code" class="captcha-field" placeholder="请输入验证码" @confirm="handleLogin">
+              <AiField v-model="form.code" class="captcha-field" :disabled="loading" placeholder="请输入验证码" @confirm="handleLogin">
                 <template #leftIcon><AiIcon name="shield" color="#94a3b8" size="sm" /></template>
               </AiField>
-              <button class="captcha-image" :disabled="captcha.loading" @click="loadCaptcha">
+              <button class="captcha-image" :disabled="captcha.loading || loading" @click="loadCaptcha">
                 <image v-if="captcha.image" class="captcha-img" :src="captcha.image" mode="aspectFit" />
                 <view v-else class="captcha-empty">
                   <wd-loading v-if="captcha.loading" type="ring" color="#3b82f6" :size="18" />
@@ -60,9 +52,9 @@
             </view>
           </view>
 
-          <AiButton block size="lg" :loading="loading" @click="handleLogin">登录</AiButton>
+          <AiButton block size="lg" :loading="loading" :disabled="loading" @click="handleLogin">登录</AiButton>
 
-          <view class="login-security">
+          <view class="login-security" aria-label="安全提示">
             <AiIcon name="shield" color="#94a3b8" size="xs" />
             <text>账号信息通过安全链路传输</text>
           </view>
@@ -239,7 +231,7 @@ export default {
     goTarget() {
       const url = this.redirect || '/pages/index/index'
       const path = url.split('?')[0]
-      if (path === '/pages/index/index' || path === '/pages/mine/index') {
+      if (['/pages/index/index', '/pages/todo', '/pages/mine/index'].includes(path)) {
         uni.switchTab({ url: path })
         return
       }
@@ -268,6 +260,9 @@ export default {
       return true
     },
     async handleLogin() {
+      // 回车和点击可能在同一帧到达，页面入口先拦截重复提交。
+      if (this.loading)
+        return
       const username = this.form.username.trim()
       const password = this.form.password
       const code = this.form.code.trim()

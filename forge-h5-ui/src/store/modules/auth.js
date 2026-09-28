@@ -14,6 +14,37 @@ function getDisplayName(userInfo) {
     || nested?.realName || nested?.nickName || nested?.username || '用户'
 }
 
+const loginConfigCache = new Map()
+const loginConfigRequests = new Map()
+let passwordLoginPromise = null
+
+function loginConfigKey(tenantId) {
+  return `${import.meta.env.VITE_USER_CLIENT || 'h5'}:${tenantId == null || tenantId === '' ? 'default' : String(tenantId)}`
+}
+
+async function resolveLoginConfig(tenantId, force = false) {
+  const key = loginConfigKey(tenantId)
+  if (!force && loginConfigCache.has(key))
+    return loginConfigCache.get(key)
+  if (!force && loginConfigRequests.has(key))
+    return loginConfigRequests.get(key)
+
+  const request = api.getLoginConfig({
+    userClient: import.meta.env.VITE_USER_CLIENT || 'h5',
+    ...(tenantId ? { tenantId } : {}),
+  }).then((response) => {
+    const config = response?.data || null
+    loginConfigCache.set(key, config)
+    useAppStore().setBrandConfig(config)
+    return config
+  }).finally(() => {
+    if (loginConfigRequests.get(key) === request)
+      loginConfigRequests.delete(key)
+  })
+  loginConfigRequests.set(key, request)
+  return request
+}
+
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     accessToken: '',
@@ -69,13 +100,8 @@ export const useAuthStore = defineStore('auth', {
     },
     async loadBrand(tenantId, force = false) {
       const appStore = useAppStore()
-      if (!force && appStore.brandConfig && String(appStore.brandConfig.tenantId || '') === String(tenantId || '')) return appStore.brandConfig
       try {
-        const response = await api.getLoginConfig({
-          userClient: import.meta.env.VITE_USER_CLIENT || 'h5',
-          ...(tenantId ? { tenantId } : {}),
-        })
-        appStore.setBrandConfig(response?.data || null)
+        return await resolveLoginConfig(tenantId, force)
       }
       catch (error) { console.warn('加载租户品牌配置失败:', error) }
       return appStore.brandConfig
@@ -98,30 +124,43 @@ export const useAuthStore = defineStore('auth', {
       }
     },
     async login(form) {
-      await loadRuntimeCryptoConfig()
-      const userClient = import.meta.env.VITE_USER_CLIENT || 'h5'
-      const loginConfigResponse = await api.getLoginConfig({
-        userClient,
-        ...(form.tenantId ? { tenantId: form.tenantId } : {}),
-      })
-      useAppStore().setBrandConfig(loginConfigResponse?.data || null)
-      const passwordEncryptionEnabled = loginConfigResponse?.data?.enablePasswordEncryption !== false
-      const password = await this.encryptPassword(form.password, passwordEncryptionEnabled)
-      const payload = {
-        username: form.username,
-        password,
-        code: form.code,
-        codeKey: form.codeKey,
-        tenantId: form.tenantId || undefined,
-        authType: 'password_captcha',
-        userClient,
-        appId: import.meta.env.VITE_APP_ID || undefined,
+      if (passwordLoginPromise)
+        return passwordLoginPromise
+
+      // 复制表单，避免 single-flight 期间响应式数据被验证码刷新或工作区切换修改。
+      const credentials = { ...(form || {}) }
+      const request = (async () => {
+        await loadRuntimeCryptoConfig()
+        const userClient = import.meta.env.VITE_USER_CLIENT || 'h5'
+        // 复用登录页预加载的同租户配置，不再重复请求 loginConfig。
+        const loginConfig = await resolveLoginConfig(credentials.tenantId)
+        const passwordEncryptionEnabled = loginConfig?.enablePasswordEncryption !== false
+        const password = await this.encryptPassword(credentials.password, passwordEncryptionEnabled)
+        const payload = {
+          username: credentials.username,
+          password,
+          code: credentials.code,
+          codeKey: credentials.codeKey,
+          tenantId: credentials.tenantId || undefined,
+          authType: 'password_captcha',
+          userClient,
+          appId: import.meta.env.VITE_APP_ID || undefined,
+        }
+        const res = await api.login(payload)
+        this.setToken(res.data || {})
+        await this.fetchUserInfo()
+        this.fetchAccessSnapshot()
+        return res
+      })()
+
+      passwordLoginPromise = request
+      try {
+        return await request
       }
-      const res = await api.login(payload)
-      this.setToken(res.data || {})
-      await this.fetchUserInfo()
-      this.fetchAccessSnapshot()
-      return res
+      finally {
+        if (passwordLoginPromise === request)
+          passwordLoginPromise = null
+      }
     },
     async oauthLogin({ socialTicket, connectionCode, tenantId } = {}) {
       const payload = {

@@ -89,12 +89,6 @@
 				"selectedIconPath": "static/icons/ai-icon/check-square.svg"
 			},
 			{
-				"pagePath": "pages/message/index",
-				"text": "消息",
-				"iconPath": "static/icons/ai-icon/message-square.svg",
-				"selectedIconPath": "static/icons/ai-icon/message-square.svg"
-			},
-			{
 				"pagePath": "pages/mine/index",
 				"text": "我的",
 				"iconPath": "static/icons/ai-icon/user.svg",

@@ -26,10 +26,18 @@ export function adaptBusinessTaskFields(rawFields = [], fieldPermissions = [], o
       const dictType = String(item?.dictType || item?.props?.dictType || '').trim() || undefined
       const rawType = String(item?.type || item?.componentType || item?.componentKey || 'input')
       const type = resolveFieldType(rawType, dictType, item)
-      const writable = permission
+      const permissionWritable = permission
         ? resolvePermissionFlag(permission, 'writable', 'editable', false)
-        : resolvePermissionFlag(item, 'writable', 'editable', false) && item?.readonly !== true
-      const readonly = !writable || item?.readonly === true || item?.disabled === true || item?.props?.readonly === true || item?.props?.disabled === true
+        : resolvePermissionFlag(item, 'writable', 'editable', false)
+      // editable=false 是后端协议的明确只读结论。节点 writable 可以禁用字段，
+      // 但不能反向覆盖字段自身的 editable/readonly/disabled 约束。
+      const hardReadonly = item?.editable === false
+        || item?.readonly === true
+        || item?.disabled === true
+        || item?.props?.readonly === true
+        || item?.props?.disabled === true
+      const writable = permissionWritable && !hardReadonly
+      const readonly = !writable
       const itemPermissions = normalizeItemPermissions(permission || item)
       const props = {
         ...(item?.props || {}),
@@ -60,6 +68,8 @@ export function adaptBusinessTaskFields(rawFields = [], fieldPermissions = [], o
           ? permission.required
           : item?.required === true || item?.validation?.required === true || item?.props?.validation?.required === true),
         requiredMessage: item?.requiredMessage || item?.validation?.requiredMessage || item?.props?.validation?.requiredMessage,
+        writable,
+        editable: writable,
         readonly,
         hidden: item?.hidden === true,
         formVisible: readable,

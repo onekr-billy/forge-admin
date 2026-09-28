@@ -76,9 +76,11 @@ function resolveFieldNode(node, source, permissions) {
     ...(source?.visibility || {}),
     ...(node.visibility || {}),
   }
-  // 审批节点 fieldPermissions 是当前任务的最终权限；uiDocument.editable 是设计态快照，
-  // 可能在节点权限调整后仍为旧值。显式控件 readonly/disabled 仍作为硬约束保留。
-  const hardReadonly = source?.props?.readonly === true
+  // uiDocument 由后端按当前节点权限编译，editable=false 与 readonly/disabled
+  // 一样是硬约束。审批 writable 只能进一步收紧权限，不能把明确的只读字段重新打开。
+  const hardReadonly = source?.editable === false
+    || node.editable === false
+    || source?.props?.readonly === true
     || source?.props?.disabled === true
     || node.props?.readonly === true
     || node.props?.disabled === true
@@ -106,7 +108,7 @@ function resolveFieldNode(node, source, permissions) {
       : source
         ? (source.writable === true || (source.writable == null && source.editable === true)) && !hardReadonly
         : node.editable !== false && !hardReadonly,
-    readonly: hardReadonly || (!approvalPermission && (source?.readonly === true || node.editable === false)),
+    readonly: hardReadonly || (!approvalPermission && source?.readonly === true),
     hidden: source?.hidden === true || node.visible === false || visibility.hidden === true,
     defaultValue: node.defaultValue ?? node.props?.defaultValue ?? source?.defaultValue ?? source?.props?.defaultValue,
   })

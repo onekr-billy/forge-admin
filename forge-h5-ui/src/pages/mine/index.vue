@@ -492,7 +492,7 @@ function handleMenu(item) {
 }
 
 function goMessages() {
-  uni.switchTab({ url: '/pages/message/index' })
+  uni.navigateTo({ url: '/pages/message/index' })
 }
 
 function openProfileSheet() {

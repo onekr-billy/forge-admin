@@ -44,5 +44,6 @@ test('menu routes preserve configured queries and never use placeholder pages', 
   assert.equal(resolveMobileMenuTarget({ path: '/pages/lowcode-runtime' }), null)
   assert.equal(resolveMobileMenuTarget({ path: '/pages/app-entry' }), null)
   assert.equal(resolveMobileMenuTarget({ path: '/pages/todo?foo=bar' }).tab, true)
+  assert.equal(resolveMobileMenuTarget({ path: '/pages/message/index' }).tab, false)
   assert.equal(resolveMobileMenuTarget({ path: '/ai/crud-page/orders' }).url, '/pages/lowcode-runtime?configKey=orders')
 })

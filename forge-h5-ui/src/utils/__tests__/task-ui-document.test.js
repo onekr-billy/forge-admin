@@ -126,14 +126,16 @@ test('designer readonly props cannot be bypassed by writable approval permission
   assert.deepEqual(buildBusinessTaskFormData({ fields: resolved.fields, mainData: { systemCode: 'A001' } }), {})
 })
 
-test('current approval permission overrides stale uiDocument editable flags', () => {
+test('uiDocument editable flags remain authoritative when approval permissions are writable', () => {
   const resolved = resolveTaskUiDocument({
     protocolVersion: '1',
     fields: [
+      { field: 'fieldMoney', type: 'money', readable: true, writable: true, readonly: false, props: { readonly: false, disabled: false } },
       { field: 'fieldInput', type: 'input', readable: true, writable: true, readonly: false, props: { readonly: false, disabled: false } },
       { field: 'fieldNumber', type: 'number', readable: true, writable: true, readonly: false, props: { readonly: false, disabled: false } },
     ],
     fieldPermissions: [
+      { field: 'fieldMoney', readable: true, writable: true, editable: true },
       { field: 'fieldInput', readable: true, writable: true, editable: true },
       { field: 'fieldNumber', readable: true, writable: true, editable: true },
     ],
@@ -144,6 +146,7 @@ test('current approval permission overrides stale uiDocument editable flags', ()
         { sectionId: 'child_business_object_hl92', sectionType: 'child_table', title: '指标汇总', fields: [] },
       ],
       components: [
+        { componentKey: 'money', field: 'fieldMoney', editable: true },
         { componentKey: 'input', field: 'fieldInput', editable: false },
         { componentKey: 'number', field: 'fieldNumber', editable: false },
       ],
@@ -151,9 +154,14 @@ test('current approval permission overrides stale uiDocument editable flags', ()
   })
 
   assert.deepEqual(resolved.fields.map(field => [field.field, field.readonly]), [
-    ['fieldInput', false],
-    ['fieldNumber', false],
+    ['fieldMoney', false],
+    ['fieldInput', true],
+    ['fieldNumber', true],
   ])
+  assert.deepEqual(buildBusinessTaskFormData({
+    fields: resolved.fields,
+    mainData: { fieldMoney: 100, fieldInput: '只读文本', fieldNumber: 2 },
+  }), { fieldMoney: 100 })
   assert.deepEqual(resolved.sections.map(section => section.sectionId), [
     'section_default',
     'child_business_object_hl92',

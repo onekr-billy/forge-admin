@@ -279,3 +279,26 @@
 - H5 审批详情删除 `/form-assets` 资产兜底和 `formInfo.variables` 字段回填。业务表单字段、JSON sections、主子表记录及权限只来自 `task-form-context`；接口失败时记录可读错误、隐藏推断表单并阻断审批动作。同一次详情加载不再在取得 Flow 表单快照后重复请求一次失败的上下文接口。
 - Node v24.21.0：`node --test src/utils/__tests__/*.test.js src/api/__tests__/*.test.js` 为 84/84 通过；修改结构测试后定向复跑 17/17 通过。`pnpm run build:h5`、`pnpm run build:mp-weixin` 均输出 `DONE Build complete`；微信构建仍只有既有 API/auth 与 storage 循环 chunk 提示，不阻断。
 - 当前机器没有可用 Java Runtime 和 `mvn` 命令，无法执行新增 `FlowClientPropertiesTest` 或后端模块编译；已保留 2 条默认地址回归用例，需在 Java 17/Maven 环境复跑。浏览器仍停留在登录页，且远端 Flow 服务尚未部署本轮后端修复，因此未把真实接口 200 和在线动态表单展示表述为已通过；未启动/停止用户已有 3009 前端服务，也未执行审批写操作。
+
+## 第二十八轮增量：待办分页语义与审批提交 Loading（2026-09-28）
+
+- 核对用户提供的 `/api/flow/task/todo?pageNum=3&pageSize=15` 真实响应：`total=41`、`current=3`、`pages=3`、当前页 `records=11`，符合 MyBatis-Plus `IPage` 协议；`total` 是当前筛选条件总记录数，本来就不随页码变化。H5 继续用累计 `tasks.length < total` 判断加载更多，没有把总数误作本页条数。
+- 新增 `AiLoadingOverlay` Wot 适配组件。审批详情从确认完成到动作接口返回期间统一显示按动作区分的“同意中/驳回中/退回中/转办中/终结流程中”，遮罩阻止并行交互；驳回按钮同时补齐精准 loading，既有动作级防重入保持不变。
+- Node v24.21.0 执行 `node --test src/utils/__tests__/*.test.js src/components/lowcode/__tests__/*.test.js src/api/__tests__/*.test.js`，结果 92/92 通过；`pnpm build:h5` 输出 `DONE Build complete`；`git diff --check` 无输出。
+- 当前浏览器没有有效登录态，未为观察 loading 而提交真实审批写操作；待用户重新登录后可在真实慢请求下做一次视觉点验。本轮未启动或停止用户已有前端服务，未修改待办分页后端协议。
+
+## 第二十九轮增量：登录视觉、待办彩色标签与三栏导航（2026-09-28）
+
+- 登录页使用用户提供的 `login222.png` 原始图片作为全屏背景，项目资产与原文件 SHA-256 均为 `062f293829d9e0e2b4fa48deffee4bd5d836e2ef7eff6e205ede2312c003209c`。登录卡片按参考稿居中，保留后端品牌 Logo/名称、验证码、工作区选择、企微免登和单次登录请求，并增加协议确认；未复用参考 React 中的模拟数据或业务实现。
+- 待办流程类型标签按真实流程名称、业务类型和对象编码映射蓝、橙、绿、紫、青、红六组低饱和色，未知流程按稳定散列取色；任务状态分别使用待签收橙、处理中橙、进行中蓝、已处理绿和结束灰，签收、办理、撤回和分页逻辑未改变。
+- `pages.json` 原生 TabBar 与 `AiTabBar` 均只保留首页、待办、我的三项。消息中心仍是已注册页面，可从首页/我的和后端授权菜单普通入栈进入；审批完成后的消息来源回退使用 `reLaunch`，不再错误调用 `switchTab`。
+- Node v24.21.0 执行全部 H5 Node 测试，92/92 通过；`pnpm build:h5` 与 `pnpm build:mp-weixin` 均输出 `DONE Build complete`，微信构建仅有既有 API/auth 与 storage 循环 chunk 提示；`git diff --check` 无输出，登录与待办 SFC 分别为 332/339 行。
+- 390×844 浏览器检查中登录卡片宽 350px、左右边距 20px，三个输入控件和登录按钮高度均为 52px；页面 `scrollWidth=390`、`scrollHeight=844`，无横向或纵向溢出，上传背景、品牌 Logo、验证码、协议和安全提示均可见。
+- 本地 H5 已使用 `.env.development.local` 启动在 `http://127.0.0.1:3009/`，App 与 Flow 代理均指向 `http://www.dlforgelab.com:8084/forge-h5-api`；页面和 `/static/images/login-bg.png` 均返回 HTTP 200。当前未登录，未为查看待办配色而提交账号、密码或验证码，也未执行任何审批写操作。
+
+## 第三十轮增量：登录背景可见性与撤回按钮（2026-09-28）
+
+- 登录页移除“我已阅读并同意”复选框、协议文案、组件注册、状态和登录前置校验；真实账号、密码、验证码、工作区选择、企微免登和登录单次请求保护均保持不变。
+- 背景图片由裁切模式改为完整铺图，删除额外白色遮罩，登录卡片从 `rgba(255,255,255,.96)` 调整为 `.78` 透明白。浏览器中右上和左下建筑插画均可见，协议文案不再出现，表单文字和控件仍清晰可读。
+- 我发起的任务卡撤回按钮改为固定 `64×36px`、`line-height: 1`、inline-flex 双向居中并限制 flex-basis，消除 uni-app 原生按钮行高把按钮撑高的问题；撤回确认和 `/api/flow/task/withdraw` 调用未改。
+- Node v24.21.0 全部 H5 Node 测试 92/92 通过；`pnpm build:h5` 与 `pnpm build:mp-weixin` 均输出 `DONE Build complete`，微信构建仍只有既有循环 chunk 提示。3009 开发服务继续运行，未提交登录或撤回等真实写操作。

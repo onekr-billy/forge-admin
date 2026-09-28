@@ -1,9 +1,9 @@
 const TAB_ROUTES = new Set([
   '/pages/index/index',
   '/pages/todo',
-  '/pages/message/index',
   '/pages/mine/index',
 ])
+const STACK_ROUTES = new Set(['/pages/message/index'])
 
 const MENU_ACCENTS = ['#f43f5e', '#10b981', '#6366f1', '#3b82f6']
 const GENERIC_MENU_ICONS = new Set([
@@ -46,6 +46,7 @@ export function resolveMobileMenuTarget(menu = {}) {
     const path = raw.startsWith('/') ? raw : `/${raw}`
     const pathname = path.split('?')[0]
     if (TAB_ROUTES.has(pathname)) return { url: path, tab: true }
+    if (STACK_ROUTES.has(pathname)) return { url: path, tab: false }
     if (pathname === '/pages/lowcode-runtime') {
       const query = path.split('?')[1] || ''
       if (/(?:^|&)configKey=[^&]+/.test(query)) return { url: path, tab: false }
@@ -96,7 +97,7 @@ function collectEntries(menus, offset = 0) {
       const children = Array.isArray(menu.children) ? menu.children : []
       if (isMobileMenu(menu)) {
         const target = resolveMobileMenuTarget(menu)
-        // 四个主导航已有固定 Tab，不在“常用应用”里重复占位。
+        // 三个主导航已有固定 Tab，不在“常用应用”里重复占位。
         if (target && !target.tab) {
           entries.push({
             key: String(menu.id || target.url),

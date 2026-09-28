@@ -10,7 +10,6 @@
       >
         <view class="ai-tabbar__icon-wrap">
           <view class="ai-tabbar__icon" :style="iconMask(tab.icon, currentKey === tab.key ? '#3b82f6' : '#94a3b8')" />
-          <text v-if="tab.key === 'message' && displayUnreadCount" class="ai-tabbar__badge">{{ displayUnreadCount }}</text>
         </view>
         <text class="ai-tabbar__label">{{ tab.label }}</text>
       </button>
@@ -19,9 +18,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import api from '@/api'
 import { resolveStaticUrl } from '@/utils/assets'
 
 const props = defineProps({
@@ -29,7 +27,6 @@ const props = defineProps({
     type: String,
     default: '',
   },
-  unreadCount: { type: [Number, String], default: null },
 })
 
 const tabs = [
@@ -46,24 +43,12 @@ const tabs = [
     icon: '/static/icons/ai-icon/check-square.svg',
   },
   {
-    key: 'message',
-    label: '消息',
-    path: '/pages/message/index',
-    icon: '/static/icons/ai-icon/message-square.svg',
-  },
-  {
     key: 'mine',
     label: '我的',
     path: '/pages/mine/index',
     icon: '/static/icons/ai-icon/user.svg',
   },
 ]
-
-const fetchedUnreadCount = ref(0)
-const displayUnreadCount = computed(() => {
-  const count = Number(props.unreadCount ?? fetchedUnreadCount.value) || 0
-  return count > 99 ? '99+' : count > 0 ? String(count) : ''
-})
 
 const currentKey = computed(() => {
   if (props.active) {
@@ -77,22 +62,11 @@ const currentKey = computed(() => {
 
 onMounted(() => {
   hideNativeTabBar()
-  if (props.unreadCount === null) refreshUnreadCount()
 })
 
 onShow(() => {
   hideNativeTabBar()
-  if (props.unreadCount === null) refreshUnreadCount()
 })
-
-async function refreshUnreadCount() {
-  try {
-    const response = await api.getUnreadMessageCount()
-    const data = response?.data
-    fetchedUnreadCount.value = Number(typeof data === 'number' ? data : data?.totalCount ?? data?.unreadCount ?? data?.count ?? 0) || 0
-  }
-  catch { fetchedUnreadCount.value = 0 }
-}
 
 function hideNativeTabBar() {
   if (typeof uni === 'undefined' || typeof uni.hideTabBar !== 'function') {
@@ -177,24 +151,6 @@ function handleTabClick(tab) {
   width: 22px;
   height: 22px;
   transition: background-color 0.15s ease;
-}
-
-.ai-tabbar__badge {
-  position: absolute;
-  top: -8px;
-  right: -14px;
-  display: flex;
-  min-width: 18px;
-  height: 18px;
-  align-items: center;
-  justify-content: center;
-  padding: 0 5px;
-  border: 2px solid #fff;
-  border-radius: 999px;
-  color: #fff;
-  background: var(--forge-color-danger);
-  font-size: 10px;
-  line-height: 1;
 }
 
 .ai-tabbar__label {
