@@ -27,7 +27,7 @@ public class BusinessEventOutboxDispatcher {
     @Value("${forge.business.event-outbox.batch-size:100}")
     private int batchSize = 100;
 
-    @Scheduled(fixedDelayString = "${forge.business.event-outbox.scan-interval-ms:1000}")
+    @Scheduled(fixedDelayString = "${forge.business.event-outbox.scan-interval-ms:5000}")
     public void dispatch() {
         List<AiBusinessEventOutbox> candidates = outboxService.findDeliveryCandidates(
                 LocalDateTime.now(), Math.max(1, batchSize));

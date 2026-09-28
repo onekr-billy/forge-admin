@@ -2,13 +2,25 @@ package com.mdframe.forge.plugin.generator.service.businessapp;
 
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessEventOutbox;
 import org.junit.jupiter.api.Test;
+import org.springframework.scheduling.annotation.Scheduled;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class BusinessEventOutboxDispatcherTest {
+
+    @Test
+    void idlePollingShouldDefaultToFiveSeconds() throws NoSuchMethodException {
+        Scheduled scheduled = BusinessEventOutboxDispatcher.class
+                .getDeclaredMethod("dispatch")
+                .getAnnotation(Scheduled.class);
+
+        assertThat(scheduled.fixedDelayString())
+                .isEqualTo("${forge.business.event-outbox.scan-interval-ms:5000}");
+    }
 
     @Test
     void claimedEventIsVerifiedDeliveredAndCompleted() {

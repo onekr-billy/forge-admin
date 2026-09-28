@@ -28,14 +28,15 @@ public class AuthProperties {
     };
 
     /**
-     * 是否在应用启动完成前核对 Controller 路由与 API 权限资源覆盖关系。
+     * 是否在应用启动完成前盘点 Controller 路由与 API 权限资源覆盖关系。
+     * API 资源采用显式配置策略，默认不要求全部 Controller 都配置资源。
      */
-    private Boolean apiPermissionCoverageEnabled = true;
+    private Boolean apiPermissionCoverageEnabled = false;
 
     /**
      * 权限资源缺失或查询失败时是否阻止应用完成启动。
-     * 默认关闭，先输出存量覆盖报告；完成资源补齐后由部署环境显式开启。
-     * 请求期未配置资源仍由 API 权限拦截器 fail-closed，不受此开关影响。
+     * 默认关闭；仅在要求全部 Controller 都配置 API 资源的部署中显式开启。
+     * 请求期只有明确配置的 API 资源才执行资源权限校验，不受此开关影响。
      */
     private Boolean apiPermissionCoverageFailOnMissing = false;
 

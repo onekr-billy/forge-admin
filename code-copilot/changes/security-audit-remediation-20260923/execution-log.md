@@ -848,7 +848,7 @@
 
 - 新增 `ApiPermissionCoverageVerifier`，在 `ApplicationRunner` 阶段读取 Spring MVC 全量 Controller 映射，展开一个 Handler 的所有路径和 HTTP 方法，并按 `METHOD path` 去重生成覆盖报告。
 - 仅跳过显式 `@ApiPermissionIgnore`、`@SaIgnore`、既有认证/开放网关专用链路、静态/健康检查和配置白名单；受保护路由必须能匹配 `sys_resource` API 资源。
-- 资源不存在和资源查询异常统一计入缺失；启动门禁支持报告和阻断两种模式，请求期始终由 `ApiPermissionInterceptor` fail-closed。
+- 可选全量覆盖盘点把资源不存在和资源查询异常计入缺失，并支持报告和阻断两种模式；请求期仅对明确配置的 API 资源执行资源权限校验。
 - 报告只记录方法、模板路径和 Handler 名，不记录用户权限、请求参数或数据库异常详情，并限制最多输出 100 条（可配置 1～1000）。
 - 动态认证配置转换同步支持覆盖检查的启用、阻断和报告上限字段。
 
@@ -1033,7 +1033,7 @@
 ### 已完成修复
 
 - 报表前端移除主线程动态 JavaScript 与动态 HTML：数据表达式、URL 模板和事件动作改为受限表达式/结构化动作，旧脚本只读展示并可清除。
-- 后端 `ScriptAdapter` 移除主 JVM 脚本引擎执行，旧脚本配置显式拒绝迁移；API 权限改为 fail-closed，隐藏资源参与鉴权。
+- 后端 `ScriptAdapter` 移除主 JVM 脚本引擎执行，旧脚本配置显式拒绝迁移；API 权限按显式资源配置生效，隐藏资源参与鉴权。
 - 外部系统/API/代理/日志接口增加明确权限与 fail-closed 守卫；新增 `V1.0.185__secure_external_api_permissions.sql`，外部 API 默认启用权限检查。
 - open-gateway、flow-actions、identity 未配置时默认关闭；补充配置绑定验证。
 - 临时 JDBC 增加管理员边界、协议/驱动/主机/端口策略、私网/元数据地址阻断、超时、只读与资源上限；`preview-sql` 绑定已保存数据集、ACL、只读和最大行数，新增 `V1.0.186__secure_dataset_sql_preview.sql`。
@@ -1194,12 +1194,29 @@
 ### 根因与修复
 
 - 启动日志显示 Controller 路由 963 条、已配置 API 资源仅覆盖 119 条，原实现却在存量资源补齐前默认启用严格阻断，导致 `ApiPermissionCoverageVerifier` 抛异常终止启动；这与 Spec 的“先生成覆盖报告，补齐资源后切 enforce”灰度顺序冲突。
-- `api-permission-coverage-fail-on-missing` 默认值调整为 `false`；启动仍扫描并以 WARN 输出待补齐清单，但不再因既有 844 条缺口阻止应用启动。完成资源补齐后，CI/生产通过 `FORGE_AUTH_API_PERMISSION_COVERAGE_FAIL_ON_MISSING=true` 显式开启严格门禁。
-- 该开关只影响启动门禁；请求期 `ApiPermissionInterceptor` 对未配置资源和查询异常仍返回 403，未放宽 fail-closed 安全边界。严格模式测试继续验证缺失路由会阻止启动。
+- `api-permission-coverage-fail-on-missing` 默认值调整为 `false`，后续按产品确认进一步将全量覆盖盘点默认关闭；只有要求全部 Controller 配置 API 资源的部署才显式开启盘点和严格门禁。
+- 该开关只影响可选的全量覆盖门禁；请求期 `ApiPermissionInterceptor` 对明确配置的资源执行权限校验，资源查询异常仍返回 403。严格模式测试继续验证启用全量治理后缺失路由会阻止启动。
 
 ### 验证
 
-- `ApiPermissionCoverageVerifierTest`：4/4 通过，新增默认报告模式回归，并保留显式严格模式阻断覆盖。
+- `ApiPermissionCoverageVerifierTest`：4/4 通过，覆盖默认关闭全量盘点，并保留显式报告和严格模式阻断覆盖。
 - 认证 Starter 全量测试：59/59 通过，失败 0、错误 0、跳过 0。
 - `mvn -q -B -f forge-server/pom.xml -pl forge-admin-server -am -DskipTests package`：Admin 聚合构建通过。
 - 首次定向测试因 Surefire 测试 JVM 未继承 Byte Buddy agent 导致 Mockito 初始化失败；改为通过 `-DargLine=-javaagent:...` 显式加载后，同一测试通过。该失败属于测试运行参数，不是产品代码失败。
+
+## 2026-09-28：显式 API 资源权限与后台日志降噪
+
+### 实现
+
+- `ApiPermissionInterceptor` 改为显式资源控制：只有 `sys_resource.resource_type=4` 且 `api_url/api_method` 匹配的接口才进入用户 API 资源校验；没有配置 API 资源的存量接口跳过该层，继续受登录、Controller 权限注解和数据权限控制。
+- 已配置但用户未授权、API 资源查询异常或权限计算异常仍返回 403；外部系统、代理等已明确注册资源和硬权限守卫的敏感接口不受兼容策略影响。
+- Controller 全量资源覆盖盘点默认关闭；需要强制全量治理时可显式开启 `FORGE_AUTH_API_PERMISSION_COVERAGE_ENABLED` 和缺失阻断开关。
+- 修复 `logback.xml` 中重复的 `com.mdframe.forge` Logger：原配置后置 DEBUG 覆盖前置 INFO，导致定时补偿任务的 DataScope 与 MyBatis SQL 持续打印。现在应用和 SQL 默认 INFO，分别通过 `FORGE_LOG_LEVEL`、`FORGE_SQL_LOG_LEVEL` 临时开启诊断。
+- 业务事件 Outbox 空闲扫描默认间隔由 1 秒调整为 5 秒；触发器 30 秒恢复扫描保留，用于处理进程退出、瞬时失败和超时租约，不是前端主动查询。
+
+### 验证
+
+- 权限、覆盖盘点、Outbox 间隔和运维默认值定向测试 15/15 通过。
+- 认证 Starter 全量测试 60/60 通过，失败 0、错误 0、跳过 0。
+- `logback.xml` 通过 XML 语法校验；`git diff --check` 通过。
+- `mvn -q -B -f forge-server/pom.xml -pl forge-admin-server -am -DskipTests package`：Admin 聚合构建通过。

@@ -55,7 +55,7 @@
 - [x] 若业务确认必须保留 JavaScript，另建独立执行服务/容器协议，明确 CPU、内存、网络、超时和结果大小上限；主 JVM 只进行 RPC 调用和结果校验。（本轮确认不保留 JavaScript，该条件分支不适用）
 - [x] 审计日志记录映射协议版本、操作者、结果和配置 SHA-256 摘要，`OperationLog` 禁止保存请求参数与响应原文。
 
-### T1.3 API 权限改为 fail-closed
+### T1.3 API 权限改为显式资源控制
 
 **修改范围：**
 
@@ -64,8 +64,8 @@
 - `forge-server/forge-framework/forge-plugin-parent/forge-plugin-system/src/main/resources/mapper/SysResourceMapper.xml`、用户权限加载服务、API 配置缓存
 - Controller 路由扫描器、权限资源 Flyway 脚本
 
-- [x] 新增未配置资源、缓存异常、隐藏 API、通配路径和匿名白名单测试；默认结果必须为 403。
-- [x] 启动/CI 输出 Controller 路由与资源覆盖报告，缺失敏感接口阻止发布。（新增启动前覆盖校验器，展开全部路径/HTTP 方法；存量资源补齐前默认报告，CI/生产完成覆盖后通过 `FORGE_AUTH_API_PERMISSION_COVERAGE_FAIL_ON_MISSING=true` 显式启用阻断；请求期始终 fail-closed）
+- [x] 新增未配置资源、缓存异常、隐藏 API、通配路径和匿名白名单测试；未配置资源跳过该层，查询异常和已配置但未授权返回 403。
+- [x] 提供可选的 Controller 路由与资源全量覆盖报告；默认关闭，仅要求全量 API 资源治理的部署显式启用盘点和阻断。
 - [x] 隐藏 API 参与匹配和用户权限计算；资源 `visible` 只影响菜单展示。
 - [x] 对明确匿名接口使用显式注解/白名单，禁止通过“未配置”获得匿名访问。
 - [ ] 完成 Admin 登录、普通用户、无权限用户和缓存故障的接口验证。

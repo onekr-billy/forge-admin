@@ -33,13 +33,11 @@ class ApiPermissionInterceptorTest {
     }
 
     @Test
-    void shouldRejectEndpointWithoutPermissionResource() throws Exception {
+    void shouldAllowEndpointWithoutExplicitPermissionResource() throws Exception {
         MockHttpServletRequest request = request("/system/missing");
         when(permissionService.isApiPermissionConfigured("/system/missing", "OPTIONS")).thenReturn(false);
 
-        assertThatThrownBy(() -> interceptor.preHandle(request, new MockHttpServletResponse(), securedHandler()))
-                .isInstanceOf(NotPermissionException.class)
-                .hasMessageContaining("/system/missing");
+        assertThat(interceptor.preHandle(request, new MockHttpServletResponse(), securedHandler())).isTrue();
 
         verify(permissionService, never()).hasApiPermission("/system/missing", "OPTIONS");
     }
@@ -91,6 +89,17 @@ class ApiPermissionInterceptorTest {
         when(permissionService.hasApiPermission("/system/users", "OPTIONS")).thenReturn(true);
 
         assertThat(interceptor.preHandle(request, new MockHttpServletResponse(), securedHandler())).isTrue();
+    }
+
+    @Test
+    void shouldRejectConfiguredEndpointWhenUserDoesNotHavePermission() throws Exception {
+        MockHttpServletRequest request = request("/system/users");
+        when(permissionService.isApiPermissionConfigured("/system/users", "OPTIONS")).thenReturn(true);
+        when(permissionService.hasApiPermission("/system/users", "OPTIONS")).thenReturn(false);
+
+        assertThatThrownBy(() -> interceptor.preHandle(request, new MockHttpServletResponse(), securedHandler()))
+                .isInstanceOf(NotPermissionException.class)
+                .hasMessageContaining("/system/users");
     }
 
     private MockHttpServletRequest request(String uri) {

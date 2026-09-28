@@ -29,7 +29,7 @@ server:
 # 日志配置
 logging:
   level:
-    com.forge: info
+    com.mdframe.forge: ${FORGE_LOG_LEVEL:info}
     org.springframework: error
     org.mybatis.spring.mapper: error
     com.mdframe.forge.plugin.ai.client.AiClientImpl: INFO
@@ -151,10 +151,9 @@ sms:
   config-type: interface
 forge:
   auth:
-    # 启动时核对 Controller 路由与 sys_resource API 资源；存量补齐前默认仅报告。
-    # 资源覆盖完成后在 CI/生产显式设置 FORGE_AUTH_API_PERMISSION_COVERAGE_FAIL_ON_MISSING=true。
-    # 此开关只控制启动门禁，请求期未配置资源仍会被拒绝。
-    api-permission-coverage-enabled: ${FORGE_AUTH_API_PERMISSION_COVERAGE_ENABLED:true}
+    # API 资源采用显式配置策略；默认不要求全部 Controller 都配置 resource_type=4 资源。
+    # 只有需要全量覆盖门禁的部署才显式开启盘点与缺失阻断。
+    api-permission-coverage-enabled: ${FORGE_AUTH_API_PERMISSION_COVERAGE_ENABLED:false}
     api-permission-coverage-fail-on-missing: ${FORGE_AUTH_API_PERMISSION_COVERAGE_FAIL_ON_MISSING:false}
     api-permission-coverage-report-limit: ${FORGE_AUTH_API_PERMISSION_COVERAGE_REPORT_LIMIT:100}
     # 存量机密客户端全部升级为 BCrypt 后关闭。
@@ -269,6 +268,9 @@ forge:
       ttl-millis: 1800000
       cleanup-interval-millis: 60000
   business:
+    event-outbox:
+      # 可靠事件空闲时按固定间隔扫描，降低无待办数据时的数据库轮询频率。
+      scan-interval-ms: ${FORGE_BUSINESS_EVENT_OUTBOX_SCAN_INTERVAL_MS:5000}
     datasource:
       enabled: true
       tenant-routing-enabled-default: true

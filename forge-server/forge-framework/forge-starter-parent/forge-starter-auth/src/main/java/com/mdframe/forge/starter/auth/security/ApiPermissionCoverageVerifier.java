@@ -27,9 +27,9 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 
 /**
- * Verifies that every Controller route protected by {@code ApiPermissionInterceptor}
- * has a matching API resource. Missing resources and lookup failures are both
- * treated as uncovered so CI/startup can fail closed before traffic is accepted.
+ * Optional inventory for deployments that require every Controller route protected
+ * by {@code ApiPermissionInterceptor} to have a matching API resource. The runtime
+ * interceptor itself uses opt-in resource enforcement and does not require full coverage.
  */
 @Slf4j
 @Component
@@ -77,7 +77,7 @@ public class ApiPermissionCoverageVerifier implements ApplicationRunner {
 
     public CoverageReport verifyAndEnforce() {
         if (!Boolean.TRUE.equals(authProperties.getApiPermissionCoverageEnabled())) {
-            log.warn("API权限资源覆盖检查已关闭；仅允许用于受控灰度盘点");
+            log.debug("API权限资源全量覆盖盘点未启用");
             return CoverageReport.disabled();
         }
 
@@ -193,7 +193,7 @@ public class ApiPermissionCoverageVerifier implements ApplicationRunner {
                     report.missingRoutes().size(), sample);
             return;
         }
-        log.warn("API权限资源覆盖盘点发现待补齐路由（报告模式，不阻止启动；请求期仍默认拒绝）: "
+        log.warn("API权限资源全量覆盖盘点发现未配置路由（报告模式，不阻止启动）: "
                         + "protected={}, configured={}, exempt={}, missing={}, sample={}",
                 report.protectedRouteCount(), report.configuredRouteCount(), report.exemptRouteCount(),
                 report.missingRoutes().size(), sample);

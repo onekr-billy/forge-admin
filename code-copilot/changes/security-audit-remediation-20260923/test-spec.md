@@ -16,7 +16,7 @@
 - JDK 17 Admin 全依赖编译通过：`mvn -DskipTests -pl forge-admin-server -am compile`，46/46 模块成功。
 - JDK 17 Flow Server 全依赖编译通过；BPMN/流程监控 13 个非 Mockito 定向测试通过。
 - 密码策略与客户端登录配置已通过定向与完整模块回归；密码找回测试使用显式 Byte Buddy agent 运行，当前 11/11 通过。
-- 数据 SQL/预览、外部接口权限、API fail-closed、幂等、验证码、文件访问、事件租户/条件和社会化登录均已执行对应模块定向测试，详见 `execution-log.md`。
+- 数据 SQL/预览、外部接口权限、显式 API 资源控制、幂等、验证码、文件访问、事件租户/条件和社会化登录均已执行对应模块定向测试，详见 `execution-log.md`。
 - `git diff --check` 通过；用户已有 `.DS_Store` 修改未触碰、未纳入本变更。
 
 ## 1.2 2026-09-27 A-20 租约/fencing 增量验证计划
@@ -78,10 +78,10 @@
 
 - 扫描范围：从 Spring MVC `RequestMappingHandlerMapping` 读取全部 Controller 映射，逐一展开一个 Handler 上的多路径与多 HTTP 方法，并按 `METHOD path` 去重；不再只检查第一个路径或第一个方法。
 - 豁免范围：仅跳过 `@ApiPermissionIgnore`、`@SaIgnore`、既有认证/开放网关专用链路和显式 `apiPermissionExcludePaths`；框架 `/error` 与静态/健康检查不作为业务权限资源。
-- 故障语义：资源不存在和资源查询异常都计入未覆盖；存量补齐阶段默认输出报告但不阻止启动，完成资源补齐后由 CI/生产设置 `FORGE_AUTH_API_PERMISSION_COVERAGE_FAIL_ON_MISSING=true` 进入严格门禁。该开关不改变请求期 fail-closed。
+- 故障语义：全量覆盖盘点默认关闭；显式启用后资源不存在和资源查询异常计入未覆盖，并可进一步开启严格启动阻断。请求期未配置资源跳过该层，资源查询异常或已配置但未授权仍 fail-closed。
 - 日志约束：报告只输出 HTTP 方法、模板路径和 Handler 名，不输出用户权限、请求参数或数据库异常详情；样本数量限制为 1～1000。
-- 实际结果：`ApiPermissionCoverageVerifierTest` 4/4，认证 Starter 依赖反应堆成功且 `forge-starter-auth` 59/59 测试通过；首次测试 JVM 未显式加载 Byte Buddy agent 导致 Mockito 初始化失败，修正运行参数后复跑通过。Admin 聚合构建成功。
-- 环境限制：未连接真实 MySQL 启动 Admin；用户启动日志已生成目标环境覆盖基线（963 条受保护路由、119 条已配置、844 条待补齐）。存量补齐阶段保持报告模式，不能提前在该环境启用严格启动阻断。
+- 实际结果：`ApiPermissionCoverageVerifierTest` 4/4，认证 Starter 依赖反应堆成功且 `forge-starter-auth` 60/60 测试通过；首次测试 JVM 未显式加载 Byte Buddy agent 导致 Mockito 初始化失败，修正运行参数后复跑通过。Admin 聚合构建成功。
+- 环境限制：未连接真实 MySQL 启动 Admin；用户启动日志已生成目标环境覆盖基线（963 条受保护路由、119 条显式配置）。当前采用显式资源控制，不把其余 844 条存量路由视为必须补齐项；只有选择全量治理的部署才开启覆盖盘点。
 
 ## 1.9 2026-09-28 外部连接器租户与权限矩阵
 
@@ -475,7 +475,7 @@
 
 ### 权限与网关
 
-- 未配置 API 资源、缓存异常、隐藏 API、普通用户访问外部配置和代理接口均返回 401/403，不得返回业务数据。
+- 未配置 API 资源跳过资源权限层但仍要求正常登录；缓存异常、已配置但未授权、普通用户访问外部配置和代理接口均返回 401/403，不得返回业务数据。
 - 资源迁移重复执行不产生重复行；Controller 路由覆盖报告无遗漏。
 - open-gateway/flow-actions/identity 无环境变量时均为关闭；开启时缺少 pepper、默认 client/grant 或组织绑定失败启动/调用。
 
@@ -602,7 +602,14 @@ rg -n "new Function|AsyncFunction|engine\.eval|StrictHostKeyChecking=no|fastjson
 
 ## 11. 2026-09-28 API 权限覆盖门禁启动回归
 
-- 回归输入：数据库只覆盖 119/963 条 Controller 路由时，默认配置不得在 `ApplicationRunner` 阶段终止应用；必须保留完整缺口报告。
-- 严格模式：显式设置 `apiPermissionCoverageFailOnMissing=true` 后，任何缺失或查询失败路由仍必须抛出启动异常。
-- 请求期边界：报告模式只放宽启动门禁，`ApiPermissionInterceptor` 对未配置资源及缓存/数据库查询异常仍必须拒绝请求。
-- 自动化结果：`ApiPermissionCoverageVerifierTest` 4/4、认证 Starter 59/59 通过；Admin 聚合 `package -DskipTests` 通过。
+- 回归输入：数据库只显式配置 119/963 条 Controller 路由时，默认不得扫描或在 `ApplicationRunner` 阶段终止应用。
+- 严格模式：同时显式开启全量覆盖盘点和 `apiPermissionCoverageFailOnMissing=true` 后，任何缺失或查询失败路由仍必须抛出启动异常。
+- 请求期边界：`ApiPermissionInterceptor` 对未配置资源跳过该层，对缓存/数据库查询异常以及已配置但未授权请求仍必须拒绝。
+- 自动化结果：`ApiPermissionCoverageVerifierTest` 4/4、认证 Starter 60/60 通过；Admin 聚合 `package -DskipTests` 通过。
+
+## 12. 2026-09-28 显式 API 权限与后台日志回归
+
+- 权限矩阵：未配置 API 资源的登录接口请求跳过资源权限层；已配置且有权限放行；已配置但无权限、资源查询异常和权限计算异常均拒绝。
+- 运维默认值：全量 Controller/API 资源覆盖盘点默认关闭；应用包和 Mapper 默认不得配置 DEBUG，诊断级别只能由环境变量显式开启。
+- 后台轮询：业务事件 Outbox 默认空闲扫描间隔为 5 秒；触发器恢复任务保留 30 秒扫描以承担可靠恢复。
+- 自动化结果：四组定向测试 15/15、认证 Starter 60/60 通过；Logback XML 语法和 Admin 聚合构建通过。

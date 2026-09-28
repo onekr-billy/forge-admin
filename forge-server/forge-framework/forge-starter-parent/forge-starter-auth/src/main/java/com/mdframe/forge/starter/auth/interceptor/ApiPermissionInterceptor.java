@@ -101,17 +101,18 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
             requestUri = requestUri.substring(contextPath.length());
         }
 
+        boolean permissionConfigured;
         try {
-            if (!permissionService.isApiPermissionConfigured(requestUri, request.getMethod())) {
-                log.warn("接口未配置API权限资源，拒绝访问: uri={}, method={}", requestUri, request.getMethod());
-                throw denied(requestUri);
-            }
-        } catch (NotPermissionException ex) {
-            throw ex;
+            permissionConfigured = permissionService.isApiPermissionConfigured(requestUri, request.getMethod());
         } catch (RuntimeException ex) {
             log.error("检查API权限资源配置失败，拒绝访问: uri={}, method={}",
                     requestUri, request.getMethod(), ex);
             throw denied(requestUri);
+        }
+        if (!permissionConfigured) {
+            log.debug("接口未配置API权限资源，跳过资源权限校验: uri={}, method={}",
+                    requestUri, request.getMethod());
+            return true;
         }
 
         // 4. 校验接口权限

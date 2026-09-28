@@ -97,15 +97,14 @@ class ApiPermissionCoverageVerifierTest {
     }
 
     @Test
-    void shouldUseReportModeByDefaultDuringLegacyResourceInventory() throws Exception {
+    void shouldDisableFullCoverageInventoryByDefaultForOptInApiPermissions() {
         AuthProperties defaultProperties = new AuthProperties();
-        defaultProperties.setApiPermissionCoverageEnabled(true);
-        defaultProperties.setApiPermissionCoverageReportLimit(20);
         ApiPermissionCoverageVerifier defaultVerifier =
                 new ApiPermissionCoverageVerifier(mapping, permissionService, defaultProperties);
 
+        assertThat(defaultProperties.getApiPermissionCoverageEnabled()).isFalse();
         assertThat(defaultProperties.getApiPermissionCoverageFailOnMissing()).isFalse();
-        assertThat(defaultVerifier.verifyAndEnforce().missingRoutes()).hasSize(5);
+        assertThat(defaultVerifier.verifyAndEnforce().enabled()).isFalse();
     }
 
     public static final class TestController {
