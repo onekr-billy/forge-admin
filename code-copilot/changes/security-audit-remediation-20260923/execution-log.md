@@ -1152,3 +1152,26 @@
 ### 未覆盖
 
 - 未连接真实 Redis、RustFS、腾讯 COS 或 MySQL，未执行真实双 JVM 节点切换、对象存储 abort、Flyway 实库迁移及网络分区注入；本轮以共享 Store/共享目录双实例行为测试、Mapper/Flyway 契约和聚合编译作为自动化证据。
+
+## 2026-09-28：T0.2 构建工具链与 T4.1 SBOM 基线
+
+### 实现
+
+- 后端在根 POM 增加 Maven Enforcer 与 Toolchains：构建运行时必须为 JDK 17，Maven 不低于 3.6.3；`security-ci` profile 在 `package` 阶段生成 CycloneDX JSON SBOM（schema 1.6）。
+- 前端统一固定 Node 20.19.5 与 pnpm 10.28.1，根目录、Admin、Report、H5 的 package metadata 与 `.nvmrc` 保持一致；CI 使用官方 Node 发布包并校验 `SHASUMS256.txt`，不依赖 Gitee 旧版 Node 构建插件。
+- 新增 Gitee 安全质量流水线：main push/PR 执行 JDK 17 后端测试与 SBOM、Node 20 Admin/Report 冻结锁文件安装和生产构建，并上传 `forge-server/target/bom.json`。
+- Docker UI 构建镜像固定为 Node 20.19.5/pnpm 10.28.1；MySQL/Redis 示例配置移除公共默认密码，Compose 对缺失密码 fail-fast，避免以已知默认凭据启动。
+
+### 验证
+
+- `mvn -q -B -f forge-server/pom.xml -Penable-tests,security-ci verify`：JDK 17 下完整反应堆 52/52 成功；783 份 Surefire 报告共 3191 个测试，失败 0、错误 0、跳过 0；CycloneDX 1.6 JSON SBOM 包含 541 个组件。
+- `mvn -B -f forge-server/pom.xml -pl forge-admin-server -am validate`：Maven Enforcer 与 Toolchains 在 46/46 模块生效并选择 JDK 17。
+- `scripts/ci/run-frontend-gates.sh`：精确 Node 20.19.5/pnpm 10.28.1 下，Admin 与 Report 均完成 `--frozen-lockfile` 安装和生产构建；保留现有 Vite/CSS/分块警告。
+- 全量门禁首跑暴露并修复测试夹具漂移：OIDC 测试显式启用 Provider，MCP 集成测试补齐新增的限流与会话校验依赖，幂等测试把公共 stub 下沉到实际使用用例；对应定向测试 8/8 与幂等模块 50/50 通过。
+- Admin 前端全量单测试跑共 1956 项，1947 通过、9 失败，并有 4 个 suite/collection 失败；失败集中于既有 router mock、bridge catalog、属性面板、运行时布局、打印工作区、门户骨架和业务流程工作区断言，不作为本阶段通过证据。
+- Shell 语法、POM XML、package JSON、workflow/Compose YAML、SBOM JSON、可执行权限、硬编码旧默认凭据扫描和 `git diff --check` 均通过。
+
+### 未覆盖
+
+- 本机未安装 Docker CLI，未执行 `docker compose config` 或镜像构建；Compose 仅完成 YAML 解析和配置静态检查。
+- T4.1 的 SCA、Secret scan、SAST、镜像扫描及前端可用依赖审计替代方案仍未落地，任务保持未完成；不能用 SBOM 生成等价替代漏洞扫描。

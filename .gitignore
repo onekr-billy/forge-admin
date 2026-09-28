@@ -102,3 +102,4 @@ forge/db/community-export/
 /var/
 /.tmp/
 /.tmp-test/
+/.ci-tools/

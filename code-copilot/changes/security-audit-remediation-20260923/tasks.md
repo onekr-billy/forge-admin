@@ -17,8 +17,8 @@
 
 ### T0.2 固化测试运行环境
 
-- [ ] 使用 JDK 17 Maven Toolchain，修复定向测试对 `forge-admin-server/sql/初始化脚本.sql` 的过期引用，改为仓库实际初始化脚本路径或测试专用夹具。（过期引用已改为唯一实际路径 `forge-server/db/全量初始化SQL.sql`，JDK 17 下定向测试 4/4 通过；仓库级 Maven Toolchain/CI 固定尚未完成）
-- [ ] 在 CI 固定 Node 20 和 `pnpm --ignore-workspace`，保留既有前端构建命令。
+- [x] 使用 JDK 17 Maven Toolchain，修复定向测试对 `forge-admin-server/sql/初始化脚本.sql` 的过期引用，改为仓库实际初始化脚本路径或测试专用夹具。（过期引用已改为唯一实际路径 `forge-server/db/全量初始化SQL.sql`；Maven Enforcer、Toolchains 和 Gitee CI 均固定 JDK 17）
+- [x] 在 CI 固定 Node 20 和 `pnpm --ignore-workspace`，保留既有前端构建命令。（固定 Node 20.19.5、pnpm 10.28.1，并完成 Admin/Report 冻结锁文件安装及生产构建）
 - [ ] 在测试记录中保留本机 Mockito/Byte Buddy 限制，不得将环境失败记录为代码通过。
 
 ## Phase 1：P0/P1 安全边界
@@ -227,7 +227,7 @@
 
 - [x] 运行 `mvn dependency:tree`，确认 `fastjson:1.2.83` 是否进入运行时。
 - [x] 升级兼容版本或排除旧依赖，执行 API/社会化登录回归测试。
-- [ ] CI 固定 JDK 17，执行 compile/test、SCA、Secret scan、SAST、SBOM 和镜像扫描。
+- [ ] CI 固定 JDK 17，执行 compile/test、SCA、Secret scan、SAST、SBOM 和镜像扫描。（JDK 17 compile/test 门禁与 CycloneDX 1.6 SBOM 已落地；SCA、Secret scan、SAST 和镜像扫描仍待完成）
 - [ ] `pnpm audit` 工具异常需记录并替换可用审计工具，不能以命令异常作为无漏洞结论。
 
 ### T4.2 巨型前端组件拆分（本轮排除）

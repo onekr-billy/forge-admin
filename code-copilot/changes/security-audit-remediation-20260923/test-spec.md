@@ -575,3 +575,14 @@ rg -n "new Function|AsyncFunction|engine\.eval|StrictHostKeyChecking=no|fastjson
 - 滚动兼容：迁移前创建且不含版本字段的会话按版本 0 处理；首次改密后数据库版本递增，所有旧会话立即失效。
 - 产品配置：`FORGE_AUTH_KEEP_CURRENT_SESSION_AFTER_PASSWORD_CHANGE` 默认 false；显式开启时只刷新发起改密的当前会话版本，其余会话仍失效。找回密码和管理员重置不受该开关影响，始终吊销全部会话。
 - 环境限制：本轮不连接真实 MySQL/Redis，不声明 Flyway 实库迁移、双 JVM 或网络分区演练通过。
+
+## 10. 2026-09-28 构建工具链与 SBOM 增量验证
+
+- 后端运行时门禁：Maven Enforcer 要求 JDK `[17,18)`、Maven `[3.6.3,)`；Toolchains 在 Admin 聚合反应堆 46/46 模块选择 JDK 17。
+- 后端产物验证：`-Penable-tests,security-ci verify` 完整反应堆 52/52 成功；783 份 Surefire 报告共 3191 个测试，失败 0、错误 0、跳过 0；CycloneDX JSON 为 schema 1.6，包含 541 个组件。
+- 测试夹具回归：OIDC/MCP 定向测试 8/8 通过，幂等模块 50/50 通过；公共 Mockito stub 只保留在实际使用的用例，不以 `lenient` 放宽严格校验。
+- 前端运行时门禁：Node 必须为 20.19.5，pnpm 必须为 10.28.1；Admin/Report 使用独立 lockfile 执行冻结安装和生产构建，两者均通过。
+- 全量前端测试仅作基线试跑：1956 项中 1947 通过、9 失败，另有 4 个 suite/collection 失败；现有失败不属于工具链/SBOM 改动，未将其记录为通过或在本阶段扩域修复。
+- 部署配置：旧 MySQL/Redis 公共默认密码不得出现；Compose 缺少密码变量时必须拒绝展开。由于本机无 Docker CLI，本轮不声明 Compose 运行或镜像构建通过。
+- 静态格式：Shell、XML、JSON、YAML、SBOM 解析和 `git diff --check` 必须通过。
+- 剩余门禁：SCA、Secret scan、SAST、镜像扫描和 pnpm 审计替代工具须单独落地并产生可审查报告；SBOM 只提供组件清单，不代表无漏洞。

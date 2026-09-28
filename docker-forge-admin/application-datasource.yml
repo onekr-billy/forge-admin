@@ -10,7 +10,7 @@ spring:
           driverClassName: com.mysql.cj.jdbc.Driver
           url: jdbc:mysql://${MYSQL_HOST:mysql}:${MYSQL_PORT:3306}/${MYSQL_DB:forge_admin}?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=false&serverTimezone=GMT%2B8&autoReconnect=true&rewriteBatchedStatements=true&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true
           username: ${MYSQL_USER:root}
-          password: ${MYSQL_PASSWORD:forge123456}
+          password: ${MYSQL_PASSWORD}
       hikari:
         maxPoolSize: 20
         minIdle: 10
@@ -25,7 +25,7 @@ spring.data:
     host: ${REDIS_HOST:redis}
     port: ${REDIS_PORT:6379}
     database: 0
-    password: ${REDIS_PASSWORD:forge123456}
+    password: ${REDIS_PASSWORD}
     timeout: 10s
     ssl.enabled: false
     redisson:
@@ -33,7 +33,7 @@ spring.data:
         singleServerConfig:
           address: "redis://${REDIS_HOST:redis}:${REDIS_PORT:6379}"
           database: 0
-          password: ${REDIS_PASSWORD:forge123456}
+          password: ${REDIS_PASSWORD}
           connectTimeout: 10000
           timeout: 3000
           retryAttempts: 3
