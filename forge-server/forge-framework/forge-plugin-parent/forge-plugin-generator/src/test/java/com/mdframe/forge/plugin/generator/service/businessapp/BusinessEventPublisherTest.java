@@ -4,6 +4,7 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
 import com.mdframe.forge.plugin.generator.mapper.AiCrudConfigMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
+import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,15 +16,39 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @DisplayName("动态 CRUD 业务事件发布")
 class BusinessEventPublisherTest {
+
+    @Test
+    @DisplayName("缺少可信租户时在读取对象元数据前拒绝事件")
+    void missingTenantFailsBeforeMetadataLookupOrOutboxAppend() {
+        AiCrudConfigMapper crudConfigMapper = mock(AiCrudConfigMapper.class);
+        BusinessObjectMapper businessObjectMapper = mock(BusinessObjectMapper.class);
+        DynamicCrudService dynamicCrudService = mock(DynamicCrudService.class);
+        BusinessEventOutboxService outboxService = mock(BusinessEventOutboxService.class);
+        BusinessEventPublisher publisher = new BusinessEventPublisher(
+                crudConfigMapper, businessObjectMapper, dynamicCrudService, outboxService);
+
+        try (MockedStatic<SessionHelper> session = mockStatic(SessionHelper.class)) {
+            session.when(SessionHelper::getTenantId).thenReturn(null);
+
+            assertThrows(BusinessException.class,
+                    () -> publisher.publishRecordCreated("purchase-order", Map.of("id", 18L)));
+            assertThrows(BusinessException.class,
+                    () -> publisher.publishFlowApproved("purchase_order", "18", Map.of("id", 18L)));
+        }
+
+        verifyNoInteractions(crudConfigMapper, businessObjectMapper, dynamicCrudService, outboxService);
+    }
 
     @Test
     @DisplayName("绑定业务对象在写入前校验本地主数据源事务能力")

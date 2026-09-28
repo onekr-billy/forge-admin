@@ -445,6 +445,13 @@
 - 实际结果：`LowcodePublishPostActionServiceTest` 6/6、`MenuRegisterAdapterImplTest` 7/7；定向 Admin 依赖反应堆 46/46 模块成功，Generator 全量回归 1443/1443、33/33 模块成功，均为 0 失败、0 错误、0 跳过。
 - 环境限制：未连接真实 MySQL 验证 Spring 事务对 `sys_resource`、业务对象、业务应用和低代码配置的共同回滚，也未执行进程中断、连接断开及人工补偿/回滚脚本演练；本条 T4.5 任务继续保持未完成。
 
+## 1.51 2026-09-28 T4.4-T4.6 收口验证
+
+- 事件发布在任何元数据查询或 Outbox 写入前要求正数可信租户；流程回调事件同样禁止空租户盖章。
+- 启动配置读取历史 BPMN 时先经过 `BpmnXmlUtils` 安全 DOM 边界，DOCTYPE/外部实体和多 process 在进入 Flowable 解析器前拒绝。
+- 新增受审计 HTTP 恢复脚本，发布 DEAD 重放与配置回滚继续经过现有权限、租户、摘要和操作日志边界，不直接更新任务表，也不自动执行反向 DDL。
+- T4.4-T4.6 定向反应堆测试 334/334 通过，0 失败、0 错误、0 跳过；`git diff --check` 与脚本语法检查通过。真实 MySQL/Redis/Flowable 多节点演练属于部署环境验证，不冒充本地自动化结果。
+
 ## 2. P0 必跑验证
 
 ### 动态脚本与 HTML

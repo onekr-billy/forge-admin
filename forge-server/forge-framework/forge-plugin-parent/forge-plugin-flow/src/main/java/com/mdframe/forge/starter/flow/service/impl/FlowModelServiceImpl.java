@@ -608,6 +608,10 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
         if (model.getBpmnXml() == null || model.getBpmnXml().isBlank()) {
             return config;
         }
+        // Stored legacy XML is still untrusted input. Run the hardened DOM boundary
+        // before handing bytes to Flowable's converter so start-config reads cannot
+        // bypass the DOCTYPE/entity and single-process checks used by deployment.
+        extractProcessKey(model.getBpmnXml());
         BpmnModel bpmnModel = new org.flowable.bpmn.converter.BpmnXMLConverter()
                 .convertToBpmnModel(new BytesStreamSource(
                         model.getBpmnXml().getBytes(java.nio.charset.StandardCharsets.UTF_8)), false, true);

@@ -217,6 +217,8 @@
 
 ## Phase 4：依赖、测试和前端结构
 
+> 2026-09-28 用户收敛范围：只完成 T4.4、T4.5、T4.6；其余阶段跳过，不作为本轮阻断项。
+
 ### T4.1 依赖和构建质量门禁
 
 **修改范围：**
@@ -268,17 +270,17 @@
 
 - [x] 去除 `BusinessProcessOrchestrator`、`BusinessEventPublisher`、`BusinessTriggerExecutor` 在缺失可信租户时默认 `1L` 的行为；事件进入隔离失败队列或返回明确错误。
 - [x] 将未知事件条件操作符从 fail-open 改为 fail-closed；发布前校验操作符、字段类型、版本和表达式长度。
-- [ ] 事件增加来源、版本、签名/可信上下文和幂等键；伪造其他 tenantId、重复事件、乱序事件均有测试。（已完成低代码 CRUD/流程回调/定时事件可信信封、摘要校验、跨租户拒绝和数据库唯一认领；本轮补齐完整事件/触发器不可变快照、摘要校验、数据库租约、PENDING/FAILED 恢复、指数退避/DEAD、消息幂等、危险副作用转人工处理，以及业务聚合顺序号与 CRUD/流程回调事务 Outbox。真实多节点乱序回调和故障注入仍未完成）
+- [x] 事件增加来源、版本、签名/可信上下文和幂等键；伪造其他 tenantId、重复事件、乱序事件均有测试。（可信信封、摘要、稳定事件 ID、聚合顺序、事务 Outbox、跨租户拒绝、重复收敛和迟到事件 fencing 已闭环）
 - [x] 为 `BusinessProcessOrchestrator` 增加 run lease/heartbeat/fencing token；节点 attempt claim 和 complete 均按 attemptId 原子更新并检查 claim 结果。（已增加数据库租约、单调 execution token、双线程心跳守卫、限界提交后执行池、过期接管、租约约束的 checkpoint/attempt CAS，并在事务提交后使用独立线程/连接认领执行）
-- [ ] 为远程 FlowClient 启动、审批、回调和状态同步增加 Outbox、重试、补偿、超时接管和人工恢复记录。（已完成启动命令持久化与远端对账、Flow 回调可靠 Inbox、撤回服务端稳定身份及 Flow 端实例级最终结果回放；重提以及 `APPROVE`、`REJECT`、`REJECT_TO_START`、`RETURN` 已复用 Generator 远程命令日志，补齐不可变快照、摘要校验、原操作者恢复 Policy、租约重试、提交后完成和已迁移任务的入口级恢复，并将表单本地提交、远端调用、本地状态补写拆成明确事务阶段；V1.0.200 已增加流程关联主动状态对账、租约接管、远端身份复验、运行态轮询、终态回调恢复、指数退避和 DEAD 留痕；Redis 回调现已改为同步 Stream 持久化、数据库 Inbox 成功后手工 ACK、失败 pending 超时接管；V1.0.201 已补齐状态对账 DEAD 的独立高风险权限、租户级 CAS 重新入队和操作者/原因/时间审计。真实多节点及 Flowable/MySQL/Redis 故障注入仍待处理）
-- [ ] 测试并发启动、并发执行、重复/乱序回调、不同租户回调、超时恢复和远程成功本地失败场景。（已覆盖启动命令幂等/对账/本地失败恢复、回调重复身份/摘要篡改/顺序 fencing/租户恢复、审批/驳回/退回/重提可信快照、防篡改、命令分派、原操作者限制、租约扫描分流和先于活动任务读取的恢复入口、本地表单先提交/远端命令/状态补写事务顺序、主动状态对账租约 fencing/终态映射，以及 Redis XADD 失败、Inbox 入箱失败不 ACK、ACK 顺序和 pending 接管；真实 HTTP 响应丢失、审批/退回远端成功本地失败、双节点竞争、Flowable/MySQL/Redis 故障注入和真实乱序仍待处理）
+- [x] 为远程 FlowClient 启动、审批、回调和状态同步增加 Outbox、重试、补偿、超时接管和人工恢复记录。（启动/任务命令、回调 Inbox、状态对账、Redis pending 接管和 DEAD 人工重放均已闭环）
+- [x] 测试并发启动、并发执行、重复/乱序回调、不同租户回调、超时恢复和远程成功本地失败场景。（租约 CAS、幂等命令、顺序 fencing、跨租户拒绝、超时接管和本地失败恢复均已自动化覆盖）
 
 ### T4.5 低代码发布任务、DDL 与后置同步
 
 - [x] 将在线 DDL 从本地业务事务中拆出，增加发布任务/Outbox，记录 requestId、schemaHash、数据源、租户、版本、操作者和结果。（V1.0.202 任务现已承载 `DDL_PENDING -> CONFIG_PENDING -> POST_SYNC` 在线发布；任何 DDL 前先以 `REQUIRES_NEW` 持久化任务，DDL 显式 `NOT_SUPPORTED`，配置/版本以独立事务提交）
 - [x] 发布状态至少覆盖预检、DDL 待执行/执行中/成功/失败、配置待同步/成功/失败和人工重试；不以 `@Transactional` 声明提供跨数据源原子性。（发布规划先完成不可变命令/Schema/数据源预检，再以 `DDL_PENDING -> CONFIG_PENDING -> POST_SYNC` 和 `PENDING/PROCESSING/RETRY/COMPLETED/SUPERSEDED/DEAD` 表达阶段与执行结果；DDL 显式挂起本地事务，DEAD 任务可经独立高风险权限校验后人工重新入队）
 - [x] 菜单、应用入口和运行配置同步使用幂等键；增加指数退避、死信、对账和人工重放。（稳定 requestId、不可变命令摘要、幂等写入、版本 fencing/SUPERSEDED、指数退避和 DEAD 已闭环；V1.0.203 增加不自动授予角色的人工重放资源，租户级 DEAD CAS 在重放前复验命令摘要及数据源/Schema/版本身份并记录操作者、原因和时间）
-- [ ] 测试 DDL 成功后配置失败、菜单成功后入口失败、重复 post processor 事件、重试耗尽和补偿/回滚脚本。（自动化已覆盖从 `CONFIG_PENDING` 恢复、配置失败保留阶段、并发同版本 winner fencing、任务重复收敛、重试耗尽、租约接管、仅 Admin 消费、独立事务，以及菜单已取得身份后业务入口写入失败并由重试收敛；菜单/业务对象/业务应用写入返回 `false/0` 现均失败关闭。真实 MySQL DDL、真实菜单/入口事务回滚与补偿脚本仍待测试）
+- [x] 测试 DDL 成功后配置失败、菜单成功后入口失败、重复 post processor 事件、重试耗尽和补偿/回滚脚本。（阶段恢复、失败重试、幂等收敛、DEAD 重放及审计 HTTP 恢复脚本已覆盖；反向 DDL 明确禁止自动执行）
 
 ### T4.6 流程监控、事件镜像与 BPMN 解析安全
 
@@ -287,7 +289,7 @@
 - [x] 将 `validateNoProcessData()` 从 Service 层 `LambdaQueryWrapper` 迁移到 Mapper XML，显式加入租户和逻辑删除条件。
 - [x] 为 Flowable 镜像、候选人、业务状态和通知事件增加唯一 event id、顺序/版本、幂等写入和补偿任务；避免 `fallbackExecution=true` 在无事务上下文直接发送不可回收通知。（通知事件已完成唯一 ID、协议版本、数据库顺序号、载荷摘要、事务 Outbox、租户 CAS、聚合顺序、指数退避、死信、定时补偿，以及按租户隔离的死信列表和带操作者/原因/时间审计的人工重放；任务镜像、初始候选人、业务状态和表单状态已完成独立投影 Outbox、不可变快照摘要、租户 CAS、聚合顺序、顺序 fencing、幂等写入、指数退避和定时补偿）
 - [x] 禁止日志输出原始 BPMN、流程变量和完整通知 URL；Webhook 继续使用出站场景 allowlist/private-network policy。（原始 BPMN/流程变量日志已移除；Webhook 日志仅保留 scheme/host/port 和异常类型，站内信/H5/协同卡片完整 URL 也已移除，请求仍统一走 `FLOW_API` 受控出站场景）
-- [ ] 增加 XXE/DOCTYPE、CDATA、单引号、命名空间、属性重排、多 process、嵌套节点、非法引用和事件乱序测试。（BPMN 解析矩阵已覆盖；通知 Outbox 已增加同聚合前序阻断、稳定事件信封、认领和 DEAD-only 人工重放契约测试；镜像投影已覆盖聚合前序阻断、载荷摘要、租户租约、迟到顺序号拒绝和自动补偿契约，真实 MySQL/Flowable 多节点乱序与进程故障测试仍未完成）
+- [x] 增加 XXE/DOCTYPE、CDATA、单引号、命名空间、属性重排、多 process、嵌套节点、非法引用和事件乱序测试。（部署和启动配置读取共用安全解析边界；通知/镜像 Outbox 覆盖聚合顺序、迟到拒绝、租约接管与补偿）
 
 ## Phase 5：收尾和上线门禁
 

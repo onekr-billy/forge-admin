@@ -1,5 +1,12 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：T4.4-T4.6 范围收口
+
+- `BusinessEventPublisher` 现在先取得正数可信租户，再读取对象元数据或写入事件 Outbox；动态 CRUD 和流程回调路径均不再允许空租户事件进入信封。
+- `FlowModelServiceImpl` 的启动配置读取增加安全 BPMN 预检，历史 XML 的 DOCTYPE/外部实体和多 process 无法绕过 `BpmnXmlUtils` 直接进入 Flowable 转换器。
+- 新增 `scripts/ops/lowcode-publish-recovery.sh`，仅通过授权、审计 HTTP API 执行 DEAD 重放或配置版本回滚；禁止脚本直接更新恢复表或自动反向 DDL。
+- T4.4-T4.6 定向测试 334/334 通过，0 失败、0 错误、0 跳过；按用户要求其余阶段跳过。真实 MySQL/Redis/Flowable 多节点故障演练仍需部署环境执行，未冒充自动化通过。
+
 ## 2026-09-28：T4.5 后置同步写入失败关闭
 
 ### 实现

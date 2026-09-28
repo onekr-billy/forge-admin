@@ -44,10 +44,7 @@ public class BusinessEventPublisher {
      * 外接数据源没有分布式事务能力，禁止在写入后再以尽力而为方式补事件。
      */
     public void assertTransactionalPublishSupported(String configKey) {
-        Long tenantId = resolveTenantId();
-        if (tenantId == null) {
-            throw new BusinessException("业务事件缺少可信租户上下文");
-        }
+        Long tenantId = requireTenantId();
         if (resolveObject(configKey, tenantId) != null) {
             dynamicCrudService.assertLocalTransactionConfig(configKey);
         }
@@ -146,6 +143,7 @@ public class BusinessEventPublisher {
 
     private BusinessEvent buildFlowResultEvent(String objectCode, String recordId,
                                                String eventType, Map<String, Object> recordData) {
+        Long tenantId = requireTenantId();
         return BusinessEventEnvelope.stamp(BusinessEvent.builder()
                 .eventType(eventType)
                 .objectCode(objectCode)
@@ -153,8 +151,16 @@ public class BusinessEventPublisher {
                 .recordData(recordData)
                 .operatorId(resolveUserId())
                 .operatorName(resolveUsername())
-                .tenantId(resolveTenantId())
+                .tenantId(tenantId)
                 .build(), BusinessEventEnvelope.SOURCE_FLOW_CALLBACK);
+    }
+
+    private Long requireTenantId() {
+        Long tenantId = resolveTenantId();
+        if (tenantId == null) {
+            throw new BusinessException("业务事件缺少可信租户上下文");
+        }
+        return tenantId;
     }
 
     private Long resolveTenantId() {
@@ -187,7 +193,7 @@ public class BusinessEventPublisher {
      * 根据 configKey 构建事件
      */
     private BusinessEvent buildEvent(String configKey, String eventType, Map<String, Object> data, Map<String, Object> previousData) {
-        Long tenantId = SessionHelper.getTenantId();
+        Long tenantId = requireTenantId();
 
         // 从运行配置中获取对象编码
         ResolvedBusinessObject resolvedObject = resolveObject(configKey, tenantId);
