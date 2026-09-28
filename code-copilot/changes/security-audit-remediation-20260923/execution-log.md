@@ -1,5 +1,24 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：T4.5 后置同步写入失败关闭
+
+### 实现
+
+- 修复发布后置同步忽略底层写入结果的问题。Admin 菜单适配器现在校验管理端/移动端菜单新增、更新和禁用结果；新增操作还必须取得正数资源 ID，`false/null` 不再被记录为成功。
+- 业务对象和业务应用入口写入要求恰好影响一行，`0` 或异常会回滚独立后置同步事务并由 Dispatcher 进入 RETRY/DEAD，而不是继续回写配置并把任务标成 COMPLETED。
+- 为保证重试幂等，业务对象和既有业务应用只在受控持久化字段真正变化时更新；测试覆盖菜单已经取得身份、业务入口首次写入失败后再次执行，第二次复用菜单更新路径并在业务入口成功后收敛。
+
+### 验证
+
+- `LowcodePublishPostActionServiceTest` 6/6、`MenuRegisterAdapterImplTest` 7/7；定向 Admin 依赖反应堆 46/46 模块成功。
+- Generator 完整回归 33/33 个依赖反应堆模块成功，`forge-plugin-generator` 1443/1443，0 失败、0 错误、0 跳过。
+- `LowcodePublishPostActionService` 和 `MenuRegisterAdapterImpl` 均低于 1000 行；本阶段没有开展用户明确排除的巨型组件/巨型类改造。
+
+### 未覆盖
+
+- 未连接真实 MySQL 验证 `sys_resource`、业务对象、业务应用和低代码配置在同一 Spring 本地事务中的真实回滚，也未执行网络断开、进程 kill -9 或补偿/回滚脚本演练。
+- 本阶段只修复可自动化证明的错误完成问题；T4.5 的实库 DDL/菜单部分失败故障注入仍未完成。
+
 ## 2026-09-28：T4.5 发布 DEAD 授权人工重放
 
 ### 实现

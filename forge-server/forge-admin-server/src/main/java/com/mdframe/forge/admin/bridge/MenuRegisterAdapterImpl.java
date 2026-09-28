@@ -81,11 +81,10 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
         resource.setKeepAlive(0);
         resource.setAlwaysShow(0);
         resource.setClientCode(DEFAULT_CLIENT_CODE);
-        if (existing == null) {
-            resourceService.save(resource);
-        } else {
-            resourceService.updateById(resource);
-        }
+        boolean written = existing == null
+                ? resourceService.save(resource)
+                : resourceService.updateById(resource);
+        requireResourceWrite(written, resource.getId(), "管理端菜单");
 
         Long menuId = resource.getId();
         log.info("[MenuRegisterAdapter] 注册菜单成功: menuName={}, configKey={}, menuId={}", menuName, configKey, menuId);
@@ -101,7 +100,7 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
             resource.setParentId(parentId);
         }
         resource.setSort(sort);
-        resourceService.updateById(resource);
+        requireResourceMutation(resourceService.updateById(resource), "管理端菜单");
         log.info("[MenuRegisterAdapter] 更新菜单成功: menuId={}, menuName={}, parentId={}", menuResourceId, menuName, parentId);
     }
 
@@ -120,7 +119,7 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
         resource.setId(menuResourceId);
         resource.setMenuStatus(EnableStatus.DISABLED.getCode());
         resource.setVisible(EnableStatus.DISABLED.getCode());
-        resourceService.updateById(resource);
+        requireResourceMutation(resourceService.updateById(resource), "菜单禁用");
         log.info("[MenuRegisterAdapter] 禁用菜单成功: menuId={}", menuResourceId);
     }
 
@@ -176,7 +175,7 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
         resource.setKeepAlive(0);
         resource.setAlwaysShow(0);
         resource.setClientCode(resolvedClientCode);
-        resourceService.save(resource);
+        requireResourceWrite(resourceService.save(resource), resource.getId(), "应用入口菜单");
         log.info("[MenuRegisterAdapter] 注册应用入口菜单成功: menuName={}, path={}, clientCode={}, menuId={}",
                 menuName, path, resolvedClientCode, resource.getId());
         return resource.getId();
@@ -206,7 +205,7 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
         resource.setMenuStatus(enabled ? EnableStatus.ENABLED.getCode() : EnableStatus.DISABLED.getCode());
         resource.setVisible(enabled ? EnableStatus.ENABLED.getCode() : EnableStatus.DISABLED.getCode());
         resource.setClientCode(StringUtils.defaultIfBlank(clientCode, DEFAULT_CLIENT_CODE));
-        resourceService.updateById(resource);
+        requireResourceMutation(resourceService.updateById(resource), "应用入口菜单");
         log.info("[MenuRegisterAdapter] 更新应用入口菜单成功: menuId={}, menuName={}, parentId={}, clientCode={}",
                 menuResourceId, menuName, resolvedParentId, resource.getClientCode());
     }
@@ -574,6 +573,18 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
             return Long.valueOf(value);
         } catch (NumberFormatException e) {
             return null;
+        }
+    }
+
+    private void requireResourceWrite(boolean written, Long resourceId, String resourceName) {
+        if (!written || resourceId == null || resourceId <= 0) {
+            throw new BusinessException(resourceName + "写入失败");
+        }
+    }
+
+    private void requireResourceMutation(boolean written, String resourceName) {
+        if (!written) {
+            throw new BusinessException(resourceName + "写入失败");
         }
     }
 

@@ -278,7 +278,7 @@
 - [x] 将在线 DDL 从本地业务事务中拆出，增加发布任务/Outbox，记录 requestId、schemaHash、数据源、租户、版本、操作者和结果。（V1.0.202 任务现已承载 `DDL_PENDING -> CONFIG_PENDING -> POST_SYNC` 在线发布；任何 DDL 前先以 `REQUIRES_NEW` 持久化任务，DDL 显式 `NOT_SUPPORTED`，配置/版本以独立事务提交）
 - [x] 发布状态至少覆盖预检、DDL 待执行/执行中/成功/失败、配置待同步/成功/失败和人工重试；不以 `@Transactional` 声明提供跨数据源原子性。（发布规划先完成不可变命令/Schema/数据源预检，再以 `DDL_PENDING -> CONFIG_PENDING -> POST_SYNC` 和 `PENDING/PROCESSING/RETRY/COMPLETED/SUPERSEDED/DEAD` 表达阶段与执行结果；DDL 显式挂起本地事务，DEAD 任务可经独立高风险权限校验后人工重新入队）
 - [x] 菜单、应用入口和运行配置同步使用幂等键；增加指数退避、死信、对账和人工重放。（稳定 requestId、不可变命令摘要、幂等写入、版本 fencing/SUPERSEDED、指数退避和 DEAD 已闭环；V1.0.203 增加不自动授予角色的人工重放资源，租户级 DEAD CAS 在重放前复验命令摘要及数据源/Schema/版本身份并记录操作者、原因和时间）
-- [ ] 测试 DDL 成功后配置失败、菜单成功后入口失败、重复 post processor 事件、重试耗尽和补偿/回滚脚本。（自动化已覆盖从 `CONFIG_PENDING` 恢复、配置失败保留阶段、并发同版本 winner fencing、任务重复收敛、重试耗尽、租约接管、仅 Admin 消费和独立事务；真实 MySQL DDL、菜单/入口部分失败与补偿脚本仍待测试）
+- [ ] 测试 DDL 成功后配置失败、菜单成功后入口失败、重复 post processor 事件、重试耗尽和补偿/回滚脚本。（自动化已覆盖从 `CONFIG_PENDING` 恢复、配置失败保留阶段、并发同版本 winner fencing、任务重复收敛、重试耗尽、租约接管、仅 Admin 消费、独立事务，以及菜单已取得身份后业务入口写入失败并由重试收敛；菜单/业务对象/业务应用写入返回 `false/0` 现均失败关闭。真实 MySQL DDL、真实菜单/入口事务回滚与补偿脚本仍待测试）
 
 ### T4.6 流程监控、事件镜像与 BPMN 解析安全
 

@@ -48,6 +48,7 @@ class MenuRegisterAdapterImplTest {
                 1L, 1, "ai:business:application:hr_apply:page:root", "pc"))
                 .thenReturn(existing);
         when(resourceMapper.selectList(any())).thenReturn(List.of());
+        when(resourceService.updateById(any(SysResource.class))).thenReturn(true);
 
         adapter.syncApplicationPageMenus("hr_apply", List.of(menu("pc")));
 
@@ -72,6 +73,7 @@ class MenuRegisterAdapterImplTest {
                 1L, "ai:business:application:hr_apply:page:root", "pc"))
                 .thenReturn(existing);
         when(resourceMapper.selectList(any())).thenReturn(List.of());
+        when(resourceService.updateById(any(SysResource.class))).thenReturn(true);
 
         adapter.syncApplicationPageMenus("hr_apply", List.of(menu("pc")));
 
@@ -143,6 +145,32 @@ class MenuRegisterAdapterImplTest {
                 () -> adapter.registerMenu("订单", 1L, "orders", 0));
 
         verifyNoInteractions(resourceService, resourceMapper, roleResourceMapper);
+    }
+
+    @Test
+    void failedMenuInsertDoesNotReturnSuccessfulIdentity() {
+        ISysResourceService resourceService = mock(ISysResourceService.class);
+        SysResourceMapper resourceMapper = mock(SysResourceMapper.class);
+        MenuRegisterAdapterImpl adapter = new MenuRegisterAdapterImpl(
+                resourceService, resourceMapper, mock(SysRoleResourceMapper.class));
+        when(resourceMapper.selectOneByPermsAndClientCodeAnyType(
+                1L, "ai:crud:orders", "pc")).thenReturn(null);
+        when(resourceService.save(any(SysResource.class))).thenReturn(false);
+
+        assertThrows(BusinessException.class,
+                () -> adapter.registerMenu("订单", 1L, "orders", 0));
+    }
+
+    @Test
+    void failedMenuUpdateIsReportedToReliableTask() {
+        ISysResourceService resourceService = mock(ISysResourceService.class);
+        MenuRegisterAdapterImpl adapter = new MenuRegisterAdapterImpl(
+                resourceService, mock(SysResourceMapper.class),
+                mock(SysRoleResourceMapper.class));
+        when(resourceService.updateById(any(SysResource.class))).thenReturn(false);
+
+        assertThrows(BusinessException.class,
+                () -> adapter.updateMenu(101L, "订单", 1L, 0));
     }
 
     private BusinessApplicationPageMenuDTO menu(String clientCode) {

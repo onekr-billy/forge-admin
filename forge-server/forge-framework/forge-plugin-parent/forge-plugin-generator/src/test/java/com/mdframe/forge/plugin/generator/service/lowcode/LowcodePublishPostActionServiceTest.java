@@ -1,5 +1,7 @@
 package com.mdframe.forge.plugin.generator.service.lowcode;
 
+import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessApp;
+import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
 import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfig;
 import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfigVersion;
 import com.mdframe.forge.plugin.generator.mapper.AiCrudConfigMapper;
@@ -9,6 +11,7 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessAppMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.service.AiCrudConfigService;
 import com.mdframe.forge.plugin.generator.service.MenuRegisterAdapter;
+import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,6 +21,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -105,6 +111,50 @@ class LowcodePublishPostActionServiceTest {
     }
 
     @Test
+    void failedBusinessEntryWriteKeepsPostSyncRetryableAndRetryConverges() {
+        AiCrudConfig config = config(3);
+        AiBusinessObject businessObject = new AiBusinessObject();
+        businessObject.setId(31L);
+        businessObject.setTenantId(7L);
+        businessObject.setSuiteCode("sales");
+        businessObject.setObjectCode("order");
+        businessObject.setObjectName("订单");
+        when(configMapper.selectByConfigId(7L, 10L)).thenReturn(config);
+        when(versionMapper.selectVersionById(7L, 10L, 20L)).thenReturn(version(3));
+        when(menuAdapter.registerMenu("已发布菜单", 99L, "orders", 7)).thenReturn(101L);
+        when(objectMapper.selectByObjectCode(7L, "sales", "order"))
+                .thenReturn(businessObject);
+        when(objectMapper.updateById(businessObject)).thenReturn(1);
+        when(appMapper.countByAppCode(7L, "SALES_ORDER_RUNTIME", null)).thenReturn(0L);
+        when(appMapper.insert(any(AiBusinessApp.class))).thenReturn(0, 1);
+        when(configService.updateById(config)).thenReturn(true);
+
+        assertThrows(BusinessException.class,
+                () -> service.execute(businessCommand(3, true)));
+        assertEquals(LowcodePublishPostActionService.Result.COMPLETED,
+                service.execute(businessCommand(3, true)));
+
+        verify(menuAdapter).registerMenu("已发布菜单", 99L, "orders", 7);
+        verify(menuAdapter).updateMenu(101L, "已发布菜单", 99L, 7);
+        verify(appMapper, org.mockito.Mockito.times(2)).insert(any(AiBusinessApp.class));
+        verify(configService).updateById(config);
+    }
+
+    @Test
+    void missingRegisteredMenuIdentityFailsBeforeCompletingPostSync() {
+        AiCrudConfig config = config(3);
+        when(configMapper.selectByConfigId(7L, 10L)).thenReturn(config);
+        when(versionMapper.selectVersionById(7L, 10L, 20L)).thenReturn(version(3));
+        when(menuAdapter.registerMenu("已发布菜单", 99L, "orders", 7)).thenReturn(null);
+
+        assertThrows(BusinessException.class,
+                () -> service.execute(command(3, true)));
+
+        verify(configService, never()).updateById(config);
+        verifyNoInteractions(objectMapper, appMapper, modelMapper);
+    }
+
+    @Test
     void executionUsesIndependentLocalTransaction() throws NoSuchMethodException {
         Transactional transactional = LowcodePublishPostActionService.class
                 .getMethod("execute", LowcodePublishPostCommand.class)
@@ -140,5 +190,11 @@ class LowcodePublishPostActionServiceTest {
         return new LowcodePublishPostCommand(
                 1, 7L, 10L, "orders", 20L, versionNo, "PUBLISH",
                 syncMenu, 99L, null, null, null, 42L);
+    }
+
+    private LowcodePublishPostCommand businessCommand(int versionNo, boolean syncMenu) {
+        return new LowcodePublishPostCommand(
+                1, 7L, 10L, "orders", 20L, versionNo, "PUBLISH",
+                syncMenu, 99L, "sales", "order", "订单", 42L);
     }
 }

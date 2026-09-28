@@ -92,8 +92,10 @@ public class LowcodePublishPostActionService {
                             ? config.getMenuParentId()
                             : menuRegisterAdapter.resolveDefaultLowcodeParentId();
             if (config.getMenuResourceId() == null) {
-                config.setMenuResourceId(menuRegisterAdapter.registerMenu(
-                        menuName, parentId, config.getConfigKey(), sort));
+                config.setMenuResourceId(requireResourceIdentity(
+                        menuRegisterAdapter.registerMenu(
+                                menuName, parentId, config.getConfigKey(), sort),
+                        "管理端菜单"));
             } else {
                 menuRegisterAdapter.updateMenu(config.getMenuResourceId(), menuName, parentId, sort);
             }
@@ -109,9 +111,11 @@ public class LowcodePublishPostActionService {
             String mobilePath = "/pages/lowcode-runtime?configKey=" + config.getConfigKey();
             String mobilePerms = "ai:crud:h5:" + config.getConfigKey();
             if (mobileResourceId == null) {
-                writeMobileMenuResourceId(config, menuRegisterAdapter.registerAppMenu(
-                        menuName, 0L, mobilePath, mobilePath,
-                        mobilePerms, null, sort, true, "h5"));
+                writeMobileMenuResourceId(config, requireResourceIdentity(
+                        menuRegisterAdapter.registerAppMenu(
+                                menuName, 0L, mobilePath, mobilePath,
+                                mobilePerms, null, sort, true, "h5"),
+                        "移动端菜单"));
             } else {
                 menuRegisterAdapter.updateAppMenu(
                         mobileResourceId, menuName, 0L, mobilePath, mobilePath,
@@ -159,10 +163,15 @@ public class LowcodePublishPostActionService {
                 ? null
                 : lowcodeModelMapper.selectByCode(
                         command.tenantId(), snapshot.domainId(), snapshot.objectCode());
-        businessObject.setModelId(model == null ? businessObject.getModelId() : model.getId());
-        businessObject.setModelCode(StringUtils.defaultIfBlank(
-                snapshot.objectCode(), businessObject.getModelCode()));
-        businessObjectMapper.updateById(businessObject);
+        Long resolvedModelId = model == null ? businessObject.getModelId() : model.getId();
+        String resolvedModelCode = StringUtils.defaultIfBlank(
+                snapshot.objectCode(), businessObject.getModelCode());
+        if (!Objects.equals(businessObject.getModelId(), resolvedModelId)
+                || !Objects.equals(businessObject.getModelCode(), resolvedModelCode)) {
+            businessObject.setModelId(resolvedModelId);
+            businessObject.setModelCode(resolvedModelCode);
+            requireSingleWrite(businessObjectMapper.updateById(businessObject), "业务对象");
+        }
 
         AiBusinessApp app = existingApp;
         if (app == null) {
@@ -186,13 +195,29 @@ public class LowcodePublishPostActionService {
             app.setSortOrder(snapshot.menuSort());
             app.setOptions("{\"source\":\"lowcode_publish\"}");
         }
+        boolean changed = !Objects.equals(app.getSuiteCode(), suiteCode)
+                || !Objects.equals(app.getObjectCode(), businessObject.getObjectCode())
+                || !Objects.equals(app.getConfigKey(), config.getConfigKey());
         app.setSuiteCode(suiteCode);
         app.setObjectCode(businessObject.getObjectCode());
         app.setConfigKey(config.getConfigKey());
         if (create) {
-            businessAppMapper.insert(app);
-        } else {
-            businessAppMapper.updateById(app);
+            requireSingleWrite(businessAppMapper.insert(app), "业务应用入口");
+        } else if (changed) {
+            requireSingleWrite(businessAppMapper.updateById(app), "业务应用入口");
+        }
+    }
+
+    private Long requireResourceIdentity(Long resourceId, String resourceName) {
+        if (resourceId == null || resourceId <= 0) {
+            throw new BusinessException("低代码发布后置" + resourceName + "写入失败");
+        }
+        return resourceId;
+    }
+
+    private void requireSingleWrite(int affectedRows, String resourceName) {
+        if (affectedRows != 1) {
+            throw new BusinessException("低代码发布后置" + resourceName + "写入失败");
         }
     }
 
