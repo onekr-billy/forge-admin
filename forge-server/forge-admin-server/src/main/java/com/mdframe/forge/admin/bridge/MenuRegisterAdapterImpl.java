@@ -8,8 +8,10 @@ import com.mdframe.forge.plugin.system.entity.SysRoleResource;
 import com.mdframe.forge.plugin.system.mapper.SysResourceMapper;
 import com.mdframe.forge.plugin.system.mapper.SysRoleResourceMapper;
 import com.mdframe.forge.plugin.system.service.ISysResourceService;
-import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.core.enums.EnableStatus;
+import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.session.SessionHelper;
+import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -50,6 +52,11 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
     private final ISysResourceService resourceService;
     private final SysResourceMapper resourceMapper;
     private final SysRoleResourceMapper roleResourceMapper;
+
+    @Override
+    public boolean supportsLowcodePublishSynchronization() {
+        return true;
+    }
 
     @Override
     public Long registerMenu(String menuName, Long parentId, String configKey, Integer sort) {
@@ -571,12 +578,21 @@ public class MenuRegisterAdapterImpl implements MenuRegisterAdapter {
     }
 
     private Long resolveTenantId() {
-        Long tenantId;
+        Long scopedTenantId = TenantContextHolder.getTenantId();
+        Long sessionTenantId;
         try {
-            tenantId = SessionHelper.getTenantId();
+            sessionTenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
-            tenantId = null;
+            sessionTenantId = null;
         }
-        return tenantId != null ? tenantId : 1L;
+        if (scopedTenantId != null && sessionTenantId != null
+                && !scopedTenantId.equals(sessionTenantId)) {
+            throw new BusinessException("菜单注册租户上下文不一致");
+        }
+        Long tenantId = scopedTenantId != null ? scopedTenantId : sessionTenantId;
+        if (tenantId == null || tenantId <= 0 || TenantContextHolder.isIgnore()) {
+            throw new BusinessException("菜单注册缺少可信租户上下文");
+        }
+        return tenantId;
     }
 }

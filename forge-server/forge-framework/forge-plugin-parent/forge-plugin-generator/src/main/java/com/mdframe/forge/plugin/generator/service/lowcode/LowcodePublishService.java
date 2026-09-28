@@ -1,14 +1,10 @@
 package com.mdframe.forge.plugin.generator.service.lowcode;
 
-import com.alibaba.fastjson2.JSONObject;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessApp;
-import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
 import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfig;
 import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfigVersion;
 import com.mdframe.forge.plugin.generator.domain.entity.AiLowcodeDomain;
-import com.mdframe.forge.plugin.generator.domain.entity.AiLowcodeModel;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeDomainRef;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeModelSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeObjectSchema;
@@ -17,19 +13,15 @@ import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePolicySchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePublishDTO;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeRuntimeConfig;
 import com.mdframe.forge.plugin.generator.mapper.AiCrudConfigVersionMapper;
-import com.mdframe.forge.plugin.generator.mapper.AiLowcodeModelMapper;
-import com.mdframe.forge.plugin.generator.mapper.BusinessAppMapper;
-import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.service.AiCrudConfigService;
 import com.mdframe.forge.plugin.generator.service.MenuRegisterAdapter;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceContext;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceResolver;
 import com.mdframe.forge.plugin.generator.vo.lowcode.LowcodeVersionVO;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,7 +34,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 低代码应用发布、版本和回滚服务。
@@ -54,8 +45,9 @@ public class LowcodePublishService {
     private static final String DEPLOY_ONLINE_CREATE_TABLE = "ONLINE_CREATE_TABLE";
     private static final String DDL_PERMISSION = "ai:lowcode:deploy-ddl";
     private static final String GENERAL_DOMAIN_CODE = "general";
+    private static final String OPERATION_PUBLISH = "PUBLISH";
+    private static final String OPERATION_ROLLBACK = "ROLLBACK";
     private static final String MOUNT_ADMIN = "ADMIN";
-    private static final String MOUNT_MOBILE = "MOBILE";
     private static final String MOUNT_BOTH = "BOTH";
 
     private final ObjectMapper objectMapper;
@@ -68,12 +60,8 @@ public class LowcodePublishService {
     private final LowcodePolicyService policyService;
     private final MenuRegisterAdapter menuRegisterAdapter;
     private final AiCrudConfigVersionMapper versionMapper;
-    private final BusinessObjectMapper businessObjectMapper;
-    private final BusinessAppMapper businessAppMapper;
-    private final AiLowcodeModelMapper lowcodeModelMapper;
     private final LowcodeRuntimeDataSourceResolver runtimeDataSourceResolver;
-    @Autowired
-    private ApplicationEventPublisher eventPublisher;
+    private final LowcodePublishTaskService publishTaskService;
     /**
      * 领域菜单父级缓存（domainId → menuParentId），发布过程中多次递归查询时避免重复读写 sys_resource。
      */
@@ -89,10 +77,8 @@ public class LowcodePublishService {
                                  LowcodePolicyService policyService,
                                  MenuRegisterAdapter menuRegisterAdapter,
                                  AiCrudConfigVersionMapper versionMapper,
-                                 BusinessObjectMapper businessObjectMapper,
-                                 BusinessAppMapper businessAppMapper,
-                                 AiLowcodeModelMapper lowcodeModelMapper,
-                                 LowcodeRuntimeDataSourceResolver runtimeDataSourceResolver) {
+                                 LowcodeRuntimeDataSourceResolver runtimeDataSourceResolver,
+                                 LowcodePublishTaskService publishTaskService) {
         this.objectMapper = objectMapper;
         this.configService = configService;
         this.appService = appService;
@@ -103,10 +89,8 @@ public class LowcodePublishService {
         this.policyService = policyService;
         this.menuRegisterAdapter = menuRegisterAdapter;
         this.versionMapper = versionMapper;
-        this.businessObjectMapper = businessObjectMapper;
-        this.businessAppMapper = businessAppMapper;
-        this.lowcodeModelMapper = lowcodeModelMapper;
         this.runtimeDataSourceResolver = runtimeDataSourceResolver;
+        this.publishTaskService = publishTaskService;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -148,12 +132,8 @@ public class LowcodePublishService {
         configService.updateById(config);
         AiCrudConfigVersion version = createVersion(config, tenantId, versionNo, "publish",
                 dto != null ? dto.getRemark() : null);
-
-        // 菜单注册 + 业务入口同步全部放到事务提交后异步执行，不再阻塞响应
-        if (eventPublisher != null) {
-            eventPublisher.publishEvent(new LowcodePublishPostEvent(
-                    config, dto, domainContext, syncMenu, menuParentId, tenantId));
-        }
+        publishTaskService.appendPostSync(
+                config, dto, version, OPERATION_PUBLISH, syncMenu, menuParentId);
         return version.getId();
     }
 
@@ -209,13 +189,10 @@ public class LowcodePublishService {
         config.setPublishTime(LocalDateTime.now());
         config.setPublishBy(SessionHelper.getUserId());
         configService.updateById(config);
-        createVersion(config, tenantId, versionNo, "rollback", "回滚到版本 " + targetVersion.getVersionNo());
-
-        // 菜单注册 + 业务入口同步放到事务提交后异步执行
-        if (eventPublisher != null) {
-            eventPublisher.publishEvent(new LowcodePublishPostEvent(
-                    config, null, domainContext, syncMenu, menuParentId, tenantId));
-        }
+        AiCrudConfigVersion version = createVersion(
+                config, tenantId, versionNo, "rollback", "回滚到版本 " + targetVersion.getVersionNo());
+        publishTaskService.appendPostSync(
+                config, null, version, OPERATION_ROLLBACK, syncMenu, menuParentId);
     }
 
     public List<LowcodeVersionVO> listVersions(Long id) {
@@ -341,213 +318,8 @@ public class LowcodePublishService {
         return MOUNT_ADMIN.equalsIgnoreCase(mountTarget) || MOUNT_BOTH.equalsIgnoreCase(mountTarget);
     }
 
-    private boolean shouldMountMobile(String mountTarget) {
-        return MOUNT_MOBILE.equalsIgnoreCase(mountTarget) || MOUNT_BOTH.equalsIgnoreCase(mountTarget);
-    }
-
-    private Long readMobileMenuResourceId(AiCrudConfig config) {
-        String options = config.getOptions();
-        if (StringUtils.isBlank(options)) {
-            return null;
-        }
-        try {
-            JSONObject obj = JSONObject.parseObject(options);
-            Long value = obj.getLong("mobileMenuResourceId");
-            return value;
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private void writeMobileMenuResourceId(AiCrudConfig config, Long mobileMenuResourceId) {
-        JSONObject obj;
-        try {
-            obj = StringUtils.isNotBlank(config.getOptions())
-                    ? JSONObject.parseObject(config.getOptions()) : new JSONObject();
-        } catch (Exception e) {
-            obj = new JSONObject();
-        }
-        if (mobileMenuResourceId != null) {
-            obj.put("mobileMenuResourceId", mobileMenuResourceId);
-        } else {
-            obj.remove("mobileMenuResourceId");
-        }
-        config.setOptions(obj.toJSONString());
-    }
-
-    /**
-     * 异步后置菜单注册入口：支持管理端（ADMIN）、移动端（MOBILE）或两端同时（BOTH）。
-     * 菜单父级 ID 已由主事务预先解析传入，避免在异步上下文中重复解析。
-     */
-    void registerOrUpdateMenuAsync(AiCrudConfig config, boolean syncMenu, Long resolvedParentId) {
-        String mountTarget = StringUtils.defaultIfBlank(config.getMountTarget(), MOUNT_ADMIN);
-        boolean mountAdmin = shouldMountAdmin(mountTarget);
-        boolean mountMobile = shouldMountMobile(mountTarget);
-        String menuName = StringUtils.defaultIfBlank(config.getMenuName(),
-                StringUtils.defaultIfBlank(config.getAppName(), config.getTableComment()));
-        Integer sort = config.getMenuSort() != null ? config.getMenuSort() : 0;
-
-        if (!syncMenu) {
-            if (config.getMenuResourceId() != null) {
-                menuRegisterAdapter.disableMenu(config.getMenuResourceId());
-            }
-            Long mobileResourceId = readMobileMenuResourceId(config);
-            if (mobileResourceId != null) {
-                menuRegisterAdapter.disableMenu(mobileResourceId);
-            }
-            return;
-        }
-
-        // 管理端菜单注册
-        if (mountAdmin) {
-            Long parentId = resolvedParentId != null ? resolvedParentId : menuRegisterAdapter.resolveDefaultLowcodeParentId();
-            if (config.getMenuResourceId() == null) {
-                Long menuResourceId = menuRegisterAdapter.registerMenu(menuName, parentId, config.getConfigKey(), sort);
-                config.setMenuResourceId(menuResourceId);
-            } else {
-                menuRegisterAdapter.updateMenu(config.getMenuResourceId(), menuName, parentId, sort);
-            }
-            config.setMenuName(menuName);
-            config.setMenuParentId(parentId);
-            config.setMenuSort(sort);
-        } else {
-            // 不挂管理端时禁用已有管理端菜单
-            if (config.getMenuResourceId() != null) {
-                menuRegisterAdapter.disableMenu(config.getMenuResourceId());
-            }
-        }
-
-        // 移动端菜单注册
-        if (mountMobile) {
-            String mobilePath = "/pages/lowcode-runtime?configKey=" + config.getConfigKey();
-            String mobilePerms = "ai:crud:h5:" + config.getConfigKey();
-            Long existingMobileId = readMobileMenuResourceId(config);
-            if (existingMobileId == null) {
-                Long mobileMenuId = menuRegisterAdapter.registerAppMenu(
-                        menuName, 0L, mobilePath, mobilePath,
-                        mobilePerms, null, sort, true, "h5");
-                writeMobileMenuResourceId(config, mobileMenuId);
-            } else {
-                menuRegisterAdapter.updateAppMenu(
-                        existingMobileId, menuName, 0L, mobilePath, mobilePath,
-                        mobilePerms, null, sort, true, "h5");
-            }
-        } else {
-            // 不挂移动端时禁用已有移动端菜单
-            Long mobileResourceId = readMobileMenuResourceId(config);
-            if (mobileResourceId != null) {
-                menuRegisterAdapter.disableMenu(mobileResourceId);
-            }
-        }
-    }
-
     private boolean shouldSyncMenu(LowcodePublishDTO dto) {
         return dto == null || !Boolean.FALSE.equals(dto.getSyncMenu());
-    }
-
-    private void disablePublishedMenu(AiCrudConfig config) {
-        if (config != null && config.getMenuResourceId() != null) {
-            menuRegisterAdapter.disableMenu(config.getMenuResourceId());
-        }
-    }
-
-    void syncBusinessRuntimeEntry(AiCrudConfig config, LowcodePublishDTO dto, PublishDomainContext context) {
-        if (config == null || context == null || context.domain() == null || StringUtils.isBlank(config.getConfigKey())) {
-            return;
-        }
-        Long tenantId = requireTenantId(config);
-        AiBusinessApp existingApp = businessAppMapper.selectByConfigKey(tenantId, config.getConfigKey());
-        String suiteCode = StringUtils.firstNonBlank(dto != null ? dto.getBusinessSuiteCode() : null,
-                existingApp == null ? null : existingApp.getSuiteCode(),
-                context.domain().getDomainCode());
-        String businessObjectCode = StringUtils.firstNonBlank(dto != null ? dto.getBusinessObjectCode() : null,
-                existingApp == null ? null : existingApp.getObjectCode(),
-                config.getObjectCode(),
-                context.objectCode());
-        if (StringUtils.isBlank(suiteCode) || StringUtils.isBlank(businessObjectCode)) {
-            return;
-        }
-        AiBusinessObject businessObject = findBusinessObject(tenantId, suiteCode, businessObjectCode);
-        if (businessObject == null) {
-            return;
-        }
-
-        AiLowcodeModel model = StringUtils.isBlank(config.getObjectCode())
-                ? null
-                : lowcodeModelMapper.selectByCode(tenantId, context.domain().getId(), config.getObjectCode());
-        businessObject.setModelId(model == null ? businessObject.getModelId() : model.getId());
-        businessObject.setModelCode(StringUtils.defaultIfBlank(config.getObjectCode(), businessObject.getModelCode()));
-        businessObjectMapper.updateById(businessObject);
-
-        AiBusinessApp app = existingApp;
-        if (app == null) {
-            app = businessAppMapper.selectRuntimeAppByObject(tenantId, suiteCode, businessObject.getObjectCode());
-        }
-        boolean create = app == null;
-        if (create) {
-            app = new AiBusinessApp();
-            app.setTenantId(tenantId);
-            app.setAppCode(resolveRuntimeAppCode(tenantId, suiteCode, businessObject.getObjectCode(), config));
-            app.setAppName(resolveRuntimeAppName(config, dto, businessObject));
-            app.setAppType("BUSINESS");
-            app.setEntryMode("RUNTIME");
-            app.setEntryUrl(resolveEntryUrl(config));
-            app.setIcon(StringUtils.defaultIfBlank(businessObject.getIcon(), "ionicons5:AppsOutline"));
-            app.setDescription(StringUtils.defaultIfBlank(config.getTableComment(), "低代码发布生成的标准业务应用入口"));
-            app.setStatus(EnableStatus.ENABLED.getCode());
-            app.setSortOrder(config.getMenuSort() == null ? 0 : config.getMenuSort());
-            app.setOptions("{\"source\":\"lowcode_publish\"}");
-        }
-        // 对象发布只补齐入口的运行绑定。已有入口的挂载端、菜单、展示和状态属于应用级配置，
-        // 不能再用自动生成的管理端默认值覆盖，否则移动端入口会在重新发布后退回管理端。
-        app.setSuiteCode(suiteCode);
-        app.setObjectCode(businessObject.getObjectCode());
-        app.setConfigKey(config.getConfigKey());
-        if (create) {
-            businessAppMapper.insert(app);
-        } else {
-            businessAppMapper.updateById(app);
-        }
-    }
-
-    private AiBusinessObject findBusinessObject(Long tenantId, String suiteCode, String objectCode) {
-        // 对象编码统一小写存储，去掉多余的大写兜底查询
-        return businessObjectMapper.selectByObjectCode(tenantId, suiteCode, objectCode);
-    }
-
-    private String resolveRuntimeAppName(AiCrudConfig config, LowcodePublishDTO dto, AiBusinessObject businessObject) {
-        return StringUtils.firstNonBlank(
-                config.getMenuName(),
-                config.getAppName(),
-                dto != null ? dto.getBusinessObjectName() : null,
-                businessObject.getObjectName(),
-                config.getConfigKey()
-        );
-    }
-
-    private String resolveRuntimeAppCode(Long tenantId, String suiteCode, String objectCode, AiCrudConfig config) {
-        String base = normalizeAppCode(suiteCode + "_" + objectCode + "_RUNTIME");
-        if (businessAppMapper.countByAppCode(tenantId, base, null) == 0) {
-            return base;
-        }
-        String fallback = normalizeAppCode(base + "_" + config.getId());
-        if (businessAppMapper.countByAppCode(tenantId, fallback, null) == 0) {
-            return fallback;
-        }
-        return normalizeAppCode(base + "_" + System.currentTimeMillis());
-    }
-
-    private String normalizeAppCode(String value) {
-        String normalized = StringUtils.defaultString(value)
-                .replaceAll("[^A-Za-z0-9_]+", "_")
-                .replaceAll("_+", "_")
-                .toUpperCase(Locale.ROOT)
-                .replaceAll("^[^A-Z]+", "")
-                .replaceAll("_+$", "");
-        if (StringUtils.isBlank(normalized)) {
-            normalized = "LOWCODE_RUNTIME_APP";
-        }
-        return normalized.length() > 64 ? normalized.substring(0, 64).replaceAll("_+$", "") : normalized;
     }
 
     private int nextVersionNo(AiCrudConfig config, Long tenantId) {
@@ -637,14 +409,6 @@ public class LowcodePublishService {
         config.setMenuSort(numberAsInteger(snapshot.get("menuSort"), config.getMenuSort()));
         config.setMountTarget(StringUtils.defaultIfBlank(
                 text(snapshot.get("mountTarget")), config.getMountTarget()));
-    }
-
-    private String resolveEntryUrl(AiCrudConfig config) {
-        String mountTarget = StringUtils.defaultIfBlank(config.getMountTarget(), MOUNT_ADMIN);
-        if (shouldMountMobile(mountTarget) && !shouldMountAdmin(mountTarget)) {
-            return "/pages/lowcode-runtime?configKey=" + config.getConfigKey();
-        }
-        return "/ai/crud-page/" + config.getConfigKey();
     }
 
     private LowcodeModelSchema readVersionModel(AiCrudConfigVersion version) {

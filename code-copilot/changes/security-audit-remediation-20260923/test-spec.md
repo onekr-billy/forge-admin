@@ -414,6 +414,14 @@
 - 实际结果：状态对账服务、Dispatcher、Controller 权限/DTO、Mapper 和 V1.0.200/V1.0.201 契约定向测试 20/20；Generator 依赖反应堆 33/33 模块成功，`forge-plugin-generator` 1401/1401，0 失败、0 错误、0 跳过。Mapper XML、迁移静态扫描和 `git diff --check` 通过。
 - 环境限制：未连接真实 MySQL 执行 V1.0.200/V1.0.201 Flyway，未启动 Admin/Flow Server 验证真实 HTTP 多角色权限矩阵，也未执行双节点 CAS、进程崩溃、Flowable/MySQL/Redis 故障注入或真实 DEAD 记录重放；T4.2/T4.3 巨型组件/巨型类改造继续按用户要求排除。
 
+## 1.47 2026-09-28 T4.5 发布后置同步可靠任务
+
+- 持久化边界：发布或回滚写入配置和版本时，同一事务追加 `ai_lowcode_publish_task`；任务保存稳定 requestId、不可变命令及 SHA-256 摘要、schemaHash、数据源身份、租户、配置、版本和原操作者。V1.0.202 为运行时队列表建立租户内 requestId 唯一约束及扫描/配置索引。
+- 租约与状态：后置同步任务使用 `PENDING/PROCESSING/RETRY/COMPLETED/SUPERSEDED/DEAD` 状态、租户级 CAS 租约、过期接管、指数退避和重试上限；恢复命令时复验协议版本、摘要及全部身份字段。旧发布版本由版本 fencing 标记 `SUPERSEDED`，不得覆盖新版本。
+- 执行边界：仅 Admin 的菜单适配器声明消费能力，Flow/App 进程不会扫描或认领任务；菜单、移动端入口、业务应用入口和配置回写在恢复可信租户后以 `REQUIRES_NEW` 本地事务执行。菜单和对象元数据从任务绑定的不可变发布版本快照恢复，不读取后续草稿值；后台租户缺失或会话租户冲突时失败关闭，不再回退租户 1。
+- 实际结果：任务服务、Dispatcher、动作服务、Mapper、迁移和发布契约定向测试 23/23，Admin 菜单适配器测试 5/5；允许 MockWebServer 绑定本机临时端口后，Generator 依赖反应堆 33/33 模块成功，`forge-plugin-generator` 1416/1416，0 失败、0 错误、0 跳过。沙箱内首次全量运行仅因 MockWebServer 无权绑定端口中止。
+- 阶段限制：本批仅闭环发布后的菜单/业务入口/配置同步。在线 DDL 仍在发布事务中执行，尚未迁入持久化任务；也未提供发布任务 DEAD 人工重放 API。未连接真实 MySQL 执行 V1.0.202/Flyway，未执行 DDL 成功后配置失败、双节点租约、进程 kill -9 或菜单成功后入口失败的实库故障注入，因此 T4.5 保持未完成。
+
 ## 2. P0 必跑验证
 
 ### 动态脚本与 HTML

@@ -1,5 +1,26 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：T4.5 发布后置同步可靠任务
+
+### 实现
+
+- 用数据库可靠任务替换发布后的 best-effort Spring 异步事件。发布/回滚事务现在同时写入 `ai_lowcode_publish_task`，任务持久化稳定 requestId、不可变最小命令、命令摘要、schemaHash、运行数据源身份、可信租户、配置/版本和原操作者；重复写入由租户内 requestId 唯一键收敛。
+- 新增 `PENDING/PROCESSING/RETRY/COMPLETED/SUPERSEDED/DEAD` 状态机、显式租户候选扫描、租户级 CAS 租约、过期接管、指数退避和重试上限。恢复前复验 SHA-256 摘要、协议版本和身份列；当前配置已进入新版本或不再发布时，旧任务被 fencing 为 `SUPERSEDED`，不执行副作用。
+- 菜单、移动端入口、业务应用入口和配置回写迁入独立 `REQUIRES_NEW` 本地事务，继续复用现有幂等更新/查询语义。执行时从任务绑定的不可变发布版本恢复菜单、领域和对象元数据，当前配置仅用于版本 fencing 与资源 ID 回写，避免延迟任务串入后续草稿。Generator 同时装配在 Admin、Flow 和 App，本批通过菜单适配器能力探针保证只有 Admin 扫描、认领和执行任务，其他进程零交互返回。
+- 修复 Admin 菜单适配器异步执行时缺少会话租户便回退 `1L` 的问题：优先使用显式 TenantContext，与会话租户同时存在时必须一致；缺失、非正数、ignore 或冲突全部失败关闭。
+- 新增 V1.0.202 创建运行时任务表。该表属于可重建/可清理的内部任务队列，不使用逻辑删除；保留完整审计列、租户内 requestId 唯一约束及扫描和配置索引。`LowcodePublishService` 从 1003 行降到 767 行，新增任务/动作/Dispatcher 分别为 326/338/72 行。
+
+### 验证
+
+- 任务状态机、摘要防篡改、租约、重试/DEAD、版本 fencing、仅 Admin 消费、独立事务、不可变发布快照、Mapper、迁移和发布顺序相关定向测试 23/23；Admin 菜单适配器测试 5/5。
+- Generator 全量测试在沙箱内首次因 MockWebServer 无权绑定本机临时端口中止；允许端口后最终命令复跑，33/33 个依赖反应堆模块成功，`forge-plugin-generator` 1416/1416，0 失败、0 错误、0 跳过。
+- 两份 Mapper XML 通过 `xmllint --noout`；迁移/SQL 静态扫描未发现 `${...}` 或 `tenant_id = 0`，`git diff --check` 通过。用户已有 `.DS_Store` 修改未触碰、未纳入本变更。
+
+### 未覆盖
+
+- 在线 DDL 仍由 `LowcodePublishService` 在当前发布事务中同步执行，本批没有把跨数据源 DDL 迁入可靠任务，也不宣称本地 `@Transactional` 能回滚 MySQL DDL。发布任务 DEAD 的授权人工重放接口也尚未实现。
+- 未连接真实 MySQL 执行 V1.0.202/Flyway，未注入 DDL 成功后配置失败、菜单成功后入口失败、双节点同时认领、租约后进程 kill -9 和补偿/回滚脚本；T4.5 因此保持进行中。T4.2/T4.3 巨型组件/巨型类改造继续按用户要求排除。
+
 ## 2026-09-28：T4.4 状态对账 DEAD 授权人工重放
 
 ### 实现

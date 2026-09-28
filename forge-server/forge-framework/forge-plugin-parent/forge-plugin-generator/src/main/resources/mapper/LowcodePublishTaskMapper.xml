@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mdframe.forge.plugin.generator.mapper.LowcodePublishTaskMapper">
+
+    <resultMap id="BaseResultMap" type="com.mdframe.forge.plugin.generator.domain.entity.AiLowcodePublishTask">
+        <id column="id" property="id"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="request_id" property="requestId"/>
+        <result column="operation_type" property="operationType"/>
+        <result column="config_id" property="configId"/>
+        <result column="config_key" property="configKey"/>
+        <result column="version_id" property="versionId"/>
+        <result column="version_no" property="versionNo"/>
+        <result column="schema_hash" property="schemaHash"/>
+        <result column="runtime_datasource_id" property="runtimeDatasourceId"/>
+        <result column="runtime_datasource_code" property="runtimeDatasourceCode"/>
+        <result column="runtime_table_name" property="runtimeTableName"/>
+        <result column="operator_id" property="operatorId"/>
+        <result column="command_payload" property="commandPayload"/>
+        <result column="command_digest" property="commandDigest"/>
+        <result column="current_stage" property="currentStage"/>
+        <result column="task_status" property="taskStatus"/>
+        <result column="retry_count" property="retryCount"/>
+        <result column="next_retry_time" property="nextRetryTime"/>
+        <result column="lock_owner" property="lockOwner"/>
+        <result column="lock_time" property="lockTime"/>
+        <result column="error_type" property="errorType"/>
+        <result column="completed_time" property="completedTime"/>
+        <result column="create_by" property="createBy"/>
+        <result column="create_time" property="createTime"/>
+        <result column="create_dept" property="createDept"/>
+        <result column="update_by" property="updateBy"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <sql id="Base_Columns">
+        id, tenant_id, request_id, operation_type, config_id, config_key,
+        version_id, version_no, schema_hash, runtime_datasource_id,
+        runtime_datasource_code, runtime_table_name, operator_id,
+        command_payload, command_digest, current_stage, task_status,
+        retry_count, next_retry_time, lock_owner, lock_time, error_type,
+        completed_time, create_by, create_time, create_dept, update_by, update_time
+    </sql>
+
+    <select id="selectByRequestId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Columns"/>
+        FROM ai_lowcode_publish_task
+        WHERE tenant_id = #{tenantId}
+          AND request_id = #{requestId}
+        LIMIT 1
+    </select>
+
+    <select id="selectCandidates" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Columns"/>
+        FROM ai_lowcode_publish_task
+        WHERE (
+            (retry_count &lt; #{maxRetryCount} AND (
+                task_status = 'PENDING'
+                OR (task_status = 'RETRY' AND next_retry_time &lt;= #{now})
+            ))
+            OR (task_status = 'PROCESSING'
+                AND (lock_time IS NULL OR lock_time &lt;= #{staleBefore}))
+        )
+        ORDER BY create_time ASC, id ASC
+        LIMIT #{batchSize}
+    </select>
+
+    <update id="claim">
+        UPDATE ai_lowcode_publish_task
+        SET task_status = 'PROCESSING',
+            retry_count = retry_count + 1,
+            next_retry_time = NULL,
+            lock_owner = #{owner},
+            lock_time = #{now},
+            error_type = NULL,
+            update_time = #{now}
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND retry_count &lt; #{maxRetryCount}
+          AND (
+            task_status = 'PENDING'
+            OR (task_status = 'RETRY' AND next_retry_time &lt;= #{now})
+            OR (task_status = 'PROCESSING'
+                AND (lock_time IS NULL OR lock_time &lt;= #{staleBefore}))
+          )
+    </update>
+
+    <update id="expireExhaustedLease">
+        UPDATE ai_lowcode_publish_task
+        SET task_status = 'DEAD',
+            next_retry_time = NULL,
+            lock_owner = NULL,
+            lock_time = NULL,
+            error_type = 'LeaseExpiredAfterRetryLimit',
+            update_time = #{now}
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND task_status = 'PROCESSING'
+          AND retry_count &gt;= #{maxRetryCount}
+          AND (lock_time IS NULL OR lock_time &lt;= #{staleBefore})
+    </update>
+
+    <select id="selectByTaskId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Columns"/>
+        FROM ai_lowcode_publish_task
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+        LIMIT 1
+    </select>
+
+    <update id="markTerminal">
+        UPDATE ai_lowcode_publish_task
+        SET task_status = #{status},
+            next_retry_time = NULL,
+            lock_owner = NULL,
+            lock_time = NULL,
+            error_type = NULL,
+            completed_time = #{now},
+            update_by = #{task.operatorId},
+            update_time = #{now}
+        WHERE tenant_id = #{task.tenantId}
+          AND id = #{task.id}
+          AND task_status = 'PROCESSING'
+          AND lock_owner = #{task.lockOwner}
+    </update>
+
+    <update id="markFailed">
+        UPDATE ai_lowcode_publish_task
+        SET task_status = #{status},
+            next_retry_time = #{nextRetryTime},
+            lock_owner = NULL,
+            lock_time = NULL,
+            error_type = #{errorType},
+            update_by = #{task.operatorId},
+            update_time = #{now}
+        WHERE tenant_id = #{task.tenantId}
+          AND id = #{task.id}
+          AND task_status = 'PROCESSING'
+          AND lock_owner = #{task.lockOwner}
+    </update>
+
+</mapper>

@@ -4,8 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfig;
 import com.mdframe.forge.plugin.generator.mapper.AiCrudConfigMapper;
 import com.mdframe.forge.plugin.generator.mapper.AiCrudConfigVersionMapper;
-import com.mdframe.forge.plugin.generator.mapper.AiLowcodeModelMapper;
-import com.mdframe.forge.plugin.generator.mapper.BusinessAppMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.mapper.GenTableColumnMapper;
 import com.mdframe.forge.plugin.generator.service.AiCrudCodegenService;
@@ -24,14 +22,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 @DisplayName("Low-code metadata identity security")
@@ -129,39 +121,6 @@ class LowcodeMetadataIdentitySecurityTest {
         verifyNoInteractions(fixture.appService(), fixture.versionMapper());
     }
 
-    @Test
-    @DisplayName("post publish processing restores the event tenant scope")
-    void postPublishRestoresTenantScope() {
-        LowcodePublishService publishService = mock(LowcodePublishService.class);
-        AiCrudConfigService configService = mock(AiCrudConfigService.class);
-        LowcodePublishPostProcessor processor = new LowcodePublishPostProcessor(publishService, configService);
-        AiCrudConfig config = config(9L);
-        doAnswer(invocation -> {
-            assertEquals(9L, TenantContextHolder.getTenantId());
-            return null;
-        }).when(publishService).registerOrUpdateMenuAsync(any(), anyBoolean(), any());
-
-        processor.handlePostPublish(new LowcodePublishPostEvent(
-                config, null, null, false, null, 9L));
-
-        verify(publishService).syncBusinessRuntimeEntry(config, null, null);
-        verify(configService).updateById(config);
-        assertNull(TenantContextHolder.getTenantId());
-    }
-
-    @Test
-    @DisplayName("post publish processing rejects a mismatched event tenant")
-    void postPublishRejectsMismatchedTenant() {
-        LowcodePublishService publishService = mock(LowcodePublishService.class);
-        AiCrudConfigService configService = mock(AiCrudConfigService.class);
-        LowcodePublishPostProcessor processor = new LowcodePublishPostProcessor(publishService, configService);
-
-        processor.handlePostPublish(new LowcodePublishPostEvent(
-                config(8L), null, null, false, null, 9L));
-
-        verifyNoInteractions(publishService, configService);
-    }
-
     private static CodegenFixture codegenFixture() {
         LowcodeAppService appService = mock(LowcodeAppService.class);
         AiCrudCodegenService codegenService = mock(AiCrudCodegenService.class);
@@ -181,8 +140,8 @@ class LowcodeMetadataIdentitySecurityTest {
                 mock(LowcodeDomainService.class), mock(LowcodeRuntimeConfigBuilder.class),
                 mock(LowcodeSchemaValidator.class), mock(LowcodeDdlService.class),
                 mock(LowcodePolicyService.class), mock(MenuRegisterAdapter.class),
-                versionMapper, mock(BusinessObjectMapper.class), mock(BusinessAppMapper.class),
-                mock(AiLowcodeModelMapper.class), mock(LowcodeRuntimeDataSourceResolver.class));
+                versionMapper, mock(LowcodeRuntimeDataSourceResolver.class),
+                mock(LowcodePublishTaskService.class));
         return new PublishFixture(service, appService, versionMapper);
     }
 

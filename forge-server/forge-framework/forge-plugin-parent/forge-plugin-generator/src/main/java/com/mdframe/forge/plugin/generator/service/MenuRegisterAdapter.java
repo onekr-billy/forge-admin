@@ -7,6 +7,11 @@ import java.util.Map;
 
 public interface MenuRegisterAdapter {
 
+    /** 仅 Admin 进程可以消费低代码发布后的菜单/业务入口同步任务。 */
+    default boolean supportsLowcodePublishSynchronization() {
+        return false;
+    }
+
     Long registerMenu(String menuName, Long parentId, String configKey, Integer sort);
 
     default void updateMenu(Long menuResourceId, String menuName, Integer sort) {
