@@ -30,7 +30,7 @@ const props = defineProps({
   size: {
     type: String,
     default: 'md',
-    validator: value => ['sm', 'md', 'lg', 'xl'].includes(value)
+    validator: value => ['xs', 'sm', 'md', 'lg', 'xl'].includes(value)
   },
   tile: {
     type: Boolean,
@@ -77,7 +77,7 @@ function resolveIconUrl(value) {
 
   if (iconValue.includes(':')) {
     const [collection, name] = iconValue.split(':')
-    return toIconifyUrl(collection, name)
+    return resolveCollectionUrl(collection, name)
   }
 
   if (/[A-Z]/.test(iconValue)) {
@@ -102,10 +102,21 @@ function resolveUnoIconUrl(value) {
   if (separatorIndex === -1) {
     return ''
   }
-  return toIconifyUrl(
+  return resolveCollectionUrl(
     iconValue.slice(0, separatorIndex),
     iconValue.slice(separatorIndex + 1)
   )
+}
+
+function resolveCollectionUrl(collection, name) {
+  const normalizedCollection = String(collection || '').trim().toLowerCase()
+  const normalizedName = toKebabCase(name)
+  // PC 菜单的 i-ai-icon:* 来自项目自有图标集，H5 必须读取同名本地资源，
+  // 不能错误请求并不存在的 Iconify ai-icon 集合。
+  if (normalizedCollection === 'ai-icon' && normalizedName) {
+    return resolveStaticUrl(`/static/icons/ai-icon/${normalizedName}.svg`)
+  }
+  return toIconifyUrl(normalizedCollection, normalizedName)
 }
 
 function toIconifyUrl(collection, name) {
@@ -129,6 +140,11 @@ function toKebabCase(value) {
 .ai-icon {
   display: inline-block;
   flex-shrink: 0;
+}
+
+.ai-icon--xs {
+  width: 24rpx;
+  height: 24rpx;
 }
 
 .ai-icon--sm {

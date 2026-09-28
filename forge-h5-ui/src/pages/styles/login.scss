@@ -1,0 +1,373 @@
+.login-page,
+.page-shell,
+.wecom-loading-shell {
+  min-height: var(--forge-page-height, 100vh);
+  box-sizing: border-box;
+}
+
+.login-page {
+  background: var(--page-bg);
+}
+
+.page-shell {
+  display: flex;
+  flex-direction: column;
+}
+
+.login-masthead {
+  min-height: 112rpx;
+  padding: 24rpx 30rpx;
+  color: var(--text-strong);
+  border-bottom: 0;
+  background: transparent;
+  box-sizing: border-box;
+}
+
+.brand-bar,
+.brand-main,
+.captcha-row,
+.login-security,
+.workspace-option {
+  display: flex;
+  align-items: center;
+}
+
+.brand-bar {
+  width: 100%;
+  max-width: 680rpx;
+  justify-content: space-between;
+  gap: 18rpx;
+  margin: 0 auto;
+}
+
+.brand-main {
+  min-width: 0;
+  gap: 14rpx;
+}
+
+.brand-mark {
+  display: flex;
+  width: 56rpx;
+  height: 56rpx;
+  flex: 0 0 56rpx;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid #dbeafe;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.brand-logo {
+  width: 40rpx;
+  height: 40rpx;
+}
+
+.brand-copy {
+  min-width: 0;
+}
+
+.brand-title,
+.brand-subtitle,
+.masthead-kicker,
+.masthead-title,
+.masthead-desc,
+.panel-title,
+.panel-subtitle,
+.login-foot text,
+.workspace-option-name {
+  display: block;
+}
+
+.brand-title {
+  color: var(--text-strong);
+  font-size: 26rpx;
+  font-weight: 500;
+}
+
+.brand-subtitle {
+  margin-top: 3rpx;
+  color: var(--text-muted);
+  font-size: 19rpx;
+}
+
+.client-badge {
+  padding: 6rpx 12rpx;
+  border: 1rpx solid var(--border-light);
+  border-radius: 8rpx;
+  color: var(--text-secondary);
+  font-size: 17rpx;
+  font-weight: 500;
+}
+
+.masthead-copy {
+  width: 100%;
+  max-width: 680rpx;
+  margin: 24rpx auto 20rpx;
+}
+
+.masthead-kicker {
+  color: var(--primary-color);
+  font-size: 20rpx;
+  font-weight: 500;
+}
+
+.masthead-title {
+  margin-top: 8rpx;
+  color: var(--text-strong);
+  font-size: 36rpx;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.masthead-desc {
+  margin-top: 10rpx;
+  color: var(--text-muted);
+  font-size: 22rpx;
+  line-height: 1.5;
+}
+
+.login-main {
+  display: flex;
+  width: 100%;
+  max-width: 736rpx;
+  flex: 1;
+  flex-direction: column;
+  align-self: center;
+  margin-top: 0;
+  padding: 24rpx 30rpx calc(32rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+.login-panel {
+  width: 100%;
+  padding: 20px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-card);
+  background: #ffffff;
+  box-shadow: var(--shadow-soft);
+  box-sizing: border-box;
+}
+
+.panel-head {
+  padding-bottom: 22rpx;
+  border-bottom: 1rpx solid var(--border-light);
+}
+
+.panel-title {
+  color: var(--text-strong);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.panel-subtitle {
+  margin-top: 6rpx;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.form-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 20px 0;
+}
+
+.captcha-row {
+  gap: 12rpx;
+}
+
+.captcha-field {
+  min-width: 0;
+  flex: 1;
+}
+
+.captcha-image {
+  display: flex;
+  width: 210rpx;
+  height: 44px;
+  flex: 0 0 210rpx;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  border: 1rpx solid var(--border-color);
+  border-radius: var(--radius-control);
+  background: var(--surface-muted);
+}
+
+.captcha-image::after,
+.workspace-option::after {
+  border: 0;
+}
+
+.captcha-image[disabled] {
+  opacity: 0.7;
+}
+
+.captcha-img {
+  width: 100%;
+  height: 100%;
+}
+
+.captcha-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  color: var(--primary-color);
+  font-size: 24rpx;
+  font-weight: 500;
+}
+
+.login-security {
+  justify-content: center;
+  gap: 8rpx;
+  margin-top: 18rpx;
+  color: var(--text-muted);
+  font-size: 24rpx;
+}
+
+.login-foot {
+  margin-top: auto;
+  padding-top: 32rpx;
+  color: var(--text-muted);
+  font-size: 18rpx;
+  text-align: center;
+}
+
+.wecom-loading-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24rpx 28rpx calc(24rpx + env(safe-area-inset-bottom));
+}
+
+.wecom-loading-content {
+  display: flex;
+  width: 100%;
+  max-width: 520rpx;
+  flex-direction: column;
+  align-items: center;
+  gap: 18rpx;
+  padding: 40rpx;
+  border: 1rpx solid var(--border-color);
+  border-radius: var(--radius-card);
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+.wecom-loading-logo {
+  width: 72rpx;
+  height: 72rpx;
+}
+
+.wecom-loading-text {
+  color: var(--text-secondary);
+  font-size: 23rpx;
+}
+
+.workspace-modal-list {
+  display: flex;
+  max-height: 50vh;
+  flex-direction: column;
+  overflow: auto;
+  border: 1rpx solid var(--border-color);
+  border-radius: var(--radius-card);
+}
+
+.workspace-option {
+  width: 100%;
+  min-height: 88rpx;
+  justify-content: space-between;
+  gap: 14rpx;
+  margin: 0;
+  padding: 14rpx 18rpx;
+  border: 0;
+  border-bottom: 1rpx solid var(--border-light);
+  border-radius: 0;
+  background: #ffffff;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.workspace-option:last-child {
+  border-bottom: 0;
+}
+
+.workspace-option.is-current {
+  background: var(--primary-soft);
+}
+
+.workspace-option-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 24rpx;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-option-tag {
+  color: var(--primary-color);
+  font-size: 19rpx;
+}
+
+@media (min-width: 1024px) {
+  .page-shell {
+    min-height: 100vh;
+    flex-direction: column;
+    background: var(--page-bg);
+  }
+
+  .login-masthead {
+    width: 100%;
+    min-height: 80px;
+    padding: 20px max(30px, calc((100vw - 1280px) / 2 + 24px));
+  }
+
+  .brand-bar { max-width: 1280px; margin: 0 auto; }
+
+  .masthead-copy {
+    max-width: 440px;
+    margin: 0 auto 20px;
+    padding: 0;
+  }
+
+  .masthead-title {
+    margin-top: 12px;
+    font-size: 34px;
+  }
+
+  .masthead-desc {
+    max-width: 480px;
+    margin-top: 16px;
+    font-size: 15px;
+  }
+
+  .login-main {
+    width: 100%;
+    max-width: 520px;
+    min-height: 0;
+    align-self: center;
+    align-items: stretch;
+    justify-content: center;
+    margin: 0 auto;
+    padding: 64px 24px;
+    background: transparent;
+  }
+
+  .login-panel {
+    max-width: 440px;
+    padding: 32px;
+  }
+
+  .login-foot {
+    width: 100%;
+    max-width: 440px;
+    margin-top: 20px;
+    padding-top: 0;
+  }
+}

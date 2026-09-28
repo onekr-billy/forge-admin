@@ -1,5 +1,14 @@
 <template>
-  <view v-if="visible" class="card-section">
+  <view
+    v-if="visible"
+    class="card-section"
+    :class="{
+      'is-borderless': !bordered,
+      'is-embedded': embedded,
+      'is-small': size === 'small',
+      'is-segmented': segmented,
+    }"
+  >
     <view
       v-if="title || collapsible"
       class="card-section__head"
@@ -25,6 +34,10 @@ const props = defineProps({
   collapsible: { type: Boolean, default: false },
   collapsedByDefault: { type: Boolean, default: false },
   visible: { type: Boolean, default: true },
+  bordered: { type: Boolean, default: true },
+  embedded: { type: Boolean, default: false },
+  segmented: { type: Boolean, default: false },
+  size: { type: String, default: 'medium' },
 })
 
 const collapsed = ref(props.collapsible && props.collapsedByDefault)
@@ -41,21 +54,25 @@ function toggle() {
 
 <style lang="scss" scoped>
 .card-section {
-  margin-bottom: 24rpx;
-  padding: 26rpx;
-  border: 1rpx solid #e7edf5;
-  border-radius: 18rpx;
+  margin-bottom: 32rpx;
+  padding: 32rpx;
+  border: 1rpx solid var(--border-color);
+  border-radius: var(--radius-card);
   background: #fff;
-  box-shadow: 0 10rpx 28rpx rgba(15, 23, 42, 0.04);
 }
+.card-section.is-borderless { border-color: transparent; }
+.card-section.is-embedded { background: var(--forge-color-surface-subtle, #f8fafc); }
+.card-section.is-small { padding: 24rpx; }
+.card-section.is-segmented .card-section__head { border-bottom: 1rpx solid var(--forge-color-border, #e2e8f0); }
 
 .card-section__head {
   display: flex;
-  min-height: 40rpx;
+  min-height: 88rpx;
   align-items: center;
   justify-content: space-between;
   gap: 18rpx;
-  margin-bottom: 18rpx;
+  margin: -16rpx -12rpx 16rpx;
+  padding: 0 12rpx;
 }
 
 .card-section__head--interactive {
@@ -66,8 +83,8 @@ function toggle() {
   min-width: 0;
   overflow: hidden;
   color: var(--text-strong, #1e293b);
-  font-size: 30rpx;
-  font-weight: 850;
+  font-size: 32rpx;
+  font-weight: 500;
   line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -75,13 +92,13 @@ function toggle() {
 
 .card-section__toggle {
   display: flex;
-  width: 48rpx;
-  height: 48rpx;
-  flex: 0 0 48rpx;
+  width: 64rpx;
+  height: 64rpx;
+  flex: 0 0 64rpx;
   align-items: center;
   justify-content: center;
-  border-radius: 12rpx;
-  background: #eff6ff;
+  border-radius: 6rpx;
+  background: var(--primary-soft);
 }
 
 .card-section__body {

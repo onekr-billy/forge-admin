@@ -1,6 +1,12 @@
 <template>
   <view class="section-runtime" :class="{ 'section-runtime--with-bottom-bar': visibleBottomActions.length }">
     <template v-for="section in visibleSections" :key="section.sectionId">
+      <AiTabs
+        v-if="isFirstChildSection(section) && childSections.length > 1"
+        v-model="activeChildSectionIndex"
+        class="section-child-tabs"
+        :tabs="childSectionTabs"
+      />
       <CardSection
         v-if="section.sectionType === 'card'"
         :title="section.title"
@@ -10,7 +16,9 @@
         <LowcodeForm
           :ref="instance => setMainFormRef(section, instance)"
           :fields="resolveFields(section)"
+          :nodes="mainNodes.length && String(section.sectionId) === mainNodeSectionId ? mainNodes : []"
           :data="mainData"
+          :current-children="childData"
           :dict-options="dictOptions"
           :readonly="mode === 'detail' || sectionReadonly(section)"
           :context="runtimeContext"
@@ -20,13 +28,13 @@
       </CardSection>
 
       <CardSection
-        v-else-if="isChildSection(section, 'inline_grid')"
-        :title="section.title"
+        v-else-if="isActiveChildSection(section) && isChildSection(section, 'inline_grid')"
+        :title="childSectionTitle(section)"
         :collapsible="section.collapsible === true"
         :collapsed-by-default="section.collapsedByDefault === true"
       >
         <view class="section-child-head">
-          <text class="section-child-count">{{ childRows(section).length }} 条</text>
+          <text class="section-child-count">{{ visibleChildRows(section).length }} 条</text>
           <view class="section-child-head__tools">
             <AiButton
               v-for="action in visibleChildToolbarActions(section)"
@@ -48,19 +56,19 @@
             </AiButton>
           </view>
         </view>
-        <view v-if="childRows(section).length" class="section-child-list">
+        <view v-if="visibleChildRows(section).length" class="section-child-list">
           <view
-            v-for="(row, rowIndex) in childRows(section)"
+            v-for="(row, rowIndex) in visibleChildRows(section)"
             :key="childRowKey(section, row, rowIndex)"
             class="section-child-row"
           >
             <view class="section-child-row__head">
               <text class="section-child-row__title">第 {{ rowIndex + 1 }} 条</text>
               <AiButton
-                v-if="canRemoveChild(section)"
+                v-if="canRemoveChild(section, row)"
                 size="sm"
                 variant="danger"
-                @click="removeChild(section, rowIndex)"
+                @click="removeChild(section, row)"
               >
                 删除
               </AiButton>
@@ -71,7 +79,7 @@
               :data="row"
               :dict-options="dictOptions"
               :current-children="childData"
-              :readonly="isChildReadonly(section)"
+              :readonly="isChildReadonly(section, row)"
               :context="runtimeContext"
               :field-linkages="fieldLinkages"
               layout="inline_grid"
@@ -95,13 +103,13 @@
       </CardSection>
 
       <CardSection
-        v-else-if="isChildSection(section, 'card_list')"
-        :title="section.title"
+        v-else-if="isActiveChildSection(section) && isChildSection(section, 'card_list')"
+        :title="childSectionTitle(section)"
         :collapsible="section.collapsible === true"
         :collapsed-by-default="section.collapsedByDefault === true"
       >
         <view class="section-child-head">
-          <text class="section-child-count">{{ childRows(section).length }} 条</text>
+          <text class="section-child-count">{{ visibleChildRows(section).length }} 条</text>
           <view class="section-child-head__tools">
             <AiButton
               v-for="action in visibleChildToolbarActions(section)"
@@ -123,19 +131,19 @@
             </AiButton>
           </view>
         </view>
-        <view v-if="childRows(section).length" class="section-card-list">
+        <view v-if="visibleChildRows(section).length" class="section-card-list">
           <view
-            v-for="(row, rowIndex) in childRows(section)"
+            v-for="(row, rowIndex) in visibleChildRows(section)"
             :key="childRowKey(section, row, rowIndex)"
             class="section-card-row"
           >
             <view class="section-child-row__head">
               <text class="section-child-row__title">第 {{ rowIndex + 1 }} 条</text>
               <AiButton
-                v-if="canRemoveChild(section)"
+                v-if="canRemoveChild(section, row)"
                 size="sm"
                 variant="danger"
-                @click="removeChild(section, rowIndex)"
+                @click="removeChild(section, row)"
               >
                 删除
               </AiButton>
@@ -146,7 +154,7 @@
               :data="row"
               :dict-options="dictOptions"
               :current-children="childData"
-              :readonly="isChildReadonly(section)"
+              :readonly="isChildReadonly(section, row)"
               :context="runtimeContext"
               :field-linkages="fieldLinkages"
               @field-event="payload => childFieldEvent(section, row, payload)"
@@ -169,13 +177,13 @@
       </CardSection>
 
       <CardSection
-        v-else-if="isChildSection(section, 'bottom_sheet')"
-        :title="section.title"
+        v-else-if="isActiveChildSection(section) && isChildSection(section, 'bottom_sheet')"
+        :title="childSectionTitle(section)"
         :collapsible="section.collapsible === true"
         :collapsed-by-default="section.collapsedByDefault === true"
       >
         <view v-if="visibleChildToolbarActions(section).length" class="section-child-head">
-          <text class="section-child-count">{{ childRows(section).length }} 条</text>
+          <text class="section-child-count">{{ visibleChildRows(section).length }} 条</text>
           <view class="section-child-head__tools">
             <AiButton
               v-for="action in visibleChildToolbarActions(section)"
@@ -192,9 +200,9 @@
         <button class="section-sheet-trigger" hover-class="section-sheet-trigger--pressed" @click="openSheet(section)">
           <view class="section-sheet-trigger__copy">
             <text class="section-sheet-trigger__label">查看{{ section.title || '明细' }}</text>
-            <text class="section-sheet-trigger__count">{{ childRows(section).length }} 条记录</text>
+            <text class="section-sheet-trigger__count">{{ visibleChildRows(section).length }} 条记录</text>
           </view>
-          <AiIcon name="chevron-right" color="#2563eb" size="sm" />
+          <AiIcon name="chevron-right" color="#3b82f6" size="sm" />
         </button>
       </CardSection>
     </template>
@@ -235,6 +243,7 @@
 import { computed, ref, watch } from 'vue'
 import AiButton from '@/components/AiButton.vue'
 import AiIcon from '@/components/AiIcon.vue'
+import AiTabs from '@/components/AiTabs.vue'
 import BottomSheet from './BottomSheet.vue'
 import CardSection from './CardSection.vue'
 import LowcodeForm from './LowcodeForm.vue'
@@ -252,6 +261,7 @@ import {
 const props = defineProps({
   sections: { type: Array, default: () => [] },
   mainFields: { type: Array, default: () => [] },
+  mainNodes: { type: Array, default: () => [] },
   mainData: { type: Object, default: () => ({}) },
   children: { type: Array, default: () => [] },
   childData: { type: Object, default: () => ({}) },
@@ -280,6 +290,7 @@ const emit = defineEmits([
 
 const sheetVisible = ref(false)
 const activeSheetSectionId = ref('')
+const activeChildSectionIndex = ref(0)
 const visibleSections = computed(() => resolveVisiblePageSections(
   props.sections,
   props.mode,
@@ -287,14 +298,27 @@ const visibleSections = computed(() => resolveVisiblePageSections(
   props.currentFlowNodeKey,
 ))
 const visibleBottomActions = computed(() => resolveBottomBarActions(props.bottomBar, props.mainData, props.mode, props.permissions))
+const childSections = computed(() => visibleSections.value
+  .filter(section => section.sectionType === 'child_table' && Boolean(childConfig(section))))
+const childSectionTabs = computed(() => childSections.value.map(section => ({ label: section.title || '明细' })))
+const mainNodeSectionId = computed(() => {
+  const fieldCodes = new Set(props.mainFields.map(field => String(field?.field || '')).filter(Boolean))
+  const section = visibleSections.value.find(item => item.sectionType === 'card'
+    && (item.sectionId === 'main' || (Array.isArray(item.fields) && item.fields.some(field => fieldCodes.has(String(field))))))
+  return String(section?.sectionId || '')
+})
 const activeSheetSection = computed(() => visibleSections.value
   .find(section => String(section.sectionId) === activeSheetSectionId.value) || null)
 const activeSheetChild = computed(() => childConfig(activeSheetSection.value))
-const activeSheetRows = computed(() => activeSheetSection.value ? childRows(activeSheetSection.value) : [])
+const activeSheetRows = computed(() => activeSheetSection.value ? visibleChildRows(activeSheetSection.value) : [])
 
 watch(visibleSections, () => {
   if (activeSheetSectionId.value && !activeSheetSection.value)
     sheetVisible.value = false
+})
+
+watch(childSections, (sections) => {
+  if (activeChildSectionIndex.value >= sections.length) activeChildSectionIndex.value = 0
 })
 
 function resolveFields(section) {
@@ -310,24 +334,47 @@ function childRows(section) {
   return child ? resolveChildRows(child, props.childData) : []
 }
 
+function visibleChildRows(section) {
+  return childRows(section).filter(row => !isDeletedRow(row))
+}
+
 function isChildSection(section, displayMode) {
   return section.sectionType === 'child_table'
     && String(section.displayMode || 'card_list') === displayMode
     && Boolean(childConfig(section))
 }
 
+function isFirstChildSection(section) {
+  return String(childSections.value[0]?.sectionId || '') === String(section?.sectionId || '')
+}
+
+function isActiveChildSection(section) {
+  if (childSections.value.length <= 1) return true
+  return String(childSections.value[activeChildSectionIndex.value]?.sectionId || '') === String(section?.sectionId || '')
+}
+
+function childSectionTitle(section) {
+  return childSections.value.length > 1 ? '' : section.title
+}
+
 function canAddChild(section) {
   const child = childConfig(section)
-  return props.mode !== 'detail' && child?.readonly !== true && child?.inlineCreateEnabled !== false
+  if (props.mode === 'detail' || child?.readonly === true || child?.inlineCreateEnabled === false) return false
+  return child?.approvalPermissionControlled === true ? child?.allowCreate === true : true
 }
 
-function canRemoveChild(section) {
+function canRemoveChild(section, row) {
   const child = childConfig(section)
-  return props.mode !== 'detail' && child?.readonly !== true && child?.inlineEditEnabled !== false
+  if (props.mode === 'detail' || child?.readonly === true || child?.inlineEditEnabled === false) return false
+  if (child?.approvalPermissionControlled !== true) return true
+  return hasPersistedRowId(row) ? child?.allowDelete === true : child?.allowCreate === true
 }
 
-function isChildReadonly(section) {
-  return props.mode === 'detail' || childConfig(section)?.readonly === true || sectionReadonly(section)
+function isChildReadonly(section, row) {
+  const child = childConfig(section)
+  if (props.mode === 'detail' || child?.readonly === true || sectionReadonly(section)) return true
+  if (child?.approvalPermissionControlled !== true) return false
+  return hasPersistedRowId(row) ? child?.allowUpdate !== true : child?.allowCreate !== true
 }
 
 function sectionReadonly(section) {
@@ -360,8 +407,9 @@ function childFieldEvent(section, row, payload) {
   emit('child-field-event', { child: childConfig(section), row, payload })
 }
 
-function removeChild(section, index) {
-  emit('remove-child-row', { child: childConfig(section), index })
+function removeChild(section, row) {
+  const index = childRows(section).indexOf(row)
+  if (index >= 0) emit('remove-child-row', { child: childConfig(section), index })
 }
 
 function openSheet(section) {
@@ -391,6 +439,17 @@ function buttonVariant(variant) {
 function actionKey(action, index) {
   return `${action.type}:${action.actionCode || action.label || index}`
 }
+
+function hasPersistedRowId(row = {}) {
+  const id = row.id ?? row.ID
+  return id !== undefined && id !== null && String(id).trim() !== ''
+}
+
+function isDeletedRow(row = {}) {
+  const value = row._deleted ?? row.__deleted
+  if (typeof value === 'boolean') return value
+  return ['true', '1', 'yes', 'y'].includes(String(value || '').trim().toLowerCase())
+}
 </script>
 
 <style lang="scss" scoped>
@@ -399,7 +458,11 @@ function actionKey(action, index) {
 }
 
 .section-runtime--with-bottom-bar {
-  padding-bottom: 140rpx;
+  padding-bottom: 220rpx;
+}
+
+.section-child-tabs {
+  margin: 4rpx 0 20rpx;
 }
 
 .section-child-head,
@@ -422,9 +485,9 @@ function actionKey(action, index) {
 }
 
 .section-child-count {
-  color: #64748b;
+  color: #475569;
   font-size: 23rpx;
-  font-weight: 650;
+  font-weight: 500;
 }
 
 .section-child-list,
@@ -439,7 +502,7 @@ function actionKey(action, index) {
 .section-sheet-row {
   min-width: 0;
   padding: 22rpx 0;
-  border-top: 1rpx solid #edf1f6;
+  border-top: 1rpx solid #e2e8f0;
 }
 
 .section-child-row:first-child,
@@ -462,9 +525,9 @@ function actionKey(action, index) {
 .section-child-row__title,
 .section-sheet-row__title {
   display: block;
-  color: #334155;
+  color: #1e293b;
   font-size: 24rpx;
-  font-weight: 750;
+  font-weight: 500;
 }
 
 .section-row-actions {
@@ -488,7 +551,7 @@ function actionKey(action, index) {
 .section-sheet-trigger {
   display: flex;
   width: 100%;
-  min-height: 82rpx;
+  min-height: 88rpx;
   align-items: center;
   justify-content: space-between;
   gap: 18rpx;
@@ -518,9 +581,9 @@ function actionKey(action, index) {
 }
 
 .section-sheet-trigger__label {
-  color: #334155;
+  color: #1e293b;
   font-size: 26rpx;
-  font-weight: 750;
+  font-weight: 500;
 }
 
 .section-sheet-trigger__count {
@@ -542,7 +605,7 @@ function actionKey(action, index) {
 
 .section-readonly-field__value {
   min-width: 0;
-  color: #334155;
+  color: #1e293b;
   font-size: 24rpx;
   line-height: 1.45;
   overflow-wrap: anywhere;
@@ -556,14 +619,30 @@ function actionKey(action, index) {
   left: 0;
   z-index: 100;
   display: flex;
-  gap: 12rpx;
-  padding: 18rpx 24rpx calc(18rpx + env(safe-area-inset-bottom));
-  border-top: 1rpx solid #e7edf5;
-  background: rgba(248, 250, 252, 0.97);
-  backdrop-filter: blur(8px);
+  flex-wrap: wrap;
+  gap: 16rpx;
+  padding: 16rpx 32rpx calc(16rpx + env(safe-area-inset-bottom));
+  border-top: 1rpx solid #e2e8f0;
+  background: #fff;
 }
 
 .section-bottom-bar > * {
   flex: 1;
+}
+
+.section-bottom-bar :deep(.ai-button--primary) {
+  order: -1;
+  flex: 1 0 100%;
+}
+
+@media (min-width: 1024px) {
+  .section-runtime--with-bottom-bar { padding-bottom: 112rpx; }
+  .section-bottom-bar {
+    justify-content: flex-end;
+    padding-right: max(24px, calc((100vw - 1280px) / 2 + 24px));
+    padding-left: max(24px, calc((100vw - 1280px) / 2 + 24px));
+  }
+  .section-bottom-bar > *,
+  .section-bottom-bar :deep(.ai-button--primary) { flex: 0 0 auto; order: initial; min-width: 128px; }
 }
 </style>

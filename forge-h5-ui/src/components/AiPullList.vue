@@ -176,7 +176,7 @@ function handleLoad() {
   justify-content: center;
   color: #94a3b8;
   font-size: 24rpx;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .ai-pull-list__loading {

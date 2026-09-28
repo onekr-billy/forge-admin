@@ -1,6 +1,16 @@
 # 踩坑：前端 / 构建 / 路由
 
-> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。
+> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 47 条。
+
+## uni-app 微信小程序不能直接复用 H5 Teleport 和动态 component 递归
+
+**发现日期**: 2026-09-20
+
+**问题描述**:
+H5 头像裁剪器内部依赖 `Teleport`，动态数组渲染器使用 `<component :is="...">` 递归字段组件时，H5 可以编译，但微信小程序构建会因平台模板能力差异失败或生成不可运行的组件引用。仅在调用处做运行时判断仍会让小程序编译器扫描到这些模板。
+
+**解决方案**:
+H5 专用组件必须同时对模板节点和 import 使用 uni-app 条件编译；跨端递归渲染应使用已静态注册的组件引用，并通过 props 递归数据。新组件至少同时执行 H5 与 `mp-weixin` 生产构建，不能只依赖 H5 页面验证。
 
 ## Vitest 结构测试读取源码时 new URL 不能内联字面量路径
 
@@ -737,7 +747,6 @@ Naive UI 的 `--n-height` 可保证同尺寸输入和按钮对齐，但 Teleport
 1. `openLocalPreview` 先 `await saveLayout()`；应用壳 `openDraftPreview` 在 list/form 设计态始终 `saveCurrentDesignerSection`。
 2. 本地预览若 `isRichListGridLayout`，改渲 `RuntimeListGridFlow`；并补齐 `.is-crud` → `.ai-crud-preview` → `.ai-crud-page` 的 `height:100%` flex 链。
 3. `AiTable` 卡片：`.ai-card-scroll` 中间滚动，`.ai-card-pagination` 底部固定。
-
 ## SFC 拆 composable 时丢 state / 未 `__impl` 转发会直接炸 setup
 
 **发现日期**: 2026-09-28
@@ -750,3 +759,13 @@ Naive UI 的 `--n-height` 可保证同尺寸输入和按钮对齐，但 Teleport
 2. 仅后续 part 实现的符号：part1 写 `const fn = (...args) => __impl.fn(...args)`，part2 定义后立刻 `__impl.fn = fn`；part2 解构 deps 时不要再解构同名本地函数，避免重复绑定。
 3. 模板用到的 `getLabel`/`dict`/工具 import 必须出现在 composable return。
 4. 门禁：扫描 part1 return shorthand，凡本文件未声明则必须有 `__impl` 转发或从拆分前 SFC 补回声明。
+
+## 鉴权图片重试必须按文件 ID 计数，不能按临时签名 URL 计数
+
+**发现日期**: 2026-09-28
+
+**问题描述**:
+H5 鉴权头像加载失败后按“当前解析出的 URL”判断是否已经重试。对象存储临时签名 URL 每次刷新都会变化，导致每次失败都被误判为新的首次失败；uni-app 页面栈保留隐藏页面实例时，即使已经进入审批详情，上一页头像仍会持续调用 `/api/file/url/{fileId}`。在解析期间先切换兜底图时，兜底图自身失败也可能重复触发源文件刷新。
+
+**解决方案**:
+失败重试以原始 `fileId/filePath/url` 归一后的稳定键计数，同一输入最多强制刷新一次；当前失败源等于 fallback 时直接兜底，不再刷新原文件。文件地址解析层还应按稳定键复用进行中的 Promise，避免多个保留页面或同页多个头像并发击穿接口。

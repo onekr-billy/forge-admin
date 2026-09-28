@@ -4,7 +4,7 @@
       <slot :src="modelValue" :uploading="uploading">
         <view class="ai-image-upload__avatar">
           <AiAuthImage :src="modelValue" :fallback="fallback" mode="aspectFill" />
-          <view class="ai-image-upload__mask">
+          <view v-if="!readonly" class="ai-image-upload__mask">
             <AiIcon icon="/static/icons/ai-icon/camera.svg" color="#ffffff" size="sm" />
             <text>{{ uploading ? '上传中' : '更换' }}</text>
           </view>
@@ -12,6 +12,7 @@
       </slot>
     </view>
 
+    <!-- #ifdef H5 -->
     <AiAvatarCropper
       v-model="cropVisible"
       :source="cropSource"
@@ -20,16 +21,20 @@
       @confirm="handleCropConfirm"
       @cancel="cancelCrop"
     />
+    <!-- #endif -->
   </view>
 </template>
 
 <script setup>
 import { onUnmounted, ref } from 'vue'
 import AiAuthImage from '@/components/AiAuthImage.vue'
+// #ifdef H5
 import AiAvatarCropper from '@/components/AiAvatarCropper.vue'
+// #endif
 import AiIcon from '@/components/AiIcon.vue'
 import { useAuthStore } from '@/store'
 import { toast } from '@/utils/notify'
+import { uploadRuntimeFile } from '@/utils/runtime-file-upload'
 
 const props = defineProps({
   modelValue: {
@@ -56,6 +61,14 @@ const props = defineProps({
     type: Number,
     default: 0.9,
   },
+  maxSize: {
+    type: Number,
+    default: 0,
+  },
+  readonly: {
+    type: Boolean,
+    default: false,
+  },
 })
 
 const emit = defineEmits(['update:modelValue', 'success', 'error', 'uploadStart', 'uploadEnd'])
@@ -66,27 +79,37 @@ const cropSource = ref('')
 let cropObjectUrl = ''
 
 async function openPicker() {
-  if (uploading.value) {
+  if (props.readonly || uploading.value) {
     return
   }
   const picked = await chooseImageFile()
-  if (!picked?.url) {
-    return
-  }
+    if (!picked?.url) {
+      return
+    }
+    const size = Number(picked.file?.size || 0)
+    if (props.maxSize > 0 && size > props.maxSize * 1024 * 1024) {
+      toast(`图片不能超过 ${props.maxSize}MB`, { type: 'warning' })
+      return
+    }
 
   try {
+    let useCropper = false
+    // #ifdef H5
+    useCropper = props.crop
+    // #endif
+    if (!useCropper) {
+      await uploadFile(picked.file, picked.url)
+      return
+    }
+
+    // #ifdef H5
     const file = picked.file || await urlToFile(picked.url)
     if (!file.type?.startsWith('image/')) {
       toast('请选择图片文件', { type: 'warning' })
       return
     }
-
-    if (!props.crop) {
-      await uploadFile(file)
-      return
-    }
-
     openCropper(URL.createObjectURL(file))
+    // #endif
   }
   catch (error) {
     console.error('选择图片失败:', error)
@@ -147,29 +170,19 @@ async function handleCropConfirm({ file }) {
   }
 }
 
-async function uploadFile(file) {
+async function uploadFile(file, filePath = '') {
   uploading.value = true
   emit('uploadStart')
   try {
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('businessType', props.businessType)
-    const response = await fetch(`${import.meta.env.VITE_REQUEST_PREFIX || ''}/api/file/upload`, {
-      method: 'POST',
-      headers: {
-        Authorization: `${authStore.tokenType || 'Bearer'} ${authStore.accessToken}`,
-      },
-      body: formData,
+    const uploaded = await uploadRuntimeFile({
+      file,
+      filePath: filePath || file?.path || file?.tempFilePath,
+      fileName: file?.name || `image-${Date.now()}.jpg`,
+      businessType: props.businessType,
+      authStore,
     })
-    const result = await response.json()
-    if (!response.ok || !(result?.code === 200 || result?.respCode === '0000')) {
-      throw new Error(result?.message || result?.msg || '图片上传失败')
-    }
-
-    const fileData = result.data
-    const value = fileData?.fileId || fileData?.filePath || fileData?.id || ''
-    emit('update:modelValue', value)
-    emit('success', fileData)
+    emit('update:modelValue', uploaded.id)
+    emit('success', uploaded.data)
   }
   catch (error) {
     emit('error', error)
@@ -192,9 +205,11 @@ function resolveExtension(type) {
 }
 
 function releaseCropObjectUrl() {
+  // #ifdef H5
   if (cropObjectUrl?.startsWith('blob:')) {
     URL.revokeObjectURL(cropObjectUrl)
   }
+  // #endif
   cropObjectUrl = ''
 }
 
@@ -214,8 +229,9 @@ onUnmounted(() => {
   width: 156rpx;
   height: 156rpx;
   overflow: hidden;
-  border-radius: 40rpx;
-  background: linear-gradient(135deg, #dbeafe, #e0e7ff);
+  border: 1rpx solid var(--border-color);
+  border-radius: var(--radius-card);
+  background: var(--surface-muted);
 }
 
 .ai-image-upload__mask {
@@ -235,7 +251,7 @@ onUnmounted(() => {
   display: block;
   color: #ffffff;
   font-size: 20rpx;
-  font-weight: 850;
+  font-weight: 500;
 }
 
 </style>

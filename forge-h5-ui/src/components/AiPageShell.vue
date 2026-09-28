@@ -22,7 +22,7 @@ defineProps({
 <style lang="scss" scoped>
 .ai-page-shell {
   position: relative;
-  min-height: 100vh;
+  min-height: var(--forge-page-height, 100vh);
   overflow: hidden;
   box-sizing: border-box;
   background: var(--page-bg);
@@ -32,7 +32,7 @@ defineProps({
   position: relative;
   z-index: 1;
   box-sizing: border-box;
-  min-height: 100vh;
+  min-height: var(--forge-page-height, 100vh);
 }
 
 .ai-page-shell__content--safe {

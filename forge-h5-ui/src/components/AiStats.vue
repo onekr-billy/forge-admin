@@ -62,9 +62,9 @@ defineProps({
 
 .ai-stats__label {
   margin-top: 8rpx;
-  color: #64748b;
+  color: #475569;
   font-size: 22rpx;
-  font-weight: 800;
+  font-weight: 500;
 }
 
 .ai-stats--brand .ai-stats__item + .ai-stats__item::before {

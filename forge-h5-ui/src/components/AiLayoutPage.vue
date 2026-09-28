@@ -1,5 +1,5 @@
 <template>
-  <AiPageShell :grid="grid" :safe-bottom="false">
+  <AiPageShell :grid="grid" :safe-bottom="safeBottom">
     <view class="ai-layout-page" :class="{ 'ai-layout-page--fixed': fixed }">
       <view v-if="showNav" class="ai-layout-page__nav" :class="{ 'ai-layout-page__nav--glass': navGlass }">
         <slot name="nav">
@@ -21,6 +21,8 @@
         :class="{ 'ai-layout-page__body--scroll': scroll }"
         :scroll-y="scroll"
         :show-scrollbar="false"
+        :refresher-enabled="refresherEnabled"
+        :refresher-triggered="refreshing"
         @scrolltolower="$emit('scrolltolower')"
         @refresherrefresh="$emit('refresh')"
       >
@@ -51,7 +53,7 @@ const props = defineProps({
   },
   showNav: {
     type: Boolean,
-    default: true
+    default: false
   },
   showBack: {
     type: Boolean,
@@ -84,6 +86,18 @@ const props = defineProps({
   grid: {
     type: Boolean,
     default: true
+  },
+  safeBottom: {
+    type: Boolean,
+    default: false
+  },
+  refresherEnabled: {
+    type: Boolean,
+    default: false
+  },
+  refreshing: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -110,12 +124,12 @@ function handleBack() {
 .ai-layout-page {
   position: relative;
   display: flex;
-  min-height: 100vh;
+  min-height: var(--forge-page-height, 100vh);
   flex-direction: column;
 }
 
 .ai-layout-page--fixed {
-  height: 100vh;
+  height: var(--forge-page-height, 100vh);
   overflow: hidden;
 }
 
@@ -123,10 +137,10 @@ function handleBack() {
   position: relative;
   z-index: 3;
   display: flex;
-  min-height: 104rpx;
+  min-height: 92rpx;
   align-items: center;
-  gap: 20rpx;
-  padding: calc(20rpx + env(safe-area-inset-top)) 28rpx 20rpx;
+  gap: 16rpx;
+  padding: calc(14rpx + env(safe-area-inset-top)) 30rpx 14rpx;
   box-sizing: border-box;
 }
 
@@ -137,15 +151,15 @@ function handleBack() {
 
 .ai-layout-page__back {
   display: flex;
-  width: 76rpx;
-  height: 76rpx;
-  flex: 0 0 76rpx;
+  width: 88rpx;
+  height: 88rpx;
+  flex: 0 0 88rpx;
   align-items: center;
   justify-content: center;
   margin: 0;
   padding: 0;
   border: 1rpx solid var(--border-color);
-  border-radius: 10rpx;
+  border-radius: var(--radius-control);
   background: #fff;
   box-shadow: none;
 }
@@ -170,16 +184,16 @@ function handleBack() {
 
 .ai-layout-page__title {
   color: var(--text-strong);
-  font-size: 34rpx;
-  font-weight: 950;
-  line-height: 1.18;
+  font-size: 36rpx;
+  font-weight: 500;
+  line-height: 1.25;
 }
 
 .ai-layout-page__subtitle {
   margin-top: 6rpx;
-  color: #64748b;
-  font-size: 23rpx;
-  font-weight: 650;
+  color: var(--text-muted);
+  font-size: 26rpx;
+  font-weight: 400;
 }
 
 .ai-layout-page__nav-extra {
@@ -202,17 +216,20 @@ function handleBack() {
 }
 
 .ai-layout-page__inner {
+  width: 100%;
+  max-width: var(--forge-page-max-width, 1280px);
+  margin: 0 auto;
   box-sizing: border-box;
 }
 
 .ai-layout-page__inner--padded {
-  padding: 28rpx 28rpx 40rpx;
+  padding: 30rpx;
 }
 
 .ai-layout-page__footer {
   position: relative;
   z-index: 3;
-  padding: 20rpx 28rpx calc(20rpx + env(safe-area-inset-bottom));
+  padding: 16rpx 30rpx calc(16rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
 
@@ -220,5 +237,21 @@ function handleBack() {
   border-top: 1rpx solid var(--border-color);
   background: #fff;
   box-shadow: none;
+}
+
+@media (min-width: 1024px) {
+  .ai-layout-page__nav {
+    padding-right: max(24px, calc((100vw - 1280px) / 2 + 24px));
+    padding-left: max(24px, calc((100vw - 1280px) / 2 + 24px));
+  }
+
+  .ai-layout-page__inner--padded {
+    padding: 24px;
+  }
+
+  .ai-layout-page__footer {
+    padding-right: max(24px, calc((100vw - 1280px) / 2 + 24px));
+    padding-left: max(24px, calc((100vw - 1280px) / 2 + 24px));
+  }
 }
 </style>

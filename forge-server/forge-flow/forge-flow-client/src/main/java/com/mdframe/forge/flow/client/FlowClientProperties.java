@@ -11,7 +11,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * forge:
  *   flow:
  *     client:
- *       url: http://flow-service:8080   # 流程服务地址
+ *       url: http://flow-service:8081   # 流程服务地址
  *       token: your-service-token       # 服务间鉴权 Token（可选）
  *       connect-timeout: 3000           # 连接超时(ms)，默认 3000
  *       read-timeout: 10000             # 读取超时(ms)，默认 10000
@@ -30,7 +30,10 @@ public class FlowClientProperties {
     /**
      * 流程服务地址
      */
-    private String url = "http://localhost:8080";
+    // Forge Flow 的仓库基准端口是 8081。Flow 服务本身也会装配 generator
+    // 业务表单接口，因此未显式配置时必须能携带当前会话回调本服务，不能落到
+    // 已废弃的 8080 后吞掉 RPC 错误并误报“任务不存在或无权访问”。
+    private String url = "http://localhost:8081";
 
     /**
      * 服务间鉴权 Token（可选，透传到 Authorization: Bearer <token>）

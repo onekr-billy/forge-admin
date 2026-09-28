@@ -1,13 +1,14 @@
 <template>
   <view class="page-detail" :style="{ background: backgroundColor }">
-    <uni-nav-bar 
+    <wd-navbar
       :left-arrow="leftArrow" 
-      @clickLeft="onClickLeft" 
-      @clickRight="onClickRight"
+      @click-left="onClickLeft"
+      @click-right="onClickRight"
       :fixed="true"
-      :border="false"
+      :bordered="false"
+      placeholder
       v-if="isNavBar">
-      <template #default>
+      <template #title>
         <view style="display: flex;align-items: center">
           <slot name="title-left"></slot>
           <text>{{title}}</text>
@@ -16,7 +17,7 @@
       <template #right>
         <slot name="nav-bar-right"></slot>
       </template>
-    </uni-nav-bar>
+    </wd-navbar>
     
     <view class="page-detail_top" :style="{ padding: marginTop ? '0px' : '10px' }" v-if="$slots.top">
       <slot name="top"></slot>
@@ -50,7 +51,7 @@ const props = defineProps({
   },
   backgroundColor: {
     type: String,
-    default: "#fff",
+    default: "var(--page-bg, #f4f5f7)",
   },
   isNavBar: {
     type: Boolean,
@@ -135,6 +136,7 @@ defineExpose({
 .page-detail {
   height: 100vh;
   overflow: hidden;
+  color: var(--text-color);
 
   .page-detail_top {
     position: fixed;
@@ -148,15 +150,24 @@ defineExpose({
     position: fixed;
     bottom: 0;
     width: 100%;
+    border-top: 1px solid var(--forge-border, #cbd5e1);
     background: #fff;
     box-sizing: border-box;
     padding: 16px;
     display: flex;
     justify-content: space-around;
     align-items: center;
-    height: 58px;
-    box-shadow: 0px -2px 4px 0px rgba(155, 155, 155, 0.5);
+    min-height: 64px;
+    height: auto;
     z-index: 10;
+  }
+}
+
+@media (min-width: 1024px) {
+  .page-detail_box > :deep(*) {
+    max-width: var(--forge-page-max-width);
+    margin-right: auto;
+    margin-left: auto;
   }
 }
 </style>

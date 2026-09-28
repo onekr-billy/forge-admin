@@ -118,9 +118,9 @@ const shape = ref('circle')
 const loading = ref(false)
 
 const shapeOptions = [
-  { value: 'circle', label: '圆形', icon: '/static/icons/ai-icon/circle.svg', color: '#60a5fa' },
-  { value: 'round', label: '圆角', icon: '/static/icons/ai-icon/square.svg', color: '#34d399' },
-  { value: 'square', label: '方形', icon: '/static/icons/ai-icon/crop.svg', color: '#fbbf24' },
+  { value: 'circle', label: '圆形', icon: '/static/icons/ai-icon/circle.svg', color: '#3b82f6' },
+  { value: 'round', label: '圆角', icon: '/static/icons/ai-icon/square.svg', color: '#10b981' },
+  { value: 'square', label: '方形', icon: '/static/icons/ai-icon/crop.svg', color: '#f97316' },
 ]
 
 const baseScale = computed(() => Math.max(
@@ -394,9 +394,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   color: #ffffff;
-  background:
-    radial-gradient(circle at 18% 6%, rgba(37, 99, 235, 0.2), transparent 28%),
-    linear-gradient(180deg, #020617, #0f172a);
+  background: #1e293b;
 }
 
 .cropper-topbar {
@@ -427,10 +425,11 @@ onUnmounted(() => {
 }
 
 .topbar-button {
-  width: 68rpx;
-  height: 68rpx;
-  border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.1);
+  width: 88rpx;
+  height: 88rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.18);
+  border-radius: 8rpx;
+  background: #1e293b;
 }
 
 .topbar-title {
@@ -448,25 +447,25 @@ onUnmounted(() => {
 
 .topbar-main {
   font-size: 32rpx;
-  font-weight: 950;
+  font-weight: 500;
 }
 
 .topbar-sub {
   margin-top: 6rpx;
   color: rgba(226, 232, 240, 0.72);
   font-size: 22rpx;
-  font-weight: 700;
+  font-weight: 400;
 }
 
 .topbar-text {
   min-width: 74rpx;
-  height: 58rpx;
+  min-height: 88rpx;
 }
 
 .topbar-text text {
-  color: #93c5fd;
+  color: #3b82f6;
   font-size: 25rpx;
-  font-weight: 850;
+  font-weight: 500;
 }
 
 .cropper-stage {
@@ -500,11 +499,8 @@ onUnmounted(() => {
 }
 
 .cropper-frame {
-  border: 4rpx solid rgba(255, 255, 255, 0.94);
-  box-shadow:
-    0 0 0 1rpx rgba(37, 99, 235, 0.52),
-    0 0 0 9999px rgba(2, 6, 23, 0.66),
-    0 18rpx 70rpx rgba(0, 0, 0, 0.34);
+  border: 3rpx solid rgba(255, 255, 255, 0.94);
+  box-shadow: 0 0 0 9999px rgba(2, 6, 23, 0.7);
 }
 
 .cropper-frame--circle,
@@ -532,8 +528,7 @@ onUnmounted(() => {
 .cropper-panel {
   padding: 22rpx 28rpx calc(28rpx + env(safe-area-inset-bottom));
   border-top: 1rpx solid rgba(255, 255, 255, 0.1);
-  background: rgba(2, 6, 23, 0.84);
-  backdrop-filter: blur(24rpx);
+  background: #1e293b;
 }
 
 .shape-tabs {
@@ -544,26 +539,26 @@ onUnmounted(() => {
 
 .shape-tab {
   display: flex;
-  height: 72rpx;
+  min-height: 88rpx;
   align-items: center;
   justify-content: center;
   gap: 10rpx;
   margin: 0;
   padding: 0;
   border: 1rpx solid rgba(255, 255, 255, 0.12);
-  border-radius: 22rpx;
-  background: rgba(255, 255, 255, 0.08);
+  border-radius: 8rpx;
+  background: #1e293b;
 }
 
 .shape-tab.active {
-  border-color: rgba(96, 165, 250, 0.6);
-  background: linear-gradient(135deg, #2563eb, #0f766e);
+  border-color: #3b82f6;
+  background: #3b82f6;
 }
 
 .shape-tab text {
-  color: #e2e8f0;
+  color: #cbd5e1;
   font-size: 24rpx;
-  font-weight: 850;
+  font-weight: 500;
 }
 
 .zoom-control {
@@ -582,23 +577,23 @@ onUnmounted(() => {
 }
 
 .action-button {
-  height: 86rpx;
+  min-height: 88rpx;
   margin: 0;
   padding: 0;
-  border-radius: 26rpx;
+  border-radius: 8rpx;
   font-size: 28rpx;
-  font-weight: 900;
+  font-weight: 500;
   line-height: 86rpx;
 }
 
 .action-button--ghost {
-  color: #e2e8f0;
+  color: #cbd5e1;
   border: 1rpx solid rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.08);
+  background: #1e293b;
 }
 
 .action-button--primary {
-  color: #0f172a;
-  background: #ffffff;
+  color: #ffffff;
+  background: #3b82f6;
 }
 </style>

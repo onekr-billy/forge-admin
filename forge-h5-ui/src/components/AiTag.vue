@@ -87,20 +87,21 @@ const customStyle = computed(() => {
   box-sizing: border-box;
   max-width: 100%;
   border: 1px solid transparent;
-  border-radius: 16rpx;
-  font-weight: 700;
+  border-radius: 8rpx;
+  font-weight: 500;
   letter-spacing: 0;
   line-height: 1;
   transition: opacity 0.2s ease, transform 0.2s ease;
 
   &--round {
-    border-radius: 999rpx;
+    border-radius: 8rpx;
   }
 
   &--sm {
     gap: 8rpx;
-    padding: 4rpx 14rpx;
-    font-size: 20rpx;
+    min-height: 36rpx;
+    padding: 4rpx 12rpx;
+    font-size: 22rpx;
   }
 
   &--md {
@@ -118,16 +119,16 @@ const customStyle = computed(() => {
   &--primary {
     &.ai-tag--solid {
       color: #fff;
-      background: #2563eb;
+      background: var(--primary-color);
     }
     &.ai-tag--soft {
-      color: #2563eb;
-      border-color: rgba(191, 219, 254, 0.9);
-      background: rgba(219, 234, 254, 0.76);
+      color: var(--primary-color);
+      border-color: transparent;
+      background: var(--primary-soft);
     }
     &.ai-tag--outline {
-      color: #2563eb;
-      border-color: rgba(147, 197, 253, 0.9);
+      color: var(--primary-color);
+      border-color: var(--forge-color-primary-border);
       background: transparent;
     }
   }
@@ -138,12 +139,12 @@ const customStyle = computed(() => {
       background: #10b981;
     }
     &.ai-tag--soft {
-      color: #059669;
-      border-color: rgba(167, 243, 208, 0.9);
-      background: rgba(209, 250, 229, 0.76);
+      color: #10b981;
+      border-color: transparent;
+      background: #e8f8ed;
     }
     &.ai-tag--outline {
-      color: #059669;
+      color: #10b981;
       border-color: rgba(110, 231, 183, 0.9);
       background: transparent;
     }
@@ -152,15 +153,15 @@ const customStyle = computed(() => {
   &--warning {
     &.ai-tag--solid {
       color: #fff;
-      background: #f59e0b;
+      background: #f97316;
     }
     &.ai-tag--soft {
-      color: #d97706;
+      color: #f97316;
       border-color: rgba(253, 230, 138, 0.9);
       background: rgba(254, 243, 199, 0.82);
     }
     &.ai-tag--outline {
-      color: #d97706;
+      color: #f97316;
       border-color: rgba(252, 211, 77, 0.9);
       background: transparent;
     }
@@ -169,15 +170,15 @@ const customStyle = computed(() => {
   &--danger {
     &.ai-tag--solid {
       color: #fff;
-      background: #f43f5e;
+      background: #ef4444;
     }
     &.ai-tag--soft {
-      color: #e11d48;
+      color: #ef4444;
       border-color: rgba(254, 205, 211, 0.9);
       background: rgba(255, 228, 230, 0.82);
     }
     &.ai-tag--outline {
-      color: #e11d48;
+      color: #ef4444;
       border-color: rgba(253, 164, 175, 0.9);
       background: transparent;
     }
@@ -186,7 +187,7 @@ const customStyle = computed(() => {
   &--default {
     &.ai-tag--solid {
       color: #fff;
-      background: #334155;
+      background: #1e293b;
     }
     &.ai-tag--soft {
       color: #475569;
@@ -194,7 +195,7 @@ const customStyle = computed(() => {
       background: rgba(241, 245, 249, 0.82);
     }
     &.ai-tag--outline {
-      color: #64748b;
+      color: #475569;
       border-color: rgba(203, 213, 225, 0.9);
       background: transparent;
     }
@@ -222,7 +223,7 @@ const customStyle = computed(() => {
   background: transparent;
   color: currentColor;
   font-size: 26rpx;
-  font-weight: 800;
+  font-weight: 500;
   line-height: 1;
 
   &::after {

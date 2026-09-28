@@ -1,13 +1,18 @@
 import { defineStore } from 'pinia'
 import { defaultPrimaryColor } from '@/settings.js'
+import { resolveTenantLogoUrl } from '@/utils/tenant-brand'
 
 export const useAppStore = defineStore('app', {
   state: () => ({
     isDark: false,
     primaryColor: defaultPrimaryColor,
+    brandConfig: null,
     keepAliveNames: [] // 需要缓存的页面名称列表
   }),
   actions: {
+    setBrandConfig(config) {
+      this.brandConfig = config || null
+    },
     toggleDark() {
       this.isDark = !this.isDark
     },
@@ -27,9 +32,13 @@ export const useAppStore = defineStore('app', {
       this.keepAliveNames = names
     }
   },
+  getters: {
+    brandName: state => state.brandConfig?.systemName || 'Forge 移动工作台',
+    brandLogoUrl: state => resolveTenantLogoUrl(state.brandConfig),
+  },
   persist: {
     key: `${import.meta.env.VITE_TENANT || 'default'}_app`,
-    pick: ['primaryColor', 'keepAliveNames'],
+    pick: ['primaryColor', 'keepAliveNames', 'brandConfig'],
     storage: sessionStorage,
   },
 })

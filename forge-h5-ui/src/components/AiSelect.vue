@@ -1,35 +1,36 @@
 <template>
-  <view class="ai-select" :class="{ 'ai-select--compact': compact }" @click="openPicker">
-    <view class="ai-select-input">
-      <text class="ai-select-text" :class="{ 'ai-select-placeholder': !selectedLabel }">
-        {{ selectedLabel || placeholder }}
-      </text>
-    </view>
-    
-    <AiPopupSheet v-model="showPicker" :title="title" :description="description" :z-index="10020">
-      <view class="ai-select-options">
-        <button
-          v-for="option in options"
-          :key="String(option.value)"
-          class="ai-select-option"
-          :class="{ 'ai-select-option--active': isSelected(option) }"
-          @click.stop="selectOption(option)"
-        >
-          <text>{{ option.label }}</text>
-          <text v-if="isSelected(option)" class="ai-select-option__check">✓</text>
-        </button>
-      </view>
-    </AiPopupSheet>
+  <view class="ai-select" :class="{ 'ai-select--compact': compact }">
+    <wd-select-picker
+      v-model="selectedValue"
+      :columns="normalizedOptions"
+      :type="multiple ? 'checkbox' : 'radio'"
+      :placeholder="placeholder"
+      :title="title"
+      :disabled="disabled || !normalizedOptions.length"
+      :clearable="clearable"
+      :filterable="filterable"
+      :filter-placeholder="filterPlaceholder"
+      :show-confirm="multiple || showConfirm"
+      :min="min"
+      :max="max"
+      :safe-area-inset-bottom="true"
+      value-key="value"
+      label-key="label"
+      :z-index="10010"
+      root-portal
+      @confirm="handleConfirm"
+      @clear="handleClear"
+    />
+    <text v-if="description" class="ai-select-description">{{ description }}</text>
   </view>
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
-import AiPopupSheet from './AiPopupSheet.vue'
+import { computed } from 'vue'
 
 const props = defineProps({
   modelValue: {
-    type: [String, Number],
+    type: [String, Number, Array],
     default: ''
   },
   options: {
@@ -51,119 +52,94 @@ const props = defineProps({
   compact: {
     type: Boolean,
     default: false
-  }
+  },
+  disabled: { type: Boolean, default: false },
+  multiple: { type: Boolean, default: false },
+  min: { type: Number, default: 0 },
+  max: { type: Number, default: 0 },
+  clearable: { type: Boolean, default: false },
+  filterable: { type: Boolean, default: false },
+  filterPlaceholder: { type: String, default: '搜索选项' },
+  showConfirm: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['update:modelValue', 'change'])
 
-const showPicker = ref(false)
-
-const selectedLabel = computed(() => {
-  const selected = props.options.find(o => o.value === props.modelValue)
-  return selected ? selected.label : ''
+const selectedValue = computed({
+  get: () => props.multiple
+    ? (Array.isArray(props.modelValue) ? props.modelValue : String(props.modelValue || '').split(',').map(item => item.trim()).filter(Boolean))
+    : props.modelValue,
+  set: value => emit('update:modelValue', value),
 })
 
-function openPicker() {
-  if (props.options.length) showPicker.value = true
+const normalizedOptions = computed(() => props.options.map(option => typeof option === 'object'
+  ? { ...option, label: option.label ?? option.name ?? String(option.value ?? ''), value: option.value ?? option.id }
+  : { label: String(option), value: option }))
+
+function handleConfirm(event) {
+  emit('change', event?.value ?? selectedValue.value)
 }
 
-function isSelected(option) {
-  return String(option?.value) === String(props.modelValue)
+function handleClear() {
+  const value = props.multiple ? [] : ''
+  emit('update:modelValue', value)
+  emit('change', value)
 }
-
-function selectOption(option) {
-  emit('update:modelValue', option.value)
-  emit('change', option.value)
-  showPicker.value = false
-}
-
-watch(() => props.options, () => {
-  if (!props.options.length) showPicker.value = false
-}, { deep: true })
 </script>
 
 <style lang="scss" scoped>
 .ai-select {
-  min-width: 160rpx;
-  padding: 0 20rpx;
-  background: #fff;
-  border: 1rpx solid var(--border-color, #e5e7eb);
-  border-radius: 12rpx;
-  box-sizing: border-box;
+  min-width: 80px;
 
   &--compact {
-    min-width: 172rpx;
-    height: 64rpx;
-    padding: 0 18rpx;
-    border-radius: 14rpx;
+    min-width: 86px;
   }
 }
 
-.ai-select-input {
+.ai-select :deep(.wd-select-picker__cell) {
   display: flex;
-  min-height: 76rpx;
+  min-height: 44px;
   align-items: center;
-  justify-content: space-between;
-
-  .ai-select--compact & {
-    min-height: 62rpx;
-  }
-
-  &::after {
-    width: 12rpx;
-    height: 12rpx;
-    margin-left: 18rpx;
-    border-right: 2rpx solid #94a3b8;
-    border-bottom: 2rpx solid #94a3b8;
-    content: '';
-    transform: translateY(-3rpx) rotate(45deg);
-  }
+  padding: 0 12px;
+  border: 1px solid var(--forge-color-border, #e2e8f0);
+  border-radius: var(--forge-radius-control);
+  background: var(--forge-color-surface, #fff);
+  box-sizing: border-box;
 }
 
-.ai-select-text {
-  overflow: hidden;
-  color: var(--text-strong, #1f2937);
-  font-size: 25rpx;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  
-  &.ai-select-placeholder {
-    color: #999;
-  }
-}
-
-.ai-select-options {
+.ai-select :deep(.wd-cell__wrapper),
+.ai-select :deep(.wd-cell__body),
+.ai-select :deep(.wd-cell__value) {
   display: flex;
-  flex-direction: column;
-  gap: 10rpx;
-}
-
-.ai-select-option {
-  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
   align-items: center;
-  justify-content: space-between;
-  min-height: 78rpx;
-  margin: 0;
-  padding: 0 18rpx;
-  border: 1rpx solid #edf0f3;
-  border-radius: 12rpx;
-  color: #475569;
-  font-size: 27rpx;
-  text-align: left;
-  background: #fff;
-
-  &::after { border: 0; }
-
-  &--active {
-    border-color: #bfdbfe;
-    color: var(--primary-color, #2563eb);
-    font-weight: 650;
-    background: #eff6ff;
-  }
+  line-height: 1.5;
 }
 
-.ai-select-option__check {
-  color: var(--primary-color, #2563eb);
-  font-size: 30rpx;
+.ai-select :deep(.wd-cell__body) { padding: 0; }
+.ai-select :deep(.wd-cell__value) { justify-content: flex-start; }
+
+.ai-select--compact :deep(.wd-select-picker__cell) {
+  min-height: 44px;
+  padding: 0 9px;
+  border-radius: var(--forge-radius-control);
+}
+
+.ai-select-description {
+  display: block;
+  margin-top: 4px;
+  color: var(--forge-color-text-muted, #94a3b8);
+  font-size: 13px;
+}
+
+.ai-select :deep(.wd-cell__value) {
+  color: var(--forge-color-text, #1e293b);
+  font-size: 14px;
+}
+
+.ai-select :deep(.wd-select-picker__cell--placeholder .wd-cell__value) {
+  color: var(--forge-color-text-muted, #94a3b8);
 }
 </style>

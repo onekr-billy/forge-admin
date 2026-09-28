@@ -39,7 +39,7 @@ public class GenTableColumn implements Serializable {
     /** 数据库列默认值（导入时从 information_schema 读取，非 gen_table_column 持久化字段） */
     @TableField(exist = false)
     private String columnDefault;
-    
+
     private Integer isInsert;
     
     private Integer isEdit;

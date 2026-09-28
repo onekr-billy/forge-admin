@@ -36,8 +36,9 @@
 
 ## 分类目录
 
-### [前端 / 构建 / 路由](pitfalls/frontend.md)（47）
+### [前端 / 构建 / 路由](pitfalls/frontend.md)（48）
 
+- uni-app 微信小程序不能直接复用 H5 Teleport 和动态 component 递归
 - 门户富列表禁止嵌套 ListPageGridDesigner
 - Vitest 结构测试读取源码时 new URL 不能内联字面量路径
 - pnpm 在 forge-admin-ui 执行脚本必须加 --ignore-workspace
@@ -66,6 +67,7 @@
 - 117. Naive 组件内部 CSS 变量不能作为自定义页面主题 Token
 - 162. 租户切换后的会话刷新不能从稳定用户 ID 退回用户名查询
 - 169. CSS 尺寸变量在独立挂载场景需要兜底
+- 182. Vue 客户端组件模板不能直接承载运行时 style 标签
 - 打印客户端 PDF 不能用 html2canvas 重排 flex 表格
 - 打印表头不透明底会盖住表格外框上/左边
 - 打印表格选中格不能用 !important 盖住表头底色
@@ -82,6 +84,7 @@
 - 发布运行页不要卡住等后台菜单再叠多层 loading
 - 有编辑权限时页面管理左侧菜单要读草稿不能只读发布快照
 - 打印模板必须跟页面走，设计器不能回到 /print
+- 鉴权图片重试必须按文件 ID 计数，不能按临时签名 URL 计数
 
 ### [低代码 / 设计器 / 业务对象](pitfalls/lowcode.md)（103）
 
@@ -190,8 +193,9 @@
 - 177. 业务对象发布不能重置应用入口配置
 - 180. 运行字段基线会掩盖表单组件的结构变更
 
-### [流程 / Flowable / BPMN](pitfalls/flow.md)（55）
+### [流程 / Flowable / BPMN](pitfalls/flow.md)（56）
 
+- Flow 服务承载业务表单接口时不能沿用旧的 FlowClient 8080 默认端口
 - 审批子表列控件类型不能只依赖发布态 masterDetailConfig
 - 新版应用撤回不可依赖单据配置和 Web Session
 - 流程 Redis 回调非 Web 异常是 NotWebContextException
@@ -357,4 +361,4 @@
 - 157. 桌面常驻属性面板不能用移动端抽屉显隐状态判断是否保存
 - 158. 低代码业务字段编码不能被当作同名物理列
 
-合计 274 条。
+合计 275 条。

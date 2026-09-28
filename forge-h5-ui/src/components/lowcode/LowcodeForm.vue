@@ -1,16 +1,18 @@
 <template>
   <!-- Layout mode: delegate to LowcodeLayoutNodes when the schema has layout containers -->
   <LowcodeLayoutNodes
-    v-if="hasLayoutNodes"
+    v-if="hasRenderableNodes"
     ref="layoutRef"
     :nodes="nodes"
     :data="data"
     :dict-options="dictOptions"
+    :current-children="currentChildren"
     :readonly="readonly"
     :context="context"
     :field-linkages="fieldLinkages"
     @update:data="(v) => emit('update:data', v)"
     @field-event="(payload) => emit('field-event', payload)"
+    @action="(action) => emit('action', action)"
   />
 
   <!-- Flat mode: original field-only rendering -->
@@ -18,25 +20,30 @@
     <LowcodeField
       v-for="field in renderedFields"
       :key="field.field"
+      :ref="instance => setFieldRef(field.field, instance)"
       class="lowcode-form__field"
       :field="field"
       :model-value="data[field.field]"
       :options="fieldOptions(field)"
       :readonly="readonly"
+      :form-data="data"
+      :context="context"
       :error="errors[field.field]"
       @update:model-value="updateField(field, $event)"
       @blur="emit('field-event', { trigger: 'BLUR', field, data })"
       @change="emit('field-event', { trigger: 'CHANGE', field, data })"
       @scan="emit('field-event', { trigger: 'SCAN_COMPLETE', field, data, scan: $event })"
+      @selection="applySelection(field, $event)"
     />
   </view>
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import LowcodeField from './LowcodeField.vue'
 import LowcodeLayoutNodes from './LowcodeLayoutNodes.vue'
-import { applyFieldLinkageChange, filterFieldOptionsByLinkage, hasDesignerLayoutNodes, resolveFieldControl, resolveFieldLinkageContext } from '@/utils/lowcode-runtime'
+import { applyFieldLinkageChange, filterFieldOptionsByLinkage, resolveFieldControl, resolveFieldLinkageContext } from '@/utils/lowcode-runtime'
+import { normalizeMobileFieldContract, validateMobileFieldValue } from '@/utils/mobile-field-contract'
 
 const props = defineProps({
   fields: { type: Array, default: () => [] },
@@ -51,11 +58,14 @@ const props = defineProps({
   fieldLinkages: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits(['update:data', 'field-event'])
+const emit = defineEmits(['update:data', 'field-event', 'action'])
 const errors = reactive({})
 const layoutRef = ref(null)
-const hasLayoutNodes = computed(() => hasDesignerLayoutNodes(props.nodes))
-const renderedFields = computed(() => props.fields.map(field => ({
+const fieldRefs = new Map()
+const hasRenderableNodes = computed(() => Array.isArray(props.nodes) && props.nodes.length > 0)
+const renderedFields = computed(() => props.fields.map(source => {
+  const field = normalizeMobileFieldContract(source)
+  return {
   ...field,
   props: {
     ...(field.props || {}),
@@ -68,10 +78,22 @@ const renderedFields = computed(() => props.fields.map(field => ({
     route: { query: props.context.routeQuery || {} },
     user: props.context.user || {},
   }),
-})).filter(field => field.__runtimeControl.visible))
+  }
+}).filter(field => field.__runtimeControl.visible))
+
+watch(() => props.fields, (fields) => {
+  let changed = false
+  for (const source of fields || []) {
+    const field = normalizeMobileFieldContract(source)
+    if (!field.field || props.data[field.field] !== undefined || field.defaultValue === undefined) continue
+    props.data[field.field] = cloneDefaultValue(field.defaultValue)
+    changed = true
+  }
+  if (changed) emit('update:data', props.data)
+}, { immediate: true, deep: true })
 
 function fieldOptions(field) {
-  if (field.type === 'dictSelect' || field.type === 'pillSelect') {
+  if (field.dictType || field.props?.dictType) {
     const options = props.dictOptions[field.dictType || field.props?.dictType] || []
     return filterFieldOptionsByLinkage(options, field.props?.linkageContext)
   }
@@ -97,20 +119,45 @@ function updateField(field, value) {
   emit('update:data', props.data)
 }
 
+function applySelection(field, payload = {}) {
+  const patch = payload.patch && typeof payload.patch === 'object' ? payload.patch : {}
+  Object.assign(props.data, patch)
+  applyFieldLinkageChange(props.fieldLinkages, field.field, props.data)
+  emit('update:data', props.data)
+  emit('field-event', { trigger: 'SELECT', field, data: props.data, selection: payload })
+}
+
+function setFieldRef(field, instance) {
+  if (instance) fieldRefs.set(field, instance)
+  else fieldRefs.delete(field)
+}
+
 function validate() {
   // Delegate to layout tree when in layout mode
-  if (hasLayoutNodes.value && layoutRef.value)
+  if (hasRenderableNodes.value && layoutRef.value)
     return layoutRef.value.validate()
   Object.keys(errors).forEach(key => delete errors[key])
-  for (const field of props.fields) {
+  let valid = true
+  for (const source of props.fields) {
+    const field = normalizeMobileFieldContract(source)
     const control = resolveFieldControl(field, { record: props.data, formData: props.data, row: props.data })
-    if (!control.visible || !control.required || props.readonly || control.readonly) continue
-    const value = props.data[field.field]
-    if (value === undefined || value === null || value === '' || (Array.isArray(value) && !value.length)) {
-      errors[field.field] = field.requiredMessage || `请输入${field.label}`
+    if (!control.visible || props.readonly || control.readonly) continue
+    const message = validateMobileFieldValue({ ...field, required: control.required }, props.data[field.field])
+    if (message) {
+      errors[field.field] = message
+      valid = false
     }
   }
-  return Object.keys(errors).length === 0
+  for (const instance of fieldRefs.values()) {
+    if (instance?.validate?.() === false) valid = false
+  }
+  return valid && Object.keys(errors).length === 0
+}
+
+function cloneDefaultValue(value) {
+  if (!value || typeof value !== 'object') return value
+  try { return JSON.parse(JSON.stringify(value)) }
+  catch { return value }
 }
 
 defineExpose({ validate })
@@ -120,15 +167,18 @@ defineExpose({ validate })
 .lowcode-form { display: flex; flex-direction: column; }
 .lowcode-form--inline-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) minmax(132rpx, 0.65fr);
-  gap: 14rpx;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 32rpx;
   align-items: end;
 }
 .lowcode-form--inline-grid :deep(.lowcode-field) { min-width: 0; margin-bottom: 0; }
 .lowcode-form--inline-grid :deep(.lowcode-field__label) { min-height: 34rpx; font-size: 22rpx; }
 .lowcode-form--inline-grid :deep(.lowcode-field__control) { min-width: 0; }
 .lowcode-form--inline-grid :deep(.lowcode-field__readonly) { padding: 16rpx; font-size: 24rpx; }
-@media (max-width: 360px) {
-  .lowcode-form--inline-grid { grid-template-columns: minmax(0, 1fr) minmax(132rpx, 0.72fr); }
+@media (min-width: 1024px) {
+  .lowcode-form--inline-grid {
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) minmax(132px, 0.65fr);
+    gap: 16px;
+  }
 }
 </style>

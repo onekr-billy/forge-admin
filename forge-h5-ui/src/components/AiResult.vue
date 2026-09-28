@@ -73,37 +73,37 @@ const preset = {
   },
   warning: {
     icon: 'alert-triangle',
-    color: '#d97706',
+    color: '#f97316',
     title: '请注意',
     description: '当前操作需要确认后继续。'
   },
   info: {
     icon: 'info',
-    color: '#2563eb',
+    color: '#3b82f6',
     title: '提示信息',
     description: '这里展示当前页面的提示内容。'
   },
   empty: {
     icon: 'inbox',
-    color: '#64748b',
+    color: '#475569',
     title: '暂无内容',
     description: '当前没有可展示的数据。'
   },
   forbidden: {
     icon: 'shield-off',
-    color: '#8b5cf6',
+    color: '#475569',
     title: '暂无权限',
     description: '你没有访问当前内容的权限。'
   },
   notFound: {
     icon: 'compass',
-    color: '#64748b',
+    color: '#475569',
     title: '页面不存在',
     description: '当前页面可能已移动或被删除。'
   },
   network: {
     icon: 'wifi-off',
-    color: '#0891b2',
+    color: '#3b82f6',
     title: '网络异常',
     description: '请检查网络连接后重试。'
   }
@@ -130,46 +130,34 @@ const resolvedDescription = computed(() => props.description || currentPreset.va
 }
 
 .ai-result__icon-wrap {
-  position: relative;
   display: flex;
-  width: 132rpx;
-  height: 132rpx;
+  width: 88rpx;
+  height: 88rpx;
   align-items: center;
   justify-content: center;
-  border: 1rpx solid rgba(255, 255, 255, 0.88);
-  border-radius: 38rpx;
-  background: rgba(255, 255, 255, 0.74);
-  box-shadow: 0 14rpx 34rpx rgba(15, 23, 42, 0.06);
-  backdrop-filter: blur(20rpx);
-}
-
-.ai-result__icon-wrap::before {
-  position: absolute;
-  inset: 20rpx;
-  border-radius: 28rpx;
-  background: currentColor;
-  opacity: 0.08;
-  content: '';
+  border: 1rpx solid var(--forge-border, #cbd5e1);
+  border-radius: 10rpx;
+  background: var(--forge-color-primary-soft, #f5f7ff);
 }
 
 .ai-result__title {
   display: block;
   max-width: 620rpx;
-  margin-top: 30rpx;
-  color: #1e293b;
-  font-size: 36rpx;
-  font-weight: 950;
-  line-height: 1.25;
+  margin-top: 24rpx;
+  color: var(--forge-text-primary, #1e293b);
+  font-size: 31rpx;
+  font-weight: 500;
+  line-height: 1.35;
 }
 
 .ai-result__desc {
   display: block;
   max-width: 620rpx;
-  margin-top: 14rpx;
-  color: #64748b;
-  font-size: 25rpx;
-  font-weight: 600;
-  line-height: 1.55;
+  margin-top: 10rpx;
+  color: var(--forge-text-secondary, #475569);
+  font-size: 23rpx;
+  font-weight: 400;
+  line-height: 1.6;
 }
 
 .ai-result__extra {
@@ -181,7 +169,7 @@ const resolvedDescription = computed(() => props.description || currentPreset.va
   display: flex;
   width: 100%;
   max-width: 560rpx;
-  gap: 18rpx;
-  margin-top: 42rpx;
+  gap: 12rpx;
+  margin-top: 32rpx;
 }
 </style>

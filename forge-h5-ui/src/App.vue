@@ -65,11 +65,8 @@ export default {
 </script>
 
 <style lang="scss">
-@import "uview-plus/index.scss";
 @import "@/styles/theme.css";
 @import "@/styles/global.css";
-@import "@/styles/dialog.css";
-@import "@/styles/notify.css";
 
 /*每个页面公共css */
 </style>

@@ -1160,3 +1160,15 @@ CRUD 详情页的渲染逻辑是“主表 `AiForm` + 子表 `ChildTableEditor`�
 **问题描述**：流程模型版本清理 SQL 原文为 `ORDER BY ... LIMIT ... FOR UPDATE`，经过 MyBatis-Plus 租户拦截器和数据权限拦截器的 JSqlParser 重写后，输出变成 `FOR UPDATE ORDER BY ... LIMIT ...`，MySQL 报 1064，清理接口稳定返回 500。
 
 **解决方案**：需要行锁的 Mapper 查询只保留显式租户/逻辑删除条件和 `FOR UPDATE`，不要在同一条锁 SQL 中拼排序或行数限制；若排序决定业务语义，查询返回后在 Java 中按与原 SQL 相同的字段和方向稳定排序，再执行保留/删除判定。新增锁查询契约测试，禁止 `FOR UPDATE` 与排序/行数限制同时出现。
+
+## Flow 服务承载业务表单接口时不能沿用旧的 FlowClient 8080 默认端口
+
+**发现日期**：2026-09-28
+
+**问题描述**：H5 网关按约定把 `/ai/business/flow/**` 转到 Flow 服务。Flow 服务同时装配 generator 的 `BusinessFlowController`，该服务内部仍通过 `FlowClient` 读取 `/api/flow/task/form/{taskId}`。若未显式配置客户端地址，旧默认值 `localhost:8080` 与仓库 Flow 基准端口 `8081` 不一致；内部连接失败被表单服务安全收敛为空任务，前端最终只看到“任务不存在或无权访问”，而走 Admin 的 PC 端因为部署时配置了 Flow 地址所以正常。
+
+**解决方案**：
+- `FlowClientProperties` 默认地址与仓库 Flow 端口统一为 `http://localhost:8081`，容器或非标准部署仍通过 `forge.flow.client.url` 显式覆盖；
+- 自调用继续透传当前 Sa-Token，让 `FlowAccessGuard` 执行租户和参与人校验，禁止为消除报错绕过权限；
+- H5 业务表单只消费 `task-form-context`，接口失败时不再从表单资产或流程变量伪造可编辑表单；
+- 回归同时覆盖客户端默认地址和前端无资产兜底，真实部署后再用当前用户待办验证接口 200。
