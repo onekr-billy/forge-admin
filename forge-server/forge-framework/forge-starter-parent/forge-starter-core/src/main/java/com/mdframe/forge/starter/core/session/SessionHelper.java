@@ -39,7 +39,19 @@ public class SessionHelper {
      */
     public static Long getUserId() {
         LoginUser loginUser = getLoginUser();
-        return loginUser != null ? loginUser.getUserId() : null;
+        if (loginUser != null && loginUser.getUserId() != null) {
+            return loginUser.getUserId();
+        }
+        // Token 已登录但 Session 里尚未写入 loginUser 时，回退到 Sa-Token loginId，
+        // 避免私有文件 uploaderId 落库为 null，导致后续无法读取。
+        try {
+            if (StpUtil.isLogin()) {
+                return StpUtil.getLoginIdAsLong();
+            }
+        } catch (Exception ignored) {
+            // 无登录上下文
+        }
+        return null;
     }
 
     /**

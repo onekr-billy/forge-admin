@@ -203,15 +203,16 @@ public class FileManager {
         validateFile(file, storageType);
         
         // 秒传检查：仅当 businessType 和 businessId 也一致时才复用
+        // avatar 不做秒传：同图反复裁剪上传应生成新记录，避免复用旧元数据里过期的 accessUrl
         String md5 = FileUtil.calculateMd5(file);
-        if (metadataPersistence != null) {
+        if (metadataPersistence != null && !isAvatarBusinessType(businessType)) {
             FileMetadata existing = metadataPersistence.getByMd5(md5);
             if (existing != null
                     && java.util.Objects.equals(existing.getBusinessType(), businessType)
-                    && java.util.Objects.equals(existing.getBusinessId(), businessId)) {
+                    && java.util.Objects.equals(normalizeBusinessId(existing.getBusinessId()), normalizeBusinessId(businessId))) {
                 assertReadPermission(existing.getFileId(), existing);
                 log.info("文件秒传: md5={}, businessType={}", md5, businessType);
-                return existing;
+                return withFreshAccessUrl(existing);
             }
         }
         
@@ -233,6 +234,36 @@ public class FileManager {
             metadataPersistence.save(metadata);
         }
         
+        return metadata;
+    }
+
+    private static boolean isAvatarBusinessType(String businessType) {
+        return "avatar".equalsIgnoreCase(businessType);
+    }
+
+    private static String normalizeBusinessId(String businessId) {
+        return businessId == null || businessId.isBlank() ? null : businessId;
+    }
+
+    /**
+     * 秒传复用旧元数据时，重新签发临时访问地址，避免把库里过期的 accessUrl 直接返回给前端。
+     */
+    private FileMetadata withFreshAccessUrl(FileMetadata metadata) {
+        if (metadata == null || metadata.getFileId() == null) {
+            return metadata;
+        }
+        try {
+            FileStorage storage = getStorage(metadata.getStorageType());
+            if (storage == null) {
+                return metadata;
+            }
+            String freshUrl = storage.getAccessUrl(metadata.getFileId(), 3600);
+            if (freshUrl != null && !freshUrl.isBlank()) {
+                metadata.setAccessUrl(freshUrl);
+            }
+        } catch (Exception e) {
+            log.warn("秒传刷新 accessUrl 失败: fileId={}", metadata.getFileId(), e);
+        }
         return metadata;
     }
     

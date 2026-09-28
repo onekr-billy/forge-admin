@@ -68,14 +68,14 @@ const dropdownOptions = computed(() => {
   return baseOptions
 })
 
-async function loadAvatar() {
+async function loadAvatar(forceRefresh = false) {
   const avatar = userStore.avatar
   if (!avatar) {
     avatarSrc.value = ''
     return
   }
   try {
-    avatarSrc.value = await resolveRenderableFileUrl(avatar)
+    avatarSrc.value = await resolveRenderableFileUrl(avatar, undefined, forceRefresh)
   }
   catch {
     avatarSrc.value = ''
@@ -125,6 +125,6 @@ function handleSelect(key) {
 }
 
 watch(() => userStore.avatar, () => {
-  loadAvatar()
+  loadAvatar(true)
 }, { immediate: true })
 </script>

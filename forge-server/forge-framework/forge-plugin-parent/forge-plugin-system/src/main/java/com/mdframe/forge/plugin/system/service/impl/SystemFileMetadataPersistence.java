@@ -90,6 +90,14 @@ public class SystemFileMetadataPersistence implements FileMetadataPersistence {
         if (!Boolean.TRUE.equals(entity.getIsPrivate())) {
             return true;
         }
+        // 头像要在个人资料/用户列表中展示，登录用户按 fileId 可读
+        if ("avatar".equals(entity.getBusinessType())) {
+            try {
+                return StpUtil.isLogin();
+            } catch (Exception ignored) {
+                return false;
+            }
+        }
         return isAdminOrUploader(entity, userId);
     }
 
