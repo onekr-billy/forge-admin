@@ -45,6 +45,14 @@ public class PrintMetadataResolver {
     }
 
     public Metadata draft(PrintActor actor, PrintSourceRequest source) {
+        return draft(actor, source, true);
+    }
+
+    /**
+     * @param softSkipIncompleteChildren true：设计草稿/创建模板允许跳过未配齐的子表关系；
+     *                                   false：发布前必须配齐，否则给出可操作的拦截提示。
+     */
+    public Metadata draft(PrintActor actor, PrintSourceRequest source, boolean softSkipIncompleteChildren) {
         var app = applications.selectEntityById(actor.tenantId(), source.applicationId());
         if (app == null) {
             throw PrintFailure.missing();
@@ -52,15 +60,20 @@ public class PrintMetadataResolver {
         var root = json.createObjectNode();
         root.putObject("application").set("options", parse(app.getOptions()));
         root.set("objects", json.valueToTree(applicationObjects.selectByApplicationId(actor.tenantId(), source.applicationId())));
-        return resolve(actor, source, root, false);
+        return resolve(actor, source, root, false, softSkipIncompleteChildren);
     }
 
     public Metadata candidate(PrintActor actor, PrintSourceRequest source, JsonNode snapshot) {
-        return resolve(actor, source, snapshot, false);
+        return candidate(actor, source, snapshot, true);
+    }
+
+    public Metadata candidate(PrintActor actor, PrintSourceRequest source, JsonNode snapshot,
+                              boolean softSkipIncompleteChildren) {
+        return resolve(actor, source, snapshot, false, softSkipIncompleteChildren);
     }
 
     public Metadata published(PrintActor actor, PrintSourceRequest source, JsonNode snapshot) {
-        return resolve(actor, source, snapshot, true);
+        return resolve(actor, source, snapshot, true, false);
     }
 
     public void assertRuntimeEnabled(PrintActor actor, Metadata metadata) {
@@ -75,7 +88,8 @@ public class PrintMetadataResolver {
         }
     }
 
-    private Metadata resolve(PrintActor actor, PrintSourceRequest source, JsonNode snapshot, boolean published) {
+    private Metadata resolve(PrintActor actor, PrintSourceRequest source, JsonNode snapshot,
+                             boolean published, boolean softSkipIncompleteChildren) {
         var object = sources.object(snapshot, source);
         Model main = model(actor, object, published);
         List<Child> children = new ArrayList<>();
@@ -134,7 +148,12 @@ public class PrintMetadataResolver {
                 }
             }
             if (relations.size() != 1) {
-                throw invalid("children." + ref.getModelCode() + ".relation");
+                // 创建/设计草稿：子表关系未配齐时跳过该子表，允许先建主表打印模板；
+                // 发布（打印模板发布 / 应用发布清单）必须严格，并给出可操作提示。
+                if (softSkipIncompleteChildren) {
+                    continue;
+                }
+                throw relationConfigInvalid(ref.getModelCode(), relations.size());
             }
             String mainColumn;
             String childColumn;
@@ -143,16 +162,19 @@ public class PrintMetadataResolver {
                 childColumn = column(child, relations.get(0)[1]);
             }
             catch (RuntimeException ex) {
-                // 设计草稿：子表外键对不上时跳过该子表，仍允许为主表建打印模板；
-                // 已发布清单必须严格，避免运行时静默丢明细。
-                if (!published) {
+                // 创建/设计草稿：子表外键对不上时跳过该子表，仍允许为主表建打印模板；
+                // 发布必须严格，避免运行时静默丢明细。
+                if (softSkipIncompleteChildren) {
                     continue;
                 }
                 throw ex;
             }
             if (childColumn.equals(child.config().getPrimaryKeyColumn())
                     || Set.of("tenant_id", "del_flag", "create_by", "update_by").contains(childColumn)) {
-                throw invalid("children." + ref.getModelCode() + ".relation");
+                if (softSkipIncompleteChildren) {
+                    continue;
+                }
+                throw relationConfigInvalid(ref.getModelCode(), -1);
             }
             children.add(new Child(ref.getModelCode(), child, mainColumn, childColumn, readableFields));
         }
@@ -415,7 +437,36 @@ public class PrintMetadataResolver {
         throw invalid("versionId");
     }
 
+    private RuntimeException relationConfigInvalid(String modelCode, int relationCount) {
+        String path = "children." + modelCode + ".relation";
+        String tip;
+        if (relationCount == 0) {
+            tip = "无法绑定子表「" + modelCode + "」：未找到与主表的唯一外键关系。"
+                    + "请先到「业务对象设计器 → 页面设计」按下面检查："
+                    + "① 子表 modelRefs.relations 是否声明了 sourceField、targetField；"
+                    + "② 主从表配置（masterDetailConfig）是否指定了该子表及外键；"
+                    + "③ 子表模型字段中是否存在该外键列。"
+                    + "修好后重新打开打印设计刷新字段目录，再保存或发布打印模板。";
+        }
+        else if (relationCount < 0) {
+            tip = "子表「" + modelCode + "」的关联字段无效（不能使用主键或 tenant_id/del_flag 等系统字段）。"
+                    + "请在「业务对象设计器 → 主从配置」改用子表指向主表的外键字段（例如 xxxId），"
+                    + "修好后重新打开打印设计再保存或发布。";
+        }
+        else {
+            tip = "子表「" + modelCode + "」匹配到 " + relationCount + " 条主从关系，打印要求有且仅有一条。"
+                    + "请到「业务对象设计器」清理重复关系，或在 masterDetailConfig.children 中为该子表显式指定唯一的 sourceField/targetField；"
+                    + "修好后重新打开打印设计再保存或发布。";
+        }
+        return PrintFailure.field(path, tip);
+    }
+
     private RuntimeException invalid(String path) {
-        return PrintFailure.field(path, "打印来源缺少完整的固定版本或关系配置：" + path);
+        if (path != null && path.startsWith("children.") && path.endsWith(".relation")) {
+            String modelCode = path.substring("children.".length(), path.length() - ".relation".length());
+            return relationConfigInvalid(modelCode, 0);
+        }
+        return PrintFailure.field(path, "打印来源缺少完整的固定版本或关系配置：" + path
+                + "。请检查应用发布快照、业务对象设计版本，以及页面主从关系配置是否完整。");
     }
 }

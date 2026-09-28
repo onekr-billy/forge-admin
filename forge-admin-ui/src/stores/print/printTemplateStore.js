@@ -166,7 +166,7 @@ export const usePrintTemplateStore = defineStore('printTemplates', {
       }
       catch (error) {
         if (generation === this.generation)
-          this.error = error.message || '发布失败'
+          this.error = formatPrintApiError(error, '发布失败')
         return false
       }
       finally {

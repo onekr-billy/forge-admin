@@ -61,7 +61,10 @@ public class LowcodePrintDataProvider implements PrintDataProvider {
     @Override
     public void authorizeDesignSource(PrintActor actor, PrintSourceRequest source, PrintDesignAction action) {
         applicationAccess.authorize(actor, source.applicationId(), action);
-        metadata.draft(actor, source);
+        // 创建/打开/保存草稿：软跳过未配齐的子表关系，避免卡住主表模板创建；
+        // 发布打印模板：严格校验，并返回可操作的修复提示。
+        boolean softSkip = action != PrintDesignAction.PUBLISH;
+        metadata.draft(actor, source, softSkip);
     }
 
     @Override

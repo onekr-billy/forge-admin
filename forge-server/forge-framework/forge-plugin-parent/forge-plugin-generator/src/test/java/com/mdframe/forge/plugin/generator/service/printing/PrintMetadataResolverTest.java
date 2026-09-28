@@ -92,6 +92,48 @@ class PrintMetadataResolverTest {
         assertThat(result.children()).isEmpty();
     }
 
+    @Test void draftSkipsChildWhenRelationCountIsNotExactlyOne() {
+        // 设计态有子表引用但 relations 为空：创建/设计草稿应跳过子表，只用主表，不能卡住
+        var purchase = draftConfig(13, "purchase", true);
+        purchase.setPageSchema(page(true).replace(
+                "\"relations\":[{\"targetObjectCode\":\"purchase\",\"sourceField\":\"purchase_id\",\"targetField\":\"id\"}]",
+                "\"relations\":[]"));
+        when(drafts.selectByConfigKey(1L, "purchase")).thenReturn(purchase);
+        when(drafts.selectByConfigKey(1L, "item")).thenReturn(draftConfig(14, "item", false));
+        var result = resolver.candidate(ACTOR, SOURCE, resolver.parse(snapshot()));
+        assertThat(result.main().config().getId()).isEqualTo(13);
+        assertThat(result.children()).isEmpty();
+    }
+
+    @Test void draftStrictRejectsMissingRelationWithActionableMessage() {
+        // 发布打印模板前走严格草稿校验：缺关系时拦截并给出怎么修的提示
+        var purchase = draftConfig(13, "purchase", true);
+        purchase.setPageSchema(page(true).replace(
+                "\"relations\":[{\"targetObjectCode\":\"purchase\",\"sourceField\":\"purchase_id\",\"targetField\":\"id\"}]",
+                "\"relations\":[]"));
+        when(drafts.selectByConfigKey(1L, "purchase")).thenReturn(purchase);
+        when(drafts.selectByConfigKey(1L, "item")).thenReturn(draftConfig(14, "item", false));
+        assertThatThrownBy(() -> resolver.candidate(ACTOR, SOURCE, resolver.parse(snapshot()), false))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("无法绑定子表「items」")
+                .hasMessageContaining("业务对象设计器")
+                .hasMessageContaining("保存或发布打印模板");
+    }
+
+    @Test void publishedRejectsMissingRelationWithActionableMessage() {
+        // 已发布快照必须严格：缺关系时拦截，并给出可操作的修复提示
+        var purchase = version(130, 13, "purchase", true);
+        purchase.setPageSchema(page(true).replace(
+                "\"relations\":[{\"targetObjectCode\":\"purchase\",\"sourceField\":\"purchase_id\",\"targetField\":\"id\"}]",
+                "\"relations\":[]"));
+        when(versions.selectVersionById(1L, 13L, 130L)).thenReturn(purchase);
+        assertThatThrownBy(() -> resolver.published(ACTOR, SOURCE, resolver.parse(snapshot())))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("无法绑定子表「items」")
+                .hasMessageContaining("业务对象设计器")
+                .hasMessageContaining("保存或发布打印模板");
+    }
+
     @Test void resolvesCamelCaseRelationFieldAgainstSnakeCaseColumn() {
         var purchase = draftConfig(13, "purchase", true);
         purchase.setPageSchema(page(true).replace("purchase_id", "purchaseId"));
