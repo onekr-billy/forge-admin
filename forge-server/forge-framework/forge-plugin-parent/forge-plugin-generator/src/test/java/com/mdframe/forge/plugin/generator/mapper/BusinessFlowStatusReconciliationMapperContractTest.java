@@ -26,6 +26,12 @@ class BusinessFlowStatusReconciliationMapperContractTest {
         assertTrue(xml.contains("status_sync_lock_owner = #{link.statusSyncLockOwner}"));
         assertTrue(xml.contains("WHERE tenant_id = #{tenantId}"));
         assertTrue(xml.contains("flow_status IN ('STARTED', 'RUNNING', 'IN_PROCESS', 'NEED_MODIFY')"));
+        assertTrue(xml.contains("<update id=\"requeueDeadStatusSync\">"));
+        assertTrue(xml.contains("status_sync_status = 'DEAD'"));
+        assertTrue(xml.contains("status_sync_status = 'PENDING'"));
+        assertTrue(xml.contains("status_sync_replay_count = status_sync_replay_count + 1"));
+        assertTrue(xml.contains("status_sync_replayed_by = #{replayedBy}"));
+        assertTrue(xml.contains("status_sync_replay_reason = #{replayReason}"));
         assertFalse(xml.contains("${"));
     }
 }

@@ -57,4 +57,10 @@ public interface BusinessFlowInstanceLinkMapper extends BaseMapper<AiBusinessFlo
                              @Param("nextRetryTime") LocalDateTime nextRetryTime,
                              @Param("errorType") String errorType,
                              @Param("now") LocalDateTime now);
+
+    int requeueDeadStatusSync(@Param("tenantId") Long tenantId,
+                              @Param("id") Long id,
+                              @Param("replayedBy") Long replayedBy,
+                              @Param("replayReason") String replayReason,
+                              @Param("now") LocalDateTime now);
 }

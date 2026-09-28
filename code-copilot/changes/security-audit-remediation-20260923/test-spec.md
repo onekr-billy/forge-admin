@@ -406,6 +406,14 @@
 - 实际结果：可靠分发、Stream 消费、自动配置、发布器、Generator Inbox 消费定向测试 20/20；34/34 个相关依赖反应堆模块成功，`forge-flow-client` 25/25、`forge-plugin-generator` 1394/1394、`forge-plugin-flow` 235/235，均 0 失败、0 错误、0 跳过；`git diff --check` 通过。
 - 环境限制：未连接真实 Redis/MySQL/Flowable，未执行 Redis 主从切换、网络分区、XADD 结果丢失、业务进程 kill -9、双实例 pending 抢占或长时间离线应用追赶；Stream 当前不做可能删除未确认消息的长度裁剪。状态对账 DEAD 的授权人工重放仍待完成，T4.2/T4.3 巨型组件/巨型类改造继续按用户要求排除。
 
+## 1.46 2026-09-28 状态对账 DEAD 授权人工重放
+
+- 授权与协议：仅新增的高风险权限 `ai:businessFlow:reconcile:manage` 可调用 `POST /ai/business/flow/status-reconciliation/{linkId}/replay`；接口使用明确 DTO 校验必填且最长 500 字符的重放原因，操作者和租户只能来自可信登录会话。V1.0.201 以 `min_user_type=1` 注册按钮/API 资源且不自动授予任何角色。
+- 租户与状态：Mapper 以显式 `tenant_id + id + DEAD + 本地非终态` 做原子 CAS；跨租户或不存在统一按 404 处理，非 DEAD、已终态或竞争失败记录按 409 拒绝，不允许普通实体更新覆盖恢复审计字段。
+- 重放与审计：成功操作仅执行 `DEAD -> PENDING` 重新入队，清理旧租约/错误并重置自动重试计数，不在 HTTP 事务内直接访问 Flow；同时原子累加人工重放次数并记录操作者、时间、原因，接口操作日志禁止保存请求和响应正文。
+- 实际结果：状态对账服务、Dispatcher、Controller 权限/DTO、Mapper 和 V1.0.200/V1.0.201 契约定向测试 20/20；Generator 依赖反应堆 33/33 模块成功，`forge-plugin-generator` 1401/1401，0 失败、0 错误、0 跳过。Mapper XML、迁移静态扫描和 `git diff --check` 通过。
+- 环境限制：未连接真实 MySQL 执行 V1.0.200/V1.0.201 Flyway，未启动 Admin/Flow Server 验证真实 HTTP 多角色权限矩阵，也未执行双节点 CAS、进程崩溃、Flowable/MySQL/Redis 故障注入或真实 DEAD 记录重放；T4.2/T4.3 巨型组件/巨型类改造继续按用户要求排除。
+
 ## 2. P0 必跑验证
 
 ### 动态脚本与 HTML

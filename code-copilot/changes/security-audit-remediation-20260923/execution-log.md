@@ -1,5 +1,25 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：T4.4 状态对账 DEAD 授权人工重放
+
+### 实现
+
+- 新增 `POST /ai/business/flow/status-reconciliation/{linkId}/replay`，只接受带 `ai:businessFlow:reconcile:manage` 高风险权限的请求。重放原因使用明确 DTO 校验，可信租户与操作者来自登录会话；操作日志关闭请求参数和响应结果保存，避免把重放原因或上下文写入通用审计正文。
+- 状态恢复采用数据库 CAS：仅允许当前租户、本地流程仍非终态且对账状态为 DEAD 的关联原子转回 PENDING；重置自动重试/调度字段并清理旧租约和错误。HTTP 请求只重新入队，不同步调用 Flow，后续继续由既有租约 Dispatcher 对账。
+- 跨租户和不存在记录统一返回不存在，非 DEAD、已终态和并发竞争失败统一拒绝。四个恢复审计字段被排除在 MyBatis-Plus 通用实体写入之外，只能由专用 Mapper SQL 原子累加/写入重放次数、操作者、时间和原因。
+- 新增 V1.0.201，以 `information_schema` 防重复增加审计列，并注册按钮/API 权限资源；资源要求 `min_user_type=1`，没有自动写入任何角色授权关系。
+
+### 验证
+
+- 状态对账服务、Dispatcher、Controller 权限/DTO、Mapper 和 V1.0.200/V1.0.201 契约定向测试 20/20，覆盖租户 CAS、原因规范化、跨租户隐藏、非 DEAD 拒绝、审计字段保护和资源迁移约束。
+- Generator 全量测试首次在沙箱内因 MockWebServer 无权绑定临时端口而中止；允许本机测试端口后同一命令复跑，33/33 个依赖反应堆模块成功，`forge-plugin-generator` 1401/1401，0 失败、0 错误、0 跳过。
+- `BusinessFlowController` 191 行、`BusinessFlowStatusReconciliationService` 190 行；Mapper XML 通过 `xmllint --noout`，迁移未发现 `${...}` 或 `tenant_id = 0`，`git diff --check` 通过。用户已有 `.DS_Store` 修改未触碰、未纳入本变更。
+
+### 未覆盖
+
+- 未连接真实 MySQL 执行 V1.0.200/V1.0.201，也未启动 Admin/Flow Server 执行平台管理员、普通用户和跨租户用户的真实 HTTP 权限矩阵。
+- 未执行两个真实节点竞争重放、重放后进程崩溃、Flowable/MySQL/Redis 网络分区或真实 DEAD 数据恢复；这些仍是 T4.4 的生产故障注入/运维验收项，当前自动化结果不能替代故障演练。T4.2/T4.3 巨型组件/巨型类改造继续按用户要求排除。
+
 ## 2026-09-28：T4.4 Redis Stream 入箱前 ACK 与 pending 接管
 
 ### 实现

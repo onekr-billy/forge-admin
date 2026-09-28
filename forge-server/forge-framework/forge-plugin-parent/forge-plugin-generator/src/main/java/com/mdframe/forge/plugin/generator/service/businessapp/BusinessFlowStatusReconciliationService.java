@@ -4,6 +4,7 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessFlowInstanceLi
 import com.mdframe.forge.plugin.generator.enums.BusinessFlowStatusSyncStatus;
 import com.mdframe.forge.plugin.generator.mapper.BusinessFlowInstanceLinkMapper;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
@@ -90,6 +91,31 @@ public class BusinessFlowStatusReconciliationService {
         requireUpdated(updated, "流程状态对账失败状态已被其他工作节点更新");
     }
 
+    /**
+     * Requeues a tenant-scoped DEAD record without performing the remote read in the HTTP transaction.
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public AiBusinessFlowInstanceLink requeueDead(Long linkId, Long replayedBy, String replayReason) {
+        if (linkId == null || linkId <= 0) {
+            throw new BusinessException(400, "流程状态对账记录ID不能为空");
+        }
+        Long tenantId = requireCurrentTenantId();
+        Long operatorId = requireOperator(replayedBy);
+        String reason = normalizeReason(replayReason);
+        LocalDateTime now = LocalDateTime.now();
+        int updated = TenantContextHolder.executeIgnore(() -> linkMapper.requeueDeadStatusSync(
+                tenantId, linkId, operatorId, reason, now));
+        if (updated != 1) {
+            AiBusinessFlowInstanceLink existing = TenantContextHolder.executeIgnore(
+                    () -> linkMapper.selectByLinkId(tenantId, linkId));
+            if (existing == null) {
+                throw new BusinessException(404, "流程状态对账死信不存在或不属于当前租户");
+            }
+            throw new BusinessException(409, "仅允许重放仍处于非终态的流程状态对账死信");
+        }
+        return requireLink(tenantId, linkId);
+    }
+
     private AiBusinessFlowInstanceLink requireLink(Long tenantId, Long id) {
         AiBusinessFlowInstanceLink link = TenantContextHolder.executeIgnore(
                 () -> linkMapper.selectByLinkId(tenantId, id));
@@ -111,6 +137,37 @@ public class BusinessFlowStatusReconciliationService {
         if (updated != 1) {
             throw new BusinessException(message);
         }
+    }
+
+    private Long requireCurrentTenantId() {
+        Long tenantId;
+        try {
+            tenantId = SessionHelper.getTenantId();
+        } catch (RuntimeException noSession) {
+            tenantId = null;
+        }
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException(403, "无法确定当前租户，禁止重放流程状态对账死信");
+        }
+        return tenantId;
+    }
+
+    private Long requireOperator(Long replayedBy) {
+        if (replayedBy == null || replayedBy <= 0) {
+            throw new BusinessException(403, "无法确定流程状态对账重放操作人");
+        }
+        return replayedBy;
+    }
+
+    private String normalizeReason(String replayReason) {
+        String reason = StringUtils.trimToNull(replayReason);
+        if (reason == null) {
+            throw new BusinessException(400, "人工重放原因不能为空");
+        }
+        if (reason.length() > 500) {
+            throw new BusinessException(400, "人工重放原因不能超过500个字符");
+        }
+        return reason;
     }
 
     private int safeMaxRetryCount() {

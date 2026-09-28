@@ -5,9 +5,12 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessFlowInstanceLink;
 import com.mdframe.forge.plugin.generator.enums.BusinessFlowStatusSyncStatus;
 import com.mdframe.forge.plugin.generator.mapper.BusinessFlowInstanceLinkMapper;
+import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.session.SessionHelper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.MockedStatic;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
@@ -15,12 +18,15 @@ import java.time.LocalDateTime;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class BusinessFlowStatusReconciliationServiceTest {
@@ -84,11 +90,73 @@ class BusinessFlowStatusReconciliationServiceTest {
     }
 
     @Test
+    void manualReplayUsesTenantCasAndPersistsAuditIdentity() {
+        AiBusinessFlowInstanceLink replayed = link(BusinessFlowStatusSyncStatus.PENDING, 0);
+        when(mapper.requeueDeadStatusSync(eq(7L), eq(10L), eq(42L),
+                eq("已核对远端流程仍可查询"), any(LocalDateTime.class))).thenReturn(1);
+        when(mapper.selectByLinkId(7L, 10L)).thenReturn(replayed);
+
+        try (MockedStatic<SessionHelper> session = mockStatic(SessionHelper.class)) {
+            session.when(SessionHelper::getTenantId).thenReturn(7L);
+
+            assertSame(replayed, service.requeueDead(
+                    10L, 42L, " 已核对远端流程仍可查询 "));
+        }
+
+        verify(mapper).requeueDeadStatusSync(eq(7L), eq(10L), eq(42L),
+                eq("已核对远端流程仍可查询"), any(LocalDateTime.class));
+    }
+
+    @Test
+    void manualReplayDoesNotRevealCrossTenantRecord() {
+        when(mapper.requeueDeadStatusSync(eq(7L), eq(99L), eq(42L),
+                eq("人工核对"), any(LocalDateTime.class))).thenReturn(0);
+        when(mapper.selectByLinkId(7L, 99L)).thenReturn(null);
+
+        try (MockedStatic<SessionHelper> session = mockStatic(SessionHelper.class)) {
+            session.when(SessionHelper::getTenantId).thenReturn(7L);
+
+            BusinessException failure = assertThrows(BusinessException.class,
+                    () -> service.requeueDead(99L, 42L, "人工核对"));
+            assertEquals("流程状态对账死信不存在或不属于当前租户", failure.getMessage());
+        }
+    }
+
+    @Test
+    void manualReplayRejectsNonDeadOrAlreadyTerminalRecord() {
+        AiBusinessFlowInstanceLink existing = link(BusinessFlowStatusSyncStatus.RETRY, 1);
+        when(mapper.requeueDeadStatusSync(eq(7L), eq(10L), eq(42L),
+                eq("人工核对"), any(LocalDateTime.class))).thenReturn(0);
+        when(mapper.selectByLinkId(7L, 10L)).thenReturn(existing);
+
+        try (MockedStatic<SessionHelper> session = mockStatic(SessionHelper.class)) {
+            session.when(SessionHelper::getTenantId).thenReturn(7L);
+
+            BusinessException failure = assertThrows(BusinessException.class,
+                    () -> service.requeueDead(10L, 42L, "人工核对"));
+            assertEquals("仅允许重放仍处于非终态的流程状态对账死信", failure.getMessage());
+        }
+    }
+
+    @Test
+    void manualReplayRejectsMissingTrustedTenantBeforeDataAccess() {
+        try (MockedStatic<SessionHelper> session = mockStatic(SessionHelper.class)) {
+            session.when(SessionHelper::getTenantId).thenReturn(null);
+
+            assertThrows(BusinessException.class,
+                    () -> service.requeueDead(10L, 42L, "人工核对"));
+        }
+
+        verifyNoInteractions(mapper);
+    }
+
+    @Test
     void genericEntityUpdatesCannotOverwriteLeaseFencingColumns() throws Exception {
         for (String fieldName : new String[]{
                 "statusSyncStatus", "statusSyncRetryCount", "statusSyncNextTime",
                 "statusSyncLockOwner", "statusSyncLockTime", "statusSyncRemoteStatus",
-                "statusSyncErrorType", "statusSyncedTime"}) {
+                "statusSyncErrorType", "statusSyncedTime", "statusSyncReplayCount",
+                "statusSyncReplayedBy", "statusSyncReplayedTime", "statusSyncReplayReason"}) {
             TableField field = AiBusinessFlowInstanceLink.class.getDeclaredField(fieldName)
                     .getAnnotation(TableField.class);
             assertNotNull(field, fieldName);

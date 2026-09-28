@@ -83,4 +83,20 @@ public class AiBusinessFlowInstanceLink extends TenantEntity {
     /** 最近一次成功读取并应用远端状态的时间。 */
     @TableField(insertStrategy = FieldStrategy.NEVER, updateStrategy = FieldStrategy.NEVER)
     private LocalDateTime statusSyncedTime;
+
+    /** 状态对账进入 DEAD 后的人工重放次数。 */
+    @TableField(insertStrategy = FieldStrategy.NEVER, updateStrategy = FieldStrategy.NEVER)
+    private Integer statusSyncReplayCount;
+
+    /** 最近一次人工重放操作人。 */
+    @TableField(insertStrategy = FieldStrategy.NEVER, updateStrategy = FieldStrategy.NEVER)
+    private Long statusSyncReplayedBy;
+
+    /** 最近一次人工重放时间。 */
+    @TableField(insertStrategy = FieldStrategy.NEVER, updateStrategy = FieldStrategy.NEVER)
+    private LocalDateTime statusSyncReplayedTime;
+
+    /** 最近一次人工重放原因。 */
+    @TableField(insertStrategy = FieldStrategy.NEVER, updateStrategy = FieldStrategy.NEVER)
+    private String statusSyncReplayReason;
 }
