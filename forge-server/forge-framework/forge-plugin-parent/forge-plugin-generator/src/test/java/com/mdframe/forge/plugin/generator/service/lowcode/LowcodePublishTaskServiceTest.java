@@ -84,6 +84,17 @@ class LowcodePublishTaskServiceTest {
     }
 
     @Test
+    void deadReplayValidationRejectsTamperedCommandBeforeRequeue() {
+        when(mapper.insert(any(AiLowcodePublishTask.class))).thenReturn(1);
+        AiLowcodePublishTask task = service.appendPostSync(
+                config(), null, version(), "PUBLISH", false, null);
+        task.setTaskStatus(LowcodePublishTaskStatus.DEAD.getCode());
+        task.setCommandPayload(task.getCommandPayload().replace("orders", "invoices"));
+
+        assertThrows(BusinessException.class, () -> service.validateReplayable(task));
+    }
+
+    @Test
     void claimUsesTenantScopedLeaseCas() {
         AiLowcodePublishTask candidate = task(LowcodePublishTaskStatus.PENDING, 0);
         AiLowcodePublishTask claimed = task(LowcodePublishTaskStatus.PROCESSING, 1);
@@ -128,6 +139,17 @@ class LowcodePublishTaskServiceTest {
         LowcodeOnlinePublishCommand restored = service.restoreOnlinePublish(task);
         assertEquals(4, restored.expectedDraftVersion());
         assertEquals(task.getVersionId(), restored.versionId());
+    }
+
+    @Test
+    void onlineDeadReplayRejectsMismatchedOperationalSchemaIdentity() {
+        when(versionMapper.selectMaxVersionNo(7L, 10L)).thenReturn(2);
+        when(mapper.insert(any(AiLowcodePublishTask.class))).thenReturn(1);
+        AiLowcodePublishTask task = service.stageOnlinePublish(onlinePlan(), "request-worker");
+        task.setTaskStatus(LowcodePublishTaskStatus.DEAD.getCode());
+        task.setSchemaHash("0".repeat(64));
+
+        assertThrows(BusinessException.class, () -> service.validateReplayable(task));
     }
 
     private AiCrudConfig config() {

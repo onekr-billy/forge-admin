@@ -1,14 +1,17 @@
 package com.mdframe.forge.plugin.generator.controller;
 
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mdframe.forge.plugin.generator.dto.AiCrudConfigRenderVO;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeAppDraftDTO;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeCodegenRequest;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeMoveDomainDTO;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePublishDTO;
+import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodePublishTaskReplayDTO;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeCodegenService;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeAppService;
 import com.mdframe.forge.plugin.generator.service.lowcode.LowcodePublishService;
+import com.mdframe.forge.plugin.generator.service.lowcode.LowcodePublishTaskRecoveryService;
 import com.mdframe.forge.plugin.generator.vo.lowcode.LowcodeAppDetailVO;
 import com.mdframe.forge.plugin.generator.vo.lowcode.LowcodeCodePreviewVO;
 import com.mdframe.forge.plugin.generator.vo.lowcode.LowcodeVersionVO;
@@ -18,7 +21,11 @@ import com.mdframe.forge.starter.core.annotation.log.OperationLog;
 import com.mdframe.forge.starter.core.domain.OperationType;
 import com.mdframe.forge.starter.core.domain.PageQuery;
 import com.mdframe.forge.starter.core.domain.RespInfo;
+import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.session.LoginUser;
+import com.mdframe.forge.starter.core.session.SessionHelper;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -39,6 +46,7 @@ public class LowcodeAppController {
 
     private final LowcodeAppService appService;
     private final LowcodePublishService publishService;
+    private final LowcodePublishTaskRecoveryService publishTaskRecoveryService;
     private final LowcodeCodegenService codegenService;
 
     @GetMapping("/page")
@@ -102,6 +110,22 @@ public class LowcodeAppController {
     public RespInfo<Void> rollback(@PathVariable Long id, @PathVariable Long versionId) {
         publishService.rollback(id, versionId);
         return RespInfo.success();
+    }
+
+    @PostMapping("/publish-tasks/{taskId}/replay")
+    @SaCheckPermission("ai:lowcode:publish-task:replay")
+    @OperationLog(module = "低代码应用", type = OperationType.UPDATE, desc = "人工重放发布死信",
+            saveRequestParams = false, saveResponseResult = false)
+    public RespInfo<Void> replayPublishTask(
+            @PathVariable Long taskId,
+            @Valid @RequestBody LowcodePublishTaskReplayDTO dto) {
+        LoginUser loginUser = SessionHelper.getLoginUser();
+        if (loginUser == null || loginUser.getUserId() == null || loginUser.getUserId() <= 0) {
+            throw new BusinessException(403, "无法确定发布死信重放操作人");
+        }
+        publishTaskRecoveryService.requeueDead(
+                taskId, loginUser.getUserId(), dto.getReason());
+        return RespInfo.success("发布死信已进入重试队列", null);
     }
 
     @GetMapping("/{id}/code/preview")

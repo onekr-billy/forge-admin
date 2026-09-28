@@ -246,7 +246,29 @@ public class LowcodePublishTaskService {
 
     public LowcodePublishPostCommand restore(AiLowcodePublishTask task) {
         validateClaim(task);
-        if (!STAGE_POST_SYNC.equals(task.getCurrentStage())
+        return restorePostCommand(task);
+    }
+
+    /** DEAD 重新入队前验证阶段、摘要和不可变命令身份，不执行任何副作用。 */
+    public void validateReplayable(AiLowcodePublishTask task) {
+        validateTaskIdentity(task);
+        if (isOnlinePublishTask(task)) {
+            if (!STAGE_DDL_PENDING.equals(task.getCurrentStage())
+                    && !STAGE_CONFIG_PENDING.equals(task.getCurrentStage())
+                    && !STAGE_POST_SYNC.equals(task.getCurrentStage())) {
+                throw new BusinessException("在线发布死信阶段不支持人工重放");
+            }
+            restoreOnlinePublish(task);
+            return;
+        }
+        restorePostCommand(task);
+    }
+
+    private LowcodePublishPostCommand restorePostCommand(AiLowcodePublishTask task) {
+        validateTaskIdentity(task);
+        if ((!OPERATION_PUBLISH.equals(task.getOperationType())
+                && !OPERATION_ROLLBACK.equals(task.getOperationType()))
+                || !STAGE_POST_SYNC.equals(task.getCurrentStage())
                 || StringUtils.isAnyBlank(task.getCommandPayload(), task.getCommandDigest())) {
             throw new BusinessException("低代码发布任务阶段或命令快照无效");
         }
@@ -296,7 +318,19 @@ public class LowcodePublishTaskService {
                 || !Objects.equals(task.getVersionNo(), command.versionNo())
                 || !Objects.equals(task.getOperatorId(), command.operatorId())
                 || !Objects.equals(task.getRequestId(), "lowcode-online:" + command.requestDigest())
-                || command.configSnapshot() == null) {
+                || command.expectedDraftVersion() == null || command.expectedDraftVersion() < 0
+                || command.expectedPublishedVersion() == null || command.expectedPublishedVersion() < 0
+                || command.versionNo() == null || command.versionNo() <= command.expectedPublishedVersion()
+                || command.configSnapshot() == null
+                || StringUtils.isAnyBlank(command.configSnapshot().getModelSchema(),
+                        command.configSnapshot().getPageSchema())
+                || !digestEquals(task.getSchemaHash(), schemaHash(command.configSnapshot()))
+                || !Objects.equals(task.getRuntimeDatasourceId(),
+                        command.configSnapshot().getRuntimeDatasourceId())
+                || !Objects.equals(StringUtils.trimToNull(task.getRuntimeDatasourceCode()),
+                        StringUtils.trimToNull(command.configSnapshot().getRuntimeDatasourceCode()))
+                || !Objects.equals(StringUtils.trimToNull(task.getRuntimeTableName()),
+                        StringUtils.trimToNull(command.configSnapshot().getRuntimeTableName()))) {
             throw new BusinessException("在线发布任务命令身份校验失败");
         }
         return command;

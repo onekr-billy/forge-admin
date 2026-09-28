@@ -1,5 +1,25 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：T4.5 发布 DEAD 授权人工重放
+
+### 实现
+
+- 新增 `POST /ai/lowcode/app/publish-tasks/{taskId}/replay` 和独立高风险权限 `ai:lowcode:publish-task:replay`。请求使用明确 DTO，原因必填且最长 500 字符；租户与操作者只取登录会话，通用操作日志不保存请求和响应正文。
+- 恢复服务采用租户级 DEAD-only CAS，只执行重新入队，不在 HTTP 事务中同步执行在线 DDL 或后置同步。跨租户/不存在任务统一隐藏，非 DEAD 与并发状态变化返回冲突；重新入队前先验证不可变命令协议、摘要、阶段、配置/版本、模型/页面、schemaHash 及数据源身份，防止篡改命令被恢复执行。
+- 专用 Mapper 在同一原子更新中执行 `DEAD -> PENDING`、清理旧租约/错误、重置自动重试并累加人工重放次数，记录操作者、时间和原因。四个审计字段禁用 MyBatis-Plus 通用实体插入/更新，只能经专用 SQL 修改。
+- 新增 V1.0.203，以 `information_schema` 防重复增加审计列，并注册按钮/API 资源；资源 `tenant_id=1`、`min_user_type=1`，没有向任何角色自动授权。
+
+### 验证
+
+- Recovery、Controller、迁移、Mapper、任务恢复和 Dispatcher 定向测试 23/23，覆盖合法重放、原因规范化、跨租户隐藏、非 DEAD 拒绝、命令摘要/Schema/数据源身份篡改、缺失可信租户、并发 CAS 失败和审计字段保护。
+- 最终 Generator 完整回归 33/33 个依赖反应堆模块成功，`forge-plugin-generator` 1441/1441，0 失败、0 错误、0 跳过。
+- `LowcodeAppController`、`LowcodePublishTaskService` 和 `LowcodePublishTaskRecoveryService` 均低于 1000 行；本阶段没有开展用户明确排除的巨型组件/巨型类改造。
+
+### 未覆盖
+
+- 未连接真实 MySQL 执行 V1.0.203/Flyway，未启动 Admin 执行平台管理员、租户管理员、普通用户和跨租户用户的真实 HTTP 权限矩阵。
+- 未对真实 DEAD 在线 DDL 任务执行双节点同时重放、重新入队后进程 kill -9、DDL 部分成功或菜单成功后入口失败的补偿/回滚演练；T4.5 的实库故障注入任务继续保持未完成。
+
 ## 2026-09-28：T4.5 在线 DDL 分阶段恢复
 
 ### 实现

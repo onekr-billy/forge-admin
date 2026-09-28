@@ -1,6 +1,8 @@
 package com.mdframe.forge.plugin.generator.domain.entity;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -41,6 +43,18 @@ public class AiLowcodePublishTask implements Serializable {
     private LocalDateTime lockTime;
     private String errorType;
     private LocalDateTime completedTime;
+    /** DEAD 任务人工重放次数，仅允许专用 CAS SQL 写入。 */
+    @TableField(insertStrategy = FieldStrategy.NEVER, updateStrategy = FieldStrategy.NEVER)
+    private Integer replayCount;
+    /** 最近人工重放操作人。 */
+    @TableField(insertStrategy = FieldStrategy.NEVER, updateStrategy = FieldStrategy.NEVER)
+    private Long replayedBy;
+    /** 最近人工重放时间。 */
+    @TableField(insertStrategy = FieldStrategy.NEVER, updateStrategy = FieldStrategy.NEVER)
+    private LocalDateTime replayedTime;
+    /** 最近人工重放原因。 */
+    @TableField(insertStrategy = FieldStrategy.NEVER, updateStrategy = FieldStrategy.NEVER)
+    private String replayReason;
     private Long createBy;
     private LocalDateTime createTime;
     private Long createDept;

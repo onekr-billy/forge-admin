@@ -54,4 +54,10 @@ public interface LowcodePublishTaskMapper extends BaseMapper<AiLowcodePublishTas
                      @Param("expectedStage") String expectedStage,
                      @Param("nextStage") String nextStage,
                      @Param("now") LocalDateTime now);
+
+    int requeueDead(@Param("tenantId") Long tenantId,
+                    @Param("id") Long id,
+                    @Param("replayedBy") Long replayedBy,
+                    @Param("replayReason") String replayReason,
+                    @Param("now") LocalDateTime now);
 }

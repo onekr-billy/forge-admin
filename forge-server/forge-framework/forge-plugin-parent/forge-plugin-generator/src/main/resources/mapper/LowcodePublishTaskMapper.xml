@@ -26,6 +26,10 @@
         <result column="lock_time" property="lockTime"/>
         <result column="error_type" property="errorType"/>
         <result column="completed_time" property="completedTime"/>
+        <result column="replay_count" property="replayCount"/>
+        <result column="replayed_by" property="replayedBy"/>
+        <result column="replayed_time" property="replayedTime"/>
+        <result column="replay_reason" property="replayReason"/>
         <result column="create_by" property="createBy"/>
         <result column="create_time" property="createTime"/>
         <result column="create_dept" property="createDept"/>
@@ -39,7 +43,8 @@
         runtime_datasource_code, runtime_table_name, operator_id,
         command_payload, command_digest, current_stage, task_status,
         retry_count, next_retry_time, lock_owner, lock_time, error_type,
-        completed_time, create_by, create_time, create_dept, update_by, update_time
+        completed_time, replay_count, replayed_by, replayed_time, replay_reason,
+        create_by, create_time, create_dept, update_by, update_time
     </sql>
 
     <select id="selectByRequestId" resultMap="BaseResultMap">
@@ -168,6 +173,26 @@
           AND current_stage = #{expectedStage}
           AND task_status = 'PROCESSING'
           AND lock_owner = #{task.lockOwner}
+    </update>
+
+    <update id="requeueDead">
+        UPDATE ai_lowcode_publish_task
+        SET task_status = 'PENDING',
+            retry_count = 0,
+            next_retry_time = #{now},
+            lock_owner = NULL,
+            lock_time = NULL,
+            error_type = NULL,
+            completed_time = NULL,
+            replay_count = replay_count + 1,
+            replayed_by = #{replayedBy},
+            replayed_time = #{now},
+            replay_reason = #{replayReason},
+            update_by = #{replayedBy},
+            update_time = #{now}
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND task_status = 'DEAD'
     </update>
 
 </mapper>
