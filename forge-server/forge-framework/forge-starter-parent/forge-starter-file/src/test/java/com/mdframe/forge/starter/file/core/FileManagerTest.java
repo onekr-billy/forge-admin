@@ -175,6 +175,146 @@ class FileManagerTest {
         assertEquals("no-cache", response.getHeader("Pragma"));
     }
 
+    @Test
+    @DisplayName("skips instant upload for avatar and creates a new file")
+    void skipsInstantUploadForAvatar() throws Exception {
+        FileManager fileManager = fileManagerWithAllowedTypes("png,jpg,jpeg");
+        AtomicBoolean saved = new AtomicBoolean(false);
+        FileMetadata oldAvatar = FileMetadata.builder()
+                .fileId("old-avatar")
+                .businessType("avatar")
+                .businessId(null)
+                .storageType("local")
+                .md5("ignored")
+                .accessUrl("https://expired.example/old.png")
+                .isPrivate(true)
+                .build();
+        setPersistence(fileManager, new FileMetadataPersistence() {
+            @Override
+            public void save(FileMetadata metadata) {
+                saved.set(true);
+            }
+
+            @Override
+            public FileMetadata getById(String fileId) {
+                return oldAvatar;
+            }
+
+            @Override
+            public FileMetadata getByMd5(String md5) {
+                return oldAvatar;
+            }
+
+            @Override
+            public void incrementDownloadCount(String fileId) {
+            }
+
+            @Override
+            public void delete(String fileId) {
+            }
+
+            @Override
+            public boolean checkPermission(String fileId, Long userId) {
+                return true;
+            }
+
+            @Override
+            public boolean canModify(String fileId, Long userId) {
+                return true;
+            }
+        });
+
+        FileStorage storage = mock(FileStorage.class);
+        when(storage.getStorageType()).thenReturn("local");
+        when(storage.upload(org.mockito.ArgumentMatchers.any(MultipartFile.class),
+                org.mockito.ArgumentMatchers.eq("avatar"),
+                org.mockito.ArgumentMatchers.isNull()))
+                .thenReturn(FileMetadata.builder()
+                        .fileId("new-avatar")
+                        .businessType("avatar")
+                        .storageType("local")
+                        .accessUrl("https://fresh.example/new.png")
+                        .build());
+        Field storageField = FileManager.class.getDeclaredField("storageMap");
+        storageField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, FileStorage> storageMap = (java.util.Map<String, FileStorage>) storageField.get(fileManager);
+        storageMap.put("local", storage);
+
+        MultipartFile file = multipartFile("avatar.png", "image/png");
+        FileMetadata result = fileManager.upload(file, "avatar", null, "local", true);
+
+        assertEquals("new-avatar", result.getFileId());
+        assertTrue(saved.get());
+        org.mockito.Mockito.verify(storage).upload(file, "avatar", null);
+    }
+
+    @Test
+    @DisplayName("instant upload refreshes expired accessUrl")
+    void instantUploadRefreshesAccessUrl() throws Exception {
+        FileManager fileManager = fileManagerWithAllowedTypes("png,jpg,jpeg");
+        FileMetadata existing = FileMetadata.builder()
+                .fileId("file-common")
+                .businessType("common")
+                .businessId(null)
+                .storageType("local")
+                .accessUrl("https://expired.example/old.png")
+                .isPrivate(true)
+                .build();
+        setPersistence(fileManager, new FileMetadataPersistence() {
+            @Override
+            public void save(FileMetadata metadata) {
+            }
+
+            @Override
+            public FileMetadata getById(String fileId) {
+                return existing;
+            }
+
+            @Override
+            public FileMetadata getByMd5(String md5) {
+                return existing;
+            }
+
+            @Override
+            public void incrementDownloadCount(String fileId) {
+            }
+
+            @Override
+            public void delete(String fileId) {
+            }
+
+            @Override
+            public boolean checkPermission(String fileId, Long userId) {
+                return true;
+            }
+
+            @Override
+            public boolean canModify(String fileId, Long userId) {
+                return true;
+            }
+        });
+
+        FileStorage storage = mock(FileStorage.class);
+        when(storage.getStorageType()).thenReturn("local");
+        when(storage.getAccessUrl("file-common", 3600)).thenReturn("https://fresh.example/new.png");
+        Field storageField = FileManager.class.getDeclaredField("storageMap");
+        storageField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, FileStorage> storageMap = (java.util.Map<String, FileStorage>) storageField.get(fileManager);
+        storageMap.put("local", storage);
+
+        MultipartFile file = multipartFile("pic.png", "image/png");
+        FileMetadata result = fileManager.upload(file, "common", null, "local", true);
+
+        assertEquals("file-common", result.getFileId());
+        assertEquals("https://fresh.example/new.png", result.getAccessUrl());
+        org.mockito.Mockito.verify(storage, org.mockito.Mockito.never())
+                .upload(org.mockito.ArgumentMatchers.any(MultipartFile.class),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.any());
+    }
+
     private void setPersistence(FileManager fileManager, FileMetadataPersistence persistence) throws Exception {
         Field field = FileManager.class.getDeclaredField("metadataPersistence");
         field.setAccessible(true);

@@ -1111,6 +1111,7 @@ async function uploadAvatarFile(file) {
       throw new Error(res?.msg || res?.message || '头像上传失败')
     }
 
+    // 业务侧只持久化 fileId；accessUrl 是 COS 临时签名，不能当头像永久地址存
     const avatar = res.data.fileId || res.data.filePath || res.data.id
     if (!avatar)
       throw new Error('头像上传失败')
@@ -1127,7 +1128,10 @@ async function uploadAvatarFile(file) {
     }
 
     userStore.setUser({ ...userStore.userInfo, avatar })
-    await loadAvatar()
+    // 上传响应里的签名 URL 立刻可展示；再强制走 /api/file/url 刷新，避免沿用过期缓存
+    if (res.data.accessUrl)
+      avatarSrc.value = res.data.accessUrl
+    await loadAvatar(true)
     window.$message.success('头像更新成功')
   }
   finally {
@@ -1141,17 +1145,19 @@ function releaseAvatarCropObjectUrl() {
   avatarCropObjectUrl = ''
 }
 
-async function loadAvatar() {
+async function loadAvatar(forceRefresh = false) {
   const avatar = userStore.avatar
   if (!avatar) {
     avatarSrc.value = ''
     return
   }
   try {
-    avatarSrc.value = await resolveRenderableFileUrl(avatar)
+    avatarSrc.value = await resolveRenderableFileUrl(avatar, undefined, forceRefresh)
   }
   catch {
-    avatarSrc.value = ''
+    // 保留上传刚写入的临时 accessUrl，避免刷新失败时立刻变空白
+    if (!avatarSrc.value)
+      avatarSrc.value = ''
   }
 }
 
