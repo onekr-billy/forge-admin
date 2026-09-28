@@ -1,5 +1,22 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：T4.4 主动流程状态对账与终态恢复
+
+### 实现
+
+- 为 `ai_business_flow_instance_link` 增加独立主动对账状态机：`PENDING/WAITING/PROCESSING/RETRY/COMPLETED/DEAD`、租约持有者/时间、重试次数、下次执行时间、最近远端状态和失败类型。V1.0.200 使用 `information_schema` 防重复新增列与恢复索引，存量终态关联回填为 `COMPLETED`；实体通用 insert/update 明确排除这些运维字段，避免普通业务更新破坏租约 fencing。
+- 新增跨租户候选扫描与租户级 CAS 认领，短事务之外读取 Flow 状态；运行态按固定间隔继续轮询，异常按指数退避重试，过期 `PROCESSING` 可接管，达到上限进入 DEAD。所有状态写入均绑定可信 `tenant_id + id + lock_owner + PROCESSING`。
+- 远端状态读取后复验业务 Key、流程实例和租户身份；终态读取历史变量并复用既有 `BusinessFlowService.handleFlowCallback` 完成业务状态、表单和关联回写，未知状态、身份冲突或响应缺失均失败关闭且只记录异常类型。
+
+### 验证
+
+- 新增 Dispatcher、租约服务、Mapper XML 和 V1.0.200 契约测试 13 个，覆盖运行态轮询、全部终态映射、跨租户拒绝、租约 CAS、重试耗尽、敏感异常消息不落库和实体字段保护。
+- `BusinessFlowInstanceLinkMapper.xml` 通过 `xmllint --noout`；Generator 依赖反应堆 33/33 模块成功，Generator 1393/1393，0 失败、0 错误、0 跳过。
+
+### 未覆盖
+
+- 未连接真实 MySQL 执行 V1.0.200/Flyway，未启动真实 Admin/Flow Server，也未执行双节点竞争、认领后进程崩溃、网络分区或 Flowable 历史变量故障注入。Redis 入箱前消费 ACK 与状态对账 DEAD 的授权人工重放仍属于 T4.4 后续项；T4.2/T4.3 巨型组件/巨型类改造继续按用户要求排除。
+
 ## 2026-09-28：T4.4 审批、驳回与退回持久化命令
 
 ### 实现

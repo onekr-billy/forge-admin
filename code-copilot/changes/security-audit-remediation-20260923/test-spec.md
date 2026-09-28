@@ -388,6 +388,15 @@
 - 实际结果：上述命令分派、快照、防篡改、恢复 Policy 与事务顺序定向测试 22/22；Generator 依赖反应堆 33/33 模块成功，Generator 1380/1380，0 失败、0 错误、0 跳过；`git diff --check` 通过。
 - 环境限制：未连接真实 MySQL/Flowable 注入进程崩溃、远端成功后本地事务失败和双节点竞争；本批复用 V1.0.197，无新增 DDL。主动状态同步、Redis 入箱前 ACK 和授权人工重放继续保持未完成。
 
+## 1.44 2026-09-28 主动流程状态对账与终态恢复
+
+- 恢复状态机：V1.0.200 为流程关联新增 `PENDING/WAITING/PROCESSING/RETRY/COMPLETED/DEAD`、租约、重试、下次调度、远端状态和失败类型；普通实体 insert/update 不得覆盖这些运维字段。
+- 认领与重试：跨租户扫描只挑选本地非终态关联，实际认领和状态迁移必须显式绑定租户、记录 ID、当前状态和租约持有者；过期 `PROCESSING` 可接管，运行态重置失败次数并延时轮询，异常指数退避，达到上限进入 DEAD。
+- 远端可信边界：Flow 响应中的业务 Key、流程实例和租户只要存在就必须与本地关联一致；未知/空状态、响应失败、身份冲突或变量读取失败均不得回写本地终态。
+- 终态恢复：`approved/completed`、`rejected`、`canceled/terminated` 分别映射到本地 APPROVED、REJECTED、CANCELED；先读取运行时或历史变量，再复用既有终态回调事务完成业务状态与表单回写。
+- 实际结果：主动对账新增定向测试 13/13；Mapper XML 通过 `xmllint --noout`；Generator 依赖反应堆 33/33 模块成功，Generator 1393/1393，0 失败、0 错误、0 跳过。
+- 环境限制：未连接真实 MySQL 执行 V1.0.200/Flyway，未启动真实 Admin/Flow Server，未执行双节点竞争、认领后崩溃、网络分区和 Flowable 历史变量故障注入。Redis 入箱前 ACK 与 DEAD 的授权人工重放仍未完成。
+
 ## 2. P0 必跑验证
 
 ### 动态脚本与 HTML
