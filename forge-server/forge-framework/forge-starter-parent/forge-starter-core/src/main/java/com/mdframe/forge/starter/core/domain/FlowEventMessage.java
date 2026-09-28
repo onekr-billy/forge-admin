@@ -14,7 +14,7 @@ import java.util.Map;
 /**
  * 流程事件消息 DTO
  *
- * <p>用于 Redis Pub/Sub 和 HTTP Webhook 两种回调方式的统一消息体。</p>
+ * <p>用于 Redis Stream（兼容 Pub/Sub）和 HTTP Webhook 回调的统一消息体。</p>
  *
  * <h3>事件类型（eventType）说明</h3>
  * <ul>

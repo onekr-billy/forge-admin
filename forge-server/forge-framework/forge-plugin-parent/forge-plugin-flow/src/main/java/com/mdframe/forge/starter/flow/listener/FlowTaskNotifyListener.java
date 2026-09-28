@@ -102,7 +102,7 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
     @Lazy
     private FlowModelMapper flowModelMapper;
 
-    /** Redis Pub/Sub 发布器（可选，未引入 Redis 依赖时为 null）*/
+    /** Redis Stream 可靠发布器（可选，未引入 Redis 依赖时为 null）*/
     @Autowired(required = false)
     @Lazy
     private FlowEventPublisher flowEventPublisher;
@@ -847,7 +847,7 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
      * 统一发布流程事件：根据 FlowModel.notifyType 互斥选择通知方式
      *
      * <ul>
-     *   <li>{@code redis}   → 方案B: Redis Pub/Sub</li>
+     *   <li>{@code redis}   → 方案B: Redis Stream（同步 XADD，消费后 ACK）</li>
      *   <li>{@code webhook} → 方案C: HTTP Webhook（读取 FlowModel.webhookUrl）</li>
      *   <li>{@code none} 或未配置 → 不发送任何通知</li>
      * </ul>
@@ -879,7 +879,7 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
                 return;
             }
 
-            // 方案B: Redis Pub/Sub
+            // 方案B: Redis Stream；发布异常向上抛出，由通知 Outbox 重试。
             if ("redis".equalsIgnoreCase(notifyType)) {
                 if (flowEventPublisher != null) {
                     flowEventPublisher.publish(message);

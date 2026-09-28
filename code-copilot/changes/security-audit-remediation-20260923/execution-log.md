@@ -1,5 +1,25 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：T4.4 Redis Stream 入箱前 ACK 与 pending 接管
+
+### 实现
+
+- Flow 侧发布器由异步 Pub/Sub 改为同步写入 Redis Stream：稳定事件身份校验通过并取得 `XADD` 记录 ID 后，通知 Outbox 才可完成；Redis 异常或结果未知会保留 Outbox 重试。滚动升级期间继续 best-effort 广播旧 Pub/Sub 频道，但兼容广播失败不覆盖已经成功的 Stream 持久化结果。
+- FlowClient 默认创建每应用独立的 consumer group，同一应用实例使用不同 consumer name 共享消费；严格回调成功后才手工 `XACK`。回调失败、ACK 未确认或载荷不合法时消息保留 pending，并按 idle 阈值由存活实例 `XCLAIM` 接管。
+- 新增可靠分发入口，校验租户、事件 ID/版本/顺序、事件类型、流程模型及流程/业务身份；严格模式不再吞掉反射回调异常。Generator 数据库 Inbox 入箱失败会传播到 Stream 消费器，因而不会提前 ACK；旧 Webhook/Pub/Sub 兼容入口保持原有吞错语义。
+- 旧 Pub/Sub 订阅改为显式开启，避免升级应用同时消费 Stream 与频道造成双投；生产端兼容广播默认开启，支持旧客户端滚动升级。异常日志只记录事件/记录标识和异常类型，不打印原始消息、业务载荷或异常明文。
+
+### 验证
+
+- 定向测试 20/20：覆盖同步 XADD 先于兼容广播、XADD 失败向 Outbox 传播、可靠身份缺失拒绝、严格/兼容异常语义、Inbox 持久化失败传播、回调成功后 ACK、失败不 ACK、超时 pending 认领和默认/兼容开关。
+- 允许 MockWebServer 绑定本机临时端口后，相关完整反应堆 34/34 模块成功：FlowClient 25/25、Generator 1394/1394、Flow 插件 235/235，均 0 失败、0 错误、0 跳过。沙箱内首次完整运行仅因 MockWebServer 无权绑定临时端口中止，授权后原命令复跑通过。
+- `FlowRedisStreamSubscriber` 约 250 行，低于 1000 行；`git diff --check` 通过。本批未新增数据库迁移、未修改前端，也未开展用户明确排除的巨型组件/巨型类改造。
+
+### 未覆盖
+
+- 未连接真实 Redis/MySQL/Flowable，未执行 Redis 主从切换、网络分区、XADD 已成功但响应丢失、Inbox 提交后进程 kill -9、双实例 pending 抢占和离线应用追赶；当前结果来自传输语义、回调传播和状态机单测，不能替代生产故障演练。
+- Redis Stream 当前不设置可能裁剪未确认/离线组消息的 MAXLEN；上线需监控 Stream 长度、组 lag、pending 数量/idle 和通知 Outbox 重试。状态对账 DEAD 的授权人工重放仍属于 T4.4 后续项；T4.2/T4.3 巨型组件/巨型类改造继续按用户要求排除。
+
 ## 2026-09-28：T4.4 主动流程状态对账与终态恢复
 
 ### 实现

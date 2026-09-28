@@ -13,7 +13,7 @@ import java.util.Map;
 /**
  * 流程事件上下文（业务方回调的入参）
  * <p>
- * 由 flow-server 通过 Redis Pub/Sub 或 Webhook 推送，
+ * 由 flow-server 通过 Redis Stream（兼容 Pub/Sub）或 Webhook 推送，
  * {@link com.mdframe.forge.flow.client.helper.FlowEventSubscriber} 反序列化后
  * 传递给 {@link FlowCallback} 标注的方法。
  *

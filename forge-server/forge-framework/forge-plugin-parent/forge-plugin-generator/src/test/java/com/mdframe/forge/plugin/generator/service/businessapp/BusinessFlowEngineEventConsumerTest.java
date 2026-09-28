@@ -100,6 +100,17 @@ class BusinessFlowEngineEventConsumerTest {
     }
 
     @Test
+    void propagatesInboxPersistenceFailureToReliableTransport() {
+        RuntimeException failure = new IllegalStateException("database unavailable");
+        org.mockito.Mockito.doThrow(failure).when(inboxService).enqueue(event);
+
+        assertThrows(IllegalStateException.class, () -> consumer.onFlowEvent(event));
+
+        verify(inboxService, never()).claim(any(), anyString(), any(LocalDateTime.class));
+        verify(businessFlowService, never()).handleFlowEngineEvent(any());
+    }
+
+    @Test
     void skipsBusinessMutationForLateSequence() {
         when(inboxService.isStale(claimed)).thenReturn(true);
 

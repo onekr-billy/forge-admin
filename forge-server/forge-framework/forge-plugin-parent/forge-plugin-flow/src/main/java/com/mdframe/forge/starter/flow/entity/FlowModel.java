@@ -98,7 +98,7 @@ public class FlowModel {
      * 事件通知方式
      * <ul>
      *   <li>{@code none}    - 不通知（默认）</li>
-     *   <li>{@code redis}   - Redis Pub/Sub，发布到 {@code flow:event:{modelKey}} 频道</li>
+     *   <li>{@code redis}   - Redis Stream 可靠投递；升级期可兼容 Pub/Sub 频道</li>
      *   <li>{@code webhook} - HTTP Webhook，POST 回调到 {@code webhookUrl}</li>
      * </ul>
      * <p>两种方式互斥，由流程模型配置决定。</p>

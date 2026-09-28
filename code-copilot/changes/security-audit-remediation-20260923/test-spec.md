@@ -397,6 +397,15 @@
 - 实际结果：主动对账新增定向测试 13/13；Mapper XML 通过 `xmllint --noout`；Generator 依赖反应堆 33/33 模块成功，Generator 1393/1393，0 失败、0 错误、0 跳过。
 - 环境限制：未连接真实 MySQL 执行 V1.0.200/Flyway，未启动真实 Admin/Flow Server，未执行双节点竞争、认领后崩溃、网络分区和 Flowable 历史变量故障注入。Redis 入箱前 ACK 与 DEAD 的授权人工重放仍未完成。
 
+## 1.45 2026-09-28 Redis Stream 入箱前 ACK 与 pending 接管
+
+- 发布边界：Flow 通知 Outbox 交付时同步 `XADD flow:event:stream`；只有 Redis 返回记录 ID 后本次交付才成功，序列化失败、Redis 异常或结果未知均向上抛出，由既有通知 Outbox 重试。Pub/Sub 仅作为滚动升级兼容广播，默认保留且不影响可靠交付结果。
+- 消费边界：业务应用默认使用以 `spring.application.name` 为组名的 Redis Stream consumer group；同一应用多实例共享组，不同应用独立接收。旧 Pub/Sub 消费改为显式 `forge.flow.client.redis-subscribe=true` 才启用，避免升级后的应用重复处理。
+- ACK 语义：Stream 消费先校验租户、事件 ID/版本/顺序、事件类型、流程模型及流程/业务身份，再执行严格回调；只有回调正常返回（包括 Generator 的数据库 Inbox 已持久化）才 `XACK`。反序列化、身份校验、Inbox 入箱或业务回调失败均保留 pending，超过 idle 时间后可由存活实例认领重放。
+- 幂等与顺序：Redis 负责至少一次投递和 pending 接管，Generator 的数据库 Inbox 继续负责 eventId 幂等、不可变摘要、聚合顺序和 fencing；ACK 结果未知导致的重复交付不会重复改变业务终态。本阶段不宣称 exactly-once。
+- 实际结果：可靠分发、Stream 消费、自动配置、发布器、Generator Inbox 消费定向测试 20/20；34/34 个相关依赖反应堆模块成功，`forge-flow-client` 25/25、`forge-plugin-generator` 1394/1394、`forge-plugin-flow` 235/235，均 0 失败、0 错误、0 跳过；`git diff --check` 通过。
+- 环境限制：未连接真实 Redis/MySQL/Flowable，未执行 Redis 主从切换、网络分区、XADD 结果丢失、业务进程 kill -9、双实例 pending 抢占或长时间离线应用追赶；Stream 当前不做可能删除未确认消息的长度裁剪。状态对账 DEAD 的授权人工重放仍待完成，T4.2/T4.3 巨型组件/巨型类改造继续按用户要求排除。
+
 ## 2. P0 必跑验证
 
 ### 动态脚本与 HTML

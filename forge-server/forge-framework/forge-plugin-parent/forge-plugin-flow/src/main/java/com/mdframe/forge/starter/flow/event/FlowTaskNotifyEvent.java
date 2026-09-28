@@ -38,7 +38,7 @@ public class FlowTaskNotifyEvent {
         PROCESS_CC,
         /** 流程结束（通过/驳回）：按模型通知配置向发起人推送审批结果 */
         PROCESS_RESULT,
-        /** FlowModel 配置化事件通知（Redis Pub/Sub / HTTP Webhook） */
+        /** FlowModel 配置化事件通知（Redis Stream / HTTP Webhook） */
         EVENT_PUBLISH
     }
 

@@ -5,7 +5,7 @@ import java.lang.annotation.*;
 /**
  * 流程事件回调注解 —— 方法级别
  * <p>
- * 标注在业务 Service 方法上，当 flow-server 通过 <b>Redis Pub/Sub</b> 或 <b>Webhook</b>
+ * 标注在业务 Service 方法上，当 flow-server 通过 <b>Redis Stream</b>（兼容 Pub/Sub）或 <b>Webhook</b>
  * 推送流程事件时，由 {@link com.mdframe.forge.flow.client.helper.FlowEventSubscriber}
  * 自动路由并调用此方法。
  *
