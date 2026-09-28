@@ -49,12 +49,34 @@ SELECT 1, '删除外部接口', @external_menu_id, 4, 8, 0, '_self', 0, 1, 1, 'e
 WHERE @external_menu_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM sys_resource WHERE tenant_id = 1 AND perms = 'external:api:remove' AND api_method = 'DELETE' AND api_url = '/external/api/**' AND del_flag = 0);
 
 INSERT INTO sys_resource (tenant_id, resource_name, parent_id, resource_type, sort, is_external, open_target, is_public, menu_status, visible, perms, api_method, api_url, keep_alive, always_show, remark, create_by, create_time, update_by, update_time, create_dept, client_code, min_user_type)
-SELECT 1, '调用外部接口(GET)', @external_menu_id, 4, 9, 0, '_self', 0, 1, 1, 'external:proxy:invoke', 'GET', '/external/proxy/*', 0, 0, '受控调用外部接口', 1, NOW(), 1, NOW(), 1, 'pc', 2
-WHERE @external_menu_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM sys_resource WHERE tenant_id = 1 AND perms = 'external:proxy:invoke' AND api_method = 'GET' AND api_url = '/external/proxy/*' AND del_flag = 0);
+SELECT 1, '调用外部接口', @external_menu_id, 4, 9, 0, '_self', 0, 1, 1, 'external:proxy:invoke', NULL, '/external/proxy/*', 0, 0, '受控调用外部接口（GET/POST）', 1, NOW(), 1, NOW(), 1, 'pc', 2
+WHERE @external_menu_id IS NOT NULL
+  AND NOT EXISTS (
+      SELECT 1
+      FROM sys_resource
+      WHERE tenant_id = 1
+        AND resource_type = 4
+        AND perms = 'external:proxy:invoke'
+        AND client_code = 'pc'
+        AND del_flag = 0
+  );
 
-INSERT INTO sys_resource (tenant_id, resource_name, parent_id, resource_type, sort, is_external, open_target, is_public, menu_status, visible, perms, api_method, api_url, keep_alive, always_show, remark, create_by, create_time, update_by, update_time, create_dept, client_code, min_user_type)
-SELECT 1, '调用外部接口(POST)', @external_menu_id, 4, 10, 0, '_self', 0, 1, 1, 'external:proxy:invoke', 'POST', '/external/proxy/*', 0, 0, '受控调用外部接口', 1, NOW(), 1, NOW(), 1, 'pc', 2
-WHERE @external_menu_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM sys_resource WHERE tenant_id = 1 AND perms = 'external:proxy:invoke' AND api_method = 'POST' AND api_url = '/external/proxy/*' AND del_flag = 0);
+-- MySQL/Flyway 可能保留失败迁移在上一条 GET 插入后的半成品记录。
+-- api_method 为空表示同一路径覆盖全部 HTTP 方法，与权限唯一键的一权限一资源约束保持一致。
+UPDATE sys_resource
+SET resource_name = '调用外部接口',
+    sort = 9,
+    api_method = NULL,
+    api_url = '/external/proxy/*',
+    remark = '受控调用外部接口（GET/POST）',
+    min_user_type = 2,
+    update_by = 1,
+    update_time = NOW()
+WHERE tenant_id = 1
+  AND resource_type = 4
+  AND perms = 'external:proxy:invoke'
+  AND client_code = 'pc'
+  AND del_flag = 0;
 
 INSERT INTO sys_resource (tenant_id, resource_name, parent_id, resource_type, sort, is_external, open_target, is_public, menu_status, visible, perms, api_method, api_url, keep_alive, always_show, remark, create_by, create_time, update_by, update_time, create_dept, client_code, min_user_type)
 SELECT 1, '调试外部接口', @external_menu_id, 4, 11, 0, '_self', 0, 1, 1, 'external:proxy:debug', 'POST', '/external/proxy/debug/**', 0, 0, '仅平台管理员显式授权', 1, NOW(), 1, NOW(), 1, 'pc', 1

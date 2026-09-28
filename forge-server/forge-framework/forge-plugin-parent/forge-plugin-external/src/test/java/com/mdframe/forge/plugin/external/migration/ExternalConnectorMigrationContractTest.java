@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -46,6 +47,28 @@ class ExternalConnectorMigrationContractTest {
         String roleGrant = sql.substring(roleGrantStart, roleGrantEnd);
         assertFalse(roleGrant.contains("external:proxy:debug"));
         assertFalse(roleGrant.contains("external:log:clear"));
+    }
+
+    @Test
+    void proxyInvokeUsesOneMethodAgnosticResourceCompatibleWithPermissionUniqueKey() throws IOException {
+        String sql = Files.readString(resolveMigration(PERMISSION_MIGRATION));
+        String marker = "SELECT 1, '调用外部接口'";
+        int insertStart = sql.indexOf(marker);
+
+        assertTrue(insertStart >= 0);
+        assertEquals(-1, sql.indexOf(marker, insertStart + marker.length()));
+        int insertEnd = sql.indexOf(';', insertStart);
+        String insert = sql.substring(insertStart, insertEnd);
+        assertTrue(insert.contains("'external:proxy:invoke', NULL, '/external/proxy/*'"));
+        assertTrue(insert.contains("resource_type = 4"));
+        assertTrue(insert.contains("client_code = 'pc'"));
+
+        int normalizationStart = sql.indexOf("UPDATE sys_resource", insertEnd);
+        int normalizationEnd = sql.indexOf(';', normalizationStart);
+        String normalization = sql.substring(normalizationStart, normalizationEnd);
+        assertTrue(normalization.contains("api_method = NULL"));
+        assertTrue(normalization.contains("perms = 'external:proxy:invoke'"));
+        assertTrue(normalization.contains("client_code = 'pc'"));
     }
 
     private void assertPermissionResource(String sql, String permission, int minimumUserType) {

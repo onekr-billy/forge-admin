@@ -1,5 +1,11 @@
 # security-audit-remediation-20260923 执行记录
 
+## 2026-09-28：V1.0.185 外部代理权限迁移修复
+
+- 修复 `external:proxy:invoke` 分别插入 GET/POST 两条资源导致 `uk_tenant_resource_active` 冲突的问题。该唯一键按权限而非 HTTP 方法区分资源，因此改为一条 `api_method=NULL` 的方法无关资源，仍覆盖 `/external/proxy/*` 的 GET/POST。
+- 增加半成品归一化 UPDATE：若 MySQL 在失败前已保留 GET 资源，重跑时复用该行并清空 `api_method`，不会再次冲突或遗漏 POST 路由。
+- 外部连接器迁移契约 3/3、模块及依赖反应堆完整回归 276/276 通过，`git diff --check` 通过；未连接或修改用户数据库。部署库若已记录失败的 1.0.185，需先确认 `success=0`，再按既有 Flyway 运维流程 repair 后重启迁移。
+
 ## 2026-09-28：T4.4-T4.6 范围收口
 
 - `BusinessEventPublisher` 现在先取得正数可信租户，再读取对象元数据或写入事件 Outbox；动态 CRUD 和流程回调路径均不再允许空租户事件进入信封。

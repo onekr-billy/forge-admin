@@ -452,6 +452,12 @@
 - 新增受审计 HTTP 恢复脚本，发布 DEAD 重放与配置回滚继续经过现有权限、租户、摘要和操作日志边界，不直接更新任务表，也不自动执行反向 DDL。
 - T4.4-T4.6 定向反应堆测试 334/334 通过，0 失败、0 错误、0 跳过；`git diff --check` 与脚本语法检查通过。真实 MySQL/Redis/Flowable 多节点演练属于部署环境验证，不冒充本地自动化结果。
 
+## 1.52 2026-09-28 V1.0.185 权限资源唯一键修复
+
+- `external:proxy:invoke` 改为单条 `api_method=NULL` 的方法无关资源，覆盖同一路径 GET/POST，避免与 `(tenant_id, resource_type, perms, client_code, del_flag)` 唯一键冲突。
+- 迁移会把上次失败后可能残留的 GET 半成品资源归一为方法无关资源，重复执行不再插入第二条权限记录。
+- `ExternalConnectorMigrationContractTest` 3/3、外部连接器及依赖反应堆完整回归 276/276 通过，覆盖单资源、唯一键维度和失败迁移残留归一化。
+
 ## 2. P0 必跑验证
 
 ### 动态脚本与 HTML
