@@ -109,6 +109,12 @@ export default {
     data,
     encrypt: true,
   }),
+  rejectToStartFlowTask: data => request({
+    url: '/api/flow/task/reject-to-start',
+    method: 'post',
+    data,
+    encrypt: true,
+  }),
   claimFlowTask: (taskId, userId) => request({
     url: '/api/flow/task/claim',
     method: 'post',
@@ -152,10 +158,21 @@ export default {
     encrypt: true,
     needTip: false,
   }),
+  listMyCommentPhrases: () => request({
+    url: '/api/flow/comment-phrases/mine',
+    method: 'get',
+    encrypt: true,
+    needTip: false,
+  }),
   createCommentPhrase: data => request({
     url: '/api/flow/comment-phrases',
     method: 'post',
     data,
+    encrypt: true,
+  }),
+  deleteCommentPhrase: id => request({
+    url: `/api/flow/comment-phrases/${encodeURIComponent(String(id || ''))}`,
+    method: 'delete',
     encrypt: true,
   }),
   getUserPage: (params = {}) => request({

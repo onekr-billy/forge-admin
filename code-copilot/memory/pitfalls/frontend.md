@@ -747,3 +747,12 @@ Naive UI 的 `--n-height` 可保证同尺寸输入和按钮对齐，但 Teleport
 1. `openLocalPreview` 先 `await saveLayout()`；应用壳 `openDraftPreview` 在 list/form 设计态始终 `saveCurrentDesignerSection`。
 2. 本地预览若 `isRichListGridLayout`，改渲 `RuntimeListGridFlow`；并补齐 `.is-crud` → `.ai-crud-preview` → `.ai-crud-page` 的 `height:100%` flex 链。
 3. `AiTable` 卡片：`.ai-card-scroll` 中间滚动，`.ai-card-pagination` 底部固定。
+## 鉴权图片重试必须按文件 ID 计数，不能按临时签名 URL 计数
+
+**发现日期**: 2026-09-28
+
+**问题描述**:
+H5 鉴权头像加载失败后按“当前解析出的 URL”判断是否已经重试。对象存储临时签名 URL 每次刷新都会变化，导致每次失败都被误判为新的首次失败；uni-app 页面栈保留隐藏页面实例时，即使已经进入审批详情，上一页头像仍会持续调用 `/api/file/url/{fileId}`。在解析期间先切换兜底图时，兜底图自身失败也可能重复触发源文件刷新。
+
+**解决方案**:
+失败重试以原始 `fileId/filePath/url` 归一后的稳定键计数，同一输入最多强制刷新一次；当前失败源等于 fallback 时直接兜底，不再刷新原文件。文件地址解析层还应按稳定键复用进行中的 Promise，避免多个保留页面或同页多个头像并发击穿接口。

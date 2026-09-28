@@ -4,7 +4,7 @@
       <view v-if="showNav" class="ai-layout-page__nav" :class="{ 'ai-layout-page__nav--glass': navGlass }">
         <slot name="nav">
           <button v-if="showBack" class="ai-layout-page__back" @click="handleBack">
-            <AiIcon name="chevron-left" color="#4E5969" size="md" />
+            <AiIcon name="chevron-left" color="#475569" size="md" />
           </button>
           <view class="ai-layout-page__title-block">
             <text v-if="title" class="ai-layout-page__title">{{ title }}</text>
@@ -21,6 +21,8 @@
         :class="{ 'ai-layout-page__body--scroll': scroll }"
         :scroll-y="scroll"
         :show-scrollbar="false"
+        :refresher-enabled="refresherEnabled"
+        :refresher-triggered="refreshing"
         @scrolltolower="$emit('scrolltolower')"
         @refresherrefresh="$emit('refresh')"
       >
@@ -88,6 +90,14 @@ const props = defineProps({
   safeBottom: {
     type: Boolean,
     default: false
+  },
+  refresherEnabled: {
+    type: Boolean,
+    default: false
+  },
+  refreshing: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -130,7 +140,7 @@ function handleBack() {
   min-height: 92rpx;
   align-items: center;
   gap: 16rpx;
-  padding: calc(14rpx + env(safe-area-inset-top)) 32rpx 14rpx;
+  padding: calc(14rpx + env(safe-area-inset-top)) 30rpx 14rpx;
   box-sizing: border-box;
 }
 
@@ -213,13 +223,13 @@ function handleBack() {
 }
 
 .ai-layout-page__inner--padded {
-  padding: 32rpx;
+  padding: 30rpx;
 }
 
 .ai-layout-page__footer {
   position: relative;
   z-index: 3;
-  padding: 16rpx 32rpx calc(16rpx + env(safe-area-inset-bottom));
+  padding: 16rpx 30rpx calc(16rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
 

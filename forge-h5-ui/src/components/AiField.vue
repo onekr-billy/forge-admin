@@ -12,8 +12,11 @@
           :show-password="type === 'password'"
           :placeholder="placeholder"
           :disabled="disabled"
+          :readonly="readonly"
+          :focus="autofocus"
           :maxlength="Number(maxlength)"
           :clearable="clearable"
+          :show-word-limit="showCount"
           :error="!!error"
           no-border
           @update:model-value="handleModelUpdate"
@@ -23,8 +26,12 @@
           @clear="emit('clear')"
           @confirm="emit('confirm', $event)"
         >
-          <template v-if="$slots.leftIcon" #prefix><slot name="leftIcon" /></template>
-          <template v-if="$slots.rightIcon" #suffix><slot name="rightIcon" /></template>
+          <template v-if="prefix || $slots.leftIcon" #prefix>
+            <slot name="leftIcon"><text class="ai-field__affix">{{ prefix }}</text></slot>
+          </template>
+          <template v-if="suffix || $slots.rightIcon" #suffix>
+            <slot name="rightIcon"><text class="ai-field__affix">{{ suffix }}</text></slot>
+          </template>
         </wd-input>
       </view>
       <text v-if="error" class="ai-field__error">{{ error }}</text>
@@ -43,6 +50,11 @@ const props = defineProps({
   type: { type: String, default: 'text' },
   clearable: { type: Boolean, default: false },
   disabled: { type: Boolean, default: false },
+  readonly: { type: Boolean, default: false },
+  autofocus: { type: Boolean, default: false },
+  showCount: { type: Boolean, default: false },
+  prefix: { type: [String, Number], default: '' },
+  suffix: { type: [String, Number], default: '' },
   required: { type: Boolean, default: false },
   layout: {
     type: String,
@@ -84,17 +96,19 @@ function handleBlur(event) {
 .ai-field--horizontal { flex-direction: row; align-items: center; gap: 14px; }
 .ai-field--horizontal .ai-field__label { width: 78px; flex: 0 0 auto; }
 .ai-field--horizontal .ai-field__content { min-width: 0; flex: 1; }
-.ai-field__label { color: var(--forge-color-text-secondary, #4e5969); font-size: 14px; font-weight: 400; line-height: 1.5; }
-.ai-field__required { margin-right: 3px; color: var(--forge-color-danger, #f53f3f); }
+.ai-field__label { color: var(--forge-color-text-secondary, #475569); font-size: 14px; font-weight: 600; line-height: 1.5; }
+.ai-field__required { margin-right: 3px; color: var(--forge-color-danger, #ef4444); }
 .ai-field__content { display: flex; flex-direction: column; gap: 4px; }
-.ai-field__control { display: flex; min-height: 44px; align-items: center; padding: 0 6px; border: 1px solid var(--forge-color-border, #c9cdd4); border-radius: 6px; background: #fff; box-sizing: border-box; transition: border-color .16s ease, background-color .16s ease; }
-.ai-field__control.is-focused { border-color: var(--forge-color-primary, #4266f7); }
-.ai-field__control.is-error { border-color: var(--forge-color-danger, #f53f3f); }
-.ai-field__control.is-disabled { background: var(--forge-color-surface-subtle, #f7f8fa); opacity: .72; }
+.ai-field__control { display: flex; height: 44px; align-items: center; padding: 0 12px; border: 1px solid var(--forge-color-border-subtle, #f1f5f9); border-radius: var(--forge-radius-control); background: #f8fafc; box-sizing: border-box; transition: border-color .16s ease, background-color .16s ease, box-shadow .16s ease; }
+.ai-field__control.is-focused { border-color: var(--forge-color-primary, #3b82f6); background: #fff; box-shadow: 0 0 0 3px rgba(59, 130, 246, .1); }
+.ai-field__control.is-error { border-color: var(--forge-color-danger, #ef4444); }
+.ai-field__control.is-disabled { background: var(--forge-color-surface-subtle, #f8fafc); opacity: .72; }
 .ai-field__input { width: 100%; min-width: 0; }
-.ai-field__error { color: var(--forge-color-danger, #f53f3f); font-size: 12px; line-height: 1.5; }
-:deep(.wd-input) { display: flex; width: 100%; min-height: 42px; align-items: center; padding: 0 6px; background: transparent; box-sizing: border-box; }
+.ai-field__error { color: var(--forge-color-danger, #ef4444); font-size: 12px; line-height: 1.5; }
+.ai-field__affix { color: var(--forge-color-text-secondary, #475569); font-size: 14px; line-height: 1; }
+:deep(.wd-input), :deep(.wd-input__body), :deep(.wd-input__value) { display: flex; width: 100%; min-width: 0; height: 42px; align-items: center; padding: 0; background: transparent; box-sizing: border-box; }
 :deep(.wd-input__prefix),
 :deep(.wd-input__suffix) { display: flex; align-items: center; align-self: stretch; }
-:deep(.wd-input__inner) { height: 42px; padding: 0; color: var(--forge-color-text, #1d2129); font-size: 14px; font-weight: 400; line-height: 42px; box-sizing: border-box; }
+:deep(.wd-input__inner) { display: flex; height: 42px; min-height: 42px; align-items: center; padding: 0; color: var(--forge-color-text, #1e293b); font-size: 14px; font-weight: 400; line-height: normal; box-sizing: border-box; }
+:deep(.uni-input-wrapper), :deep(.uni-input-form), :deep(.uni-input-input), :deep(.uni-input-placeholder) { height: 42px; min-height: 42px; line-height: 42px; box-sizing: border-box; }
 </style>

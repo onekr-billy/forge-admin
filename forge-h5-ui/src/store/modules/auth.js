@@ -9,7 +9,9 @@ function getToken(data = {}) {
 }
 
 function getDisplayName(userInfo) {
-  return userInfo?.realName || userInfo?.nickName || userInfo?.username || '用户'
+  const nested = userInfo?.userInfo
+  return userInfo?.realName || userInfo?.nickName || userInfo?.username
+    || nested?.realName || nested?.nickName || nested?.username || '用户'
 }
 
 export const useAuthStore = defineStore('auth', {
@@ -25,10 +27,11 @@ export const useAuthStore = defineStore('auth', {
     isLogin: state => !!state.accessToken,
     displayName: state => getDisplayName(state.userInfo),
     roleText: state => {
-      const roles = state.userInfo?.roleKeys || state.userInfo?.roles || []
+      const roles = state.userInfo?.roleKeys || state.userInfo?.roles
+        || state.userInfo?.userInfo?.roleKeys || state.userInfo?.userInfo?.roles || []
       return Array.isArray(roles) && roles.length ? roles.join(' / ') : '移动端用户'
     },
-    avatar: state => state.userInfo?.avatar || state.userInfo?.staffInfo?.avatar || '',
+    avatar: state => state.userInfo?.avatar || state.userInfo?.userInfo?.avatar || state.userInfo?.staffInfo?.avatar || '',
   },
   actions: {
     setToken(data = {}) {

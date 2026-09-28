@@ -23,7 +23,7 @@ function fieldType(rule) {
   if (['inputnumber', 'number'].includes(type)) return 'number'
   if (['datepicker', 'date'].includes(type)) return propType || 'date'
   if (['timepicker', 'time'].includes(type)) return propType === 'timerange' ? 'timerange' : 'time'
-  if (type === 'upload') return rule.props?.listType === 'picture-card' ? 'imageUpload' : 'fileUpload'
+  if (type === 'upload') return ['picture-card', 'image-card', 'image'].includes(rule.props?.listType) ? 'imageUpload' : 'fileUpload'
   return type || 'input'
 }
 
@@ -53,6 +53,11 @@ function collect(source, seen = new Set()) {
         props: { ...props, ...(nodes.placeholder ? { placeholder: nodes.placeholder } : {}) },
         options,
         required,
+        validation: nodes.validation && typeof nodes.validation === 'object'
+          ? { ...nodes.validation }
+          : { rules: [...validation, ...rules] },
+        rules: [...validation, ...rules],
+        requiredMessage: nodes.requiredMessage || [...validation, ...rules].find(rule => rule?.required)?.message,
         writable: nodes.disabled !== true && nodes.readonly !== true && props.disabled !== true && props.readonly !== true,
         readonly: nodes.readonly === true || props.readonly === true,
         hidden: nodes.hidden === true,

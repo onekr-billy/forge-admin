@@ -61,49 +61,49 @@ defineEmits(['primary', 'secondary'])
 const preset = {
   success: {
     icon: 'check-circle',
-    color: '#16815d',
+    color: '#10b981',
     title: '操作成功',
     description: '当前操作已完成。'
   },
   error: {
     icon: 'x-circle',
-    color: '#f53f3f',
+    color: '#ef4444',
     title: '操作失败',
     description: '请稍后重试或检查当前信息。'
   },
   warning: {
     icon: 'alert-triangle',
-    color: '#ff7d00',
+    color: '#f97316',
     title: '请注意',
     description: '当前操作需要确认后继续。'
   },
   info: {
     icon: 'info',
-    color: '#4266f7',
+    color: '#3b82f6',
     title: '提示信息',
     description: '这里展示当前页面的提示内容。'
   },
   empty: {
     icon: 'inbox',
-    color: '#4e5969',
+    color: '#475569',
     title: '暂无内容',
     description: '当前没有可展示的数据。'
   },
   forbidden: {
     icon: 'shield-off',
-    color: '#4e5969',
+    color: '#475569',
     title: '暂无权限',
     description: '你没有访问当前内容的权限。'
   },
   notFound: {
     icon: 'compass',
-    color: '#4e5969',
+    color: '#475569',
     title: '页面不存在',
     description: '当前页面可能已移动或被删除。'
   },
   network: {
     icon: 'wifi-off',
-    color: '#4266f7',
+    color: '#3b82f6',
     title: '网络异常',
     description: '请检查网络连接后重试。'
   }
@@ -135,7 +135,7 @@ const resolvedDescription = computed(() => props.description || currentPreset.va
   height: 88rpx;
   align-items: center;
   justify-content: center;
-  border: 1rpx solid var(--forge-border, #c9cdd4);
+  border: 1rpx solid var(--forge-border, #cbd5e1);
   border-radius: 10rpx;
   background: var(--forge-color-primary-soft, #f5f7ff);
 }
@@ -144,7 +144,7 @@ const resolvedDescription = computed(() => props.description || currentPreset.va
   display: block;
   max-width: 620rpx;
   margin-top: 24rpx;
-  color: var(--forge-text-primary, #1d2129);
+  color: var(--forge-text-primary, #1e293b);
   font-size: 31rpx;
   font-weight: 500;
   line-height: 1.35;
@@ -154,7 +154,7 @@ const resolvedDescription = computed(() => props.description || currentPreset.va
   display: block;
   max-width: 620rpx;
   margin-top: 10rpx;
-  color: var(--forge-text-secondary, #4e5969);
+  color: var(--forge-text-secondary, #475569);
   font-size: 23rpx;
   font-weight: 400;
   line-height: 1.6;

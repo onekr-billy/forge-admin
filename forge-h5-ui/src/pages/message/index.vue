@@ -2,38 +2,22 @@
   <view class="message-page">
     <AiFeedbackHost />
     <view class="message-content">
-      <view class="page-head">
-        <view class="title-block">
-          <text class="page-title">消息中心</text>
-          <text class="page-subtitle">审批提醒与系统通知</text>
-        </view>
-        <button class="refresh-button" @click="refresh">
-          <AiIcon name="refresh-cw" color="#4266f7" size="sm" />
-        </button>
-      </view>
-
+      <!-- 会话类型与查询 -->
       <view class="filter-panel">
-        <AiSearchBar
-          v-model="keyword"
-          placeholder="搜索标题或内容"
-          @search="refresh"
-          @clear="refresh"
-        />
-        <scroll-view class="tab-scroll" scroll-x :show-scrollbar="false">
-          <view class="tab-row">
-            <button
-              v-for="tab in tabs"
-              :key="tab.key"
-              class="filter-tab"
-              :class="{ active: activeTab === tab.key }"
-              @click="switchTab(tab.key)"
-            >
-              <text>{{ tab.label }}</text>
-            </button>
+        <view class="tab-row">
+          <button v-for="tab in tabs" :key="tab.key" class="filter-tab" :class="{ active: activeTab === tab.key }" @click="switchTab(tab.key)">{{ tab.label }}</button>
+        </view>
+        <view class="message-query-row">
+          <view class="message-search-wrap">
+            <AiSearchBar v-model="keyword" placeholder="搜索消息" @search="refresh" @clear="refresh" />
           </view>
-        </scroll-view>
+          <button class="message-filter-trigger" :class="{ 'is-active': readFilter !== 'all' }" aria-label="筛选消息" @click="openFilters">
+            <AiIcon name="filter" :color="readFilter !== 'all' ? '#3b82f6' : '#475569'" size="sm" />
+            <text class="message-filter-text">筛选</text>
+          </button>
+        </view>
         <button v-if="markableUnreadMessages.length" class="mark-read-button" @click="markAllRead">
-          <AiIcon name="check" color="#4266f7" size="sm" />
+          <AiIcon name="check" color="#3b82f6" size="sm" />
           <text>{{ markAllReadLabel }}</text>
         </button>
       </view>
@@ -57,39 +41,45 @@
             @click="openMessage(item)"
           >
             <view class="message-icon">
-              <AiIcon :name="isApprovalMessage(item) ? 'check-square' : 'message-square'" color="#4266f7" size="sm" />
+              <AiIcon :name="isApprovalMessage(item) ? 'check-square' : 'message-square'" color="#3b82f6" size="sm" />
             </view>
             <view class="message-main">
-              <view class="message-meta">
-                <AiTag :type="getTagType(item)" size="small" round>
-                  {{ getMessageCategory(item) }}
-                </AiTag>
-                <text class="message-time">{{ formatMessageTime(item.createTime || item.receiveTime) }}</text>
-              </view>
               <view class="message-title-row">
                 <text class="message-title">{{ item.title || '消息通知' }}</text>
-                <view v-if="item.readFlag === 0" class="unread-dot" />
+                <text class="message-time">{{ formatMessageTime(item.createTime || item.receiveTime) }}</text>
               </view>
               <text class="message-desc">{{ stripHtml(item.content || item.description || '-') }}</text>
+              <view class="message-meta">
+                <text class="message-category">{{ getMessageCategory(item) }}</text>
+                <view v-if="item.readFlag === 0" class="message-unread"><view class="unread-dot" /><text>未读</text></view>
+              </view>
             </view>
-            <AiIcon name="chevron-right" color="#86909c" size="sm" />
+            <AiIcon name="chevron-right" color="#94a3b8" size="sm" />
           </view>
         </template>
       </view>
     </view>
-
+    <AiFilterSheet v-model="filterVisible" title="筛选消息" @reset="resetFilters" @apply="applyFilters">
+      <view class="message-filter-field">
+        <text class="message-filter-label">阅读状态</text>
+        <AiSelect v-model="draftReadFilter" :options="readOptions" title="选择阅读状态" placeholder="全部" />
+      </view>
+    </AiFilterSheet>
+    <AiTabBar active="message" :unread-count="unreadCount" />
   </view>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
-import { onLoad, onShow } from '@dcloudio/uni-app'
+import { onLoad, onPullDownRefresh, onShow } from '@dcloudio/uni-app'
 import AiEmpty from '@/components/AiEmpty.vue'
+import AiFilterSheet from '@/components/AiFilterSheet.vue'
 import AiFeedbackHost from '@/components/feedback/AiFeedbackHost.vue'
 import AiIcon from '@/components/AiIcon.vue'
 import AiListSkeleton from '@/components/AiListSkeleton.vue'
 import AiSearchBar from '@/components/AiSearchBar.vue'
-import AiTag from '@/components/AiTag.vue'
+import AiSelect from '@/components/AiSelect.vue'
+import AiTabBar from '@/components/AiTabBar.vue'
 import api from '@/api'
 import { showConfirmDialog } from '@/utils/dialog'
 import {
@@ -107,25 +97,35 @@ const bizTypes = ref([])
 const unreadCount = ref(0)
 const keyword = ref('')
 const activeTab = ref('all')
+const readFilter = ref('all')
+const draftReadFilter = ref('all')
+const filterVisible = ref(false)
 const pendingOpenId = ref('')
 const openingMessageId = ref('')
 
-const tabs = computed(() => [
+const tabs = [
   { key: 'all', label: '全部' },
-  { key: 'unread', label: '未读' },
-  { key: 'approval', label: '审批提醒' },
-  { key: 'read', label: '已读' },
-])
+  { key: 'system', label: '系统消息' },
+  { key: 'business', label: '业务消息' },
+]
+const readOptions = [
+  { label: '全部', value: 'all' },
+  { label: '未读', value: 'unread' },
+  { label: '已读', value: 'read' },
+]
 
 const filteredMessages = computed(() => {
   return messages.value.filter((item) => {
-    if (activeTab.value === 'unread' && item.readFlag !== 0) {
+    if (readFilter.value === 'unread' && item.readFlag !== 0) {
       return false
     }
-    if (activeTab.value === 'read' && item.readFlag !== 1) {
+    if (readFilter.value === 'read' && item.readFlag !== 1) {
       return false
     }
-    if (activeTab.value === 'approval' && !isApprovalMessage(item)) {
+    if (activeTab.value === 'system' && getMessageGroup(item) !== 'system') {
+      return false
+    }
+    if (activeTab.value === 'business' && getMessageGroup(item) !== 'business') {
       return false
     }
     return true
@@ -141,11 +141,22 @@ onLoad((query = {}) => {
 
 onShow(async () => {
   await refresh()
+  // tabBar 页面无法携带查询参数，首页通知使用一次性存储交接待打开的消息。
+  const fromHome = uni.getStorageSync('forge_h5_pending_message_id')
+  if (fromHome) {
+    pendingOpenId.value = String(fromHome)
+    uni.removeStorageSync('forge_h5_pending_message_id')
+  }
   if (pendingOpenId.value) {
     const target = messages.value.find(item => String(item.id) === pendingOpenId.value)
     await openMessage(target || { id: pendingOpenId.value })
     pendingOpenId.value = ''
   }
+})
+
+onPullDownRefresh(async () => {
+  try { await refresh() }
+  finally { uni.stopPullDownRefresh() }
 })
 
 async function refresh() {
@@ -213,6 +224,14 @@ function normalizeUnreadCount(data) {
 
 function switchTab(key) {
   activeTab.value = key
+}
+
+function openFilters() { draftReadFilter.value = readFilter.value; filterVisible.value = true }
+function resetFilters() { draftReadFilter.value = 'all' }
+function applyFilters() { readFilter.value = draftReadFilter.value; filterVisible.value = false }
+
+function getMessageGroup(item) {
+  return ['SYSTEM', 'SMS', 'EMAIL'].includes(String(item?.type || '').toUpperCase()) && !isApprovalMessage(item) ? 'system' : 'business'
 }
 
 async function openMessage(item) {
@@ -335,16 +354,6 @@ function getMessageCategory(item) {
     CUSTOM: '通知',
   }
   return map[item?.type] || '通知'
-}
-
-function getTagType(item) {
-  if (isApprovalMessage(item)) {
-    return 'primary'
-  }
-  if (item?.readFlag === 0) {
-    return 'primary'
-  }
-  return 'default'
 }
 
 function stripHtml(value) {

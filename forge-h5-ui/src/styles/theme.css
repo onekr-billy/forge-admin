@@ -3,34 +3,35 @@
  */
 :root,
 page {
-  --forge-color-primary: #4266f7;
-  --forge-color-primary-strong: #3656d4;
-  --forge-color-primary-hover: rgba(66, 102, 247, 0.9);
-  --forge-color-primary-soft: rgba(66, 102, 247, 0.05);
-  --forge-color-primary-border: rgba(66, 102, 247, 0.6);
-  --forge-color-success: #16815d;
-  --forge-color-warning: #ff7d00;
-  --forge-color-danger: #f53f3f;
-  --forge-color-info: #4e5969;
-  --forge-page-bg: #f2f3f5;
+  --forge-color-primary: #3b82f6;
+  --forge-color-primary-strong: #2563eb;
+  --forge-color-primary-hover: #2563eb;
+  --forge-color-primary-soft: #eff6ff;
+  --forge-color-primary-border: #bfdbfe;
+  --forge-color-success: #10b981;
+  --forge-color-warning: #f97316;
+  --forge-color-danger: #ef4444;
+  --forge-color-info: #475569;
+  --forge-page-bg: #f4f5f7;
   --forge-surface: #ffffff;
-  --forge-surface-muted: #f7f8fa;
-  --forge-surface-subtle: #f7f8fa;
-  --forge-text-primary: #1d2129;
-  --forge-text-secondary: #4e5969;
-  --forge-text-tertiary: #86909c;
-  --forge-border: #c9cdd4;
-  --forge-border-light: #e5e6eb;
-  --forge-border-strong: #a9aeb8;
-  --forge-radius-control: 12rpx;
-  --forge-radius-card: 12rpx;
-  --forge-radius-popup: 12rpx;
-  --forge-space-page: 32rpx;
-  --forge-space-section: 48rpx;
-  --forge-control-height: 88rpx;
+  --forge-surface-muted: #f8fafc;
+  --forge-surface-subtle: #f8fafc;
+  --forge-text-primary: #1e293b;
+  --forge-text-secondary: #475569;
+  --forge-text-tertiary: #94a3b8;
+  --forge-border: #e2e8f0;
+  --forge-border-light: #f1f5f9;
+  --forge-border-strong: #cbd5e1;
+  --forge-radius-control: 12px;
+  --forge-radius-card: 20px;
+  --forge-radius-popup: 24px;
+  --forge-space-page: 16px;
+  --forge-space-section: 16px;
+  --forge-control-height: 44px;
   --forge-page-max-width: 1280px;
   --forge-aside-width: 320px;
-  --forge-shadow-soft: none;
+  --forge-shadow-soft: 0 2px 12px rgba(15, 23, 42, 0.06);
+  --forge-shadow-float: 0 16px 40px rgba(15, 23, 42, 0.16);
 
   --forge-color-surface: var(--forge-surface);
   --forge-color-surface-muted: var(--forge-surface-muted);
@@ -42,7 +43,7 @@ page {
   --forge-color-border: var(--forge-border);
   --forge-color-border-subtle: var(--forge-border-light);
   --forge-color-border-strong: var(--forge-border-strong);
-  --forge-shadow-card: none;
+  --forge-shadow-card: var(--forge-shadow-soft);
 
   --primary-color: var(--forge-color-primary);
   --primary-strong: var(--forge-color-primary-strong);
@@ -74,8 +75,8 @@ page {
   --wot-color-border: var(--forge-border);
   --wot-color-border-light: var(--forge-border-light);
   --wot-color-bg: var(--forge-page-bg);
-  --wot-button-small-radius: 6px;
-  --wot-button-medium-radius: 6px;
-  --wot-button-large-radius: 6px;
-  --wot-cell-group-insert-radius: 6px;
+  --wot-button-small-radius: 12px;
+  --wot-button-medium-radius: 12px;
+  --wot-button-large-radius: 999px;
+  --wot-cell-group-insert-radius: 20px;
 }

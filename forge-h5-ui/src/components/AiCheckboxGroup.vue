@@ -6,7 +6,7 @@
     :max="max"
     :min="min"
     :shape="button ? 'button' : 'square'"
-    checked-color="var(--forge-color-primary, #4266f7)"
+    checked-color="var(--forge-color-primary, #3b82f6)"
     @change="handleChange"
   >
     <wd-checkbox
@@ -56,11 +56,29 @@ function handleChange(event) {
 }
 
 :deep(.wd-checkbox) {
-  min-height: 88rpx;
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   margin: 0;
+  padding: 0 12px;
+  box-sizing: border-box;
 }
 
+:deep(.wd-checkbox__shape) { flex: 0 0 auto; align-self: center; margin-top: 0 !important; }
+:deep(.wd-checkbox__label) { display: flex; min-height: 20px; align-items: center; align-self: center; margin: 0; line-height: 20px; }
+
 :deep(.wd-checkbox.is-button) {
-  border-radius: var(--radius-control);
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  text-align: center;
 }
+
+:deep(.wd-checkbox.is-button .wd-checkbox__label),
+:deep(.wd-checkbox.is-button-box .wd-checkbox__label) { display: flex; width: 100%; height: 44px; min-height: 44px; align-items: center; justify-content: center; padding: 0 14px; border-radius: var(--radius-control); line-height: 20px; box-sizing: border-box; }
+:deep(.wd-checkbox__txt) { display: flex; align-items: center; line-height: 20px; }
 </style>

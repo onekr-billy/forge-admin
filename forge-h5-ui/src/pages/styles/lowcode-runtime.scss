@@ -6,7 +6,7 @@
 .runtime-detail-workspace {
   display: flex;
   flex-direction: column;
-  gap: 32rpx;
+  gap: 20rpx;
 }
 
 .runtime-flow-timeline,
@@ -17,13 +17,14 @@
 .runtime-record-card,
 .runtime-zone-actions,
 .runtime-filter-summary {
-  border: 1rpx solid var(--border-color);
+  border: 1rpx solid var(--border-light);
   border-radius: var(--radius-card);
   background: #fff;
+  box-shadow: var(--shadow-soft);
 }
 
-.runtime-flow-timeline { margin-bottom: 32rpx; padding: 32rpx; }
-.runtime-flow-timeline__title { display: block; margin-bottom: 16rpx; color: var(--text-strong); font-size: 27rpx; font-weight: 500; }
+.runtime-flow-timeline { margin-bottom: 14px; padding: 18px; }
+.runtime-flow-timeline__title { display: block; margin-bottom: 14px; color: var(--text-strong); font-size: 16px; font-weight: 700; }
 .runtime-flow-timeline__empty { color: var(--text-muted); font-size: 21rpx; }
 .runtime-flow-timeline__item { position: relative; display: flex; gap: 16rpx; padding-bottom: 20rpx; }
 .runtime-flow-timeline__item:not(:last-child)::before { content: ''; position: absolute; top: 15rpx; bottom: 0; left: 6rpx; width: 2rpx; background: var(--border-color); }
@@ -31,12 +32,12 @@
 .runtime-flow-timeline__copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 5rpx; color: var(--text-secondary); font-size: 21rpx; line-height: 1.5; }
 .runtime-flow-timeline__copy text:first-child { color: var(--text-strong); font-size: 24rpx; font-weight: 500; }
 
-.runtime-list-head { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; margin-bottom: 32rpx; padding: 32rpx; }
+.runtime-list-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; padding: 18px; }
 .runtime-list-head__actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8rpx; }
 .runtime-toolbar__copy { display: flex; min-width: 0; flex-direction: column; gap: 4rpx; }
 .runtime-toolbar__title,
 .runtime-form-card__title,
-.runtime-child-card__title { color: var(--text-strong); font-size: 27rpx; font-weight: 500; }
+.runtime-child-card__title { color: var(--text-strong); font-size: 16px; font-weight: 700; }
 .runtime-toolbar__desc,
 .runtime-form-card__desc,
 .runtime-child-card__count { color: var(--text-muted); font-size: 20rpx; }
@@ -50,21 +51,21 @@
 
 .runtime-search-card,
 .runtime-form-card,
-.runtime-child-card { margin-bottom: 32rpx; padding: 32rpx; }
+.runtime-child-card { margin-bottom: 14px; padding: 18px; }
 .runtime-search-actions,
 .runtime-actions,
 .runtime-footer-actions,
 .runtime-child-row__tools { display: flex; align-items: center; justify-content: flex-end; gap: 10rpx; }
-.runtime-zone-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 16rpx; margin-bottom: 32rpx; padding: 32rpx; }
+.runtime-zone-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-bottom: 14px; padding: 18px; }
 .runtime-search-actions { padding-top: 4rpx; }
 .runtime-record-list,
 .runtime-child-list { display: flex; flex-direction: column; gap: 10rpx; }
-.runtime-record-card { padding: 32rpx; }
+.runtime-record-card { padding: 16px; }
 .runtime-record-card:active { background: var(--surface-muted); }
 .runtime-record-card__head,
 .runtime-child-card__head,
 .runtime-form-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16rpx; margin-bottom: 14rpx; }
-.runtime-record-card__status { padding: 4rpx 8rpx; border: 1rpx solid #4266f7; border-radius: 4rpx; color: var(--primary-color); font-size: 19rpx; background: var(--primary-soft); }
+.runtime-record-card__status { padding: 3px 8px; border: 0; border-radius: 999px; color: var(--primary-color); font-size: 10px; font-weight: 600; background: var(--primary-soft); }
 .runtime-record-card__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13rpx 18rpx; }
 .runtime-record-card__item { display: flex; min-width: 0; flex-direction: column; gap: 4rpx; }
 .runtime-record-card__label { color: var(--text-muted); font-size: 19rpx; }

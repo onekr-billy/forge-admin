@@ -5,7 +5,8 @@
       <view class="home-header">
         <view class="user-block" @click="goMine">
           <view class="avatar-wrap">
-            <AiAuthImage class="avatar-image" :src="rawAvatarUrl" :fallback="DEFAULT_AVATAR_URL" mode="aspectFill" />
+            <AiAuthImage v-if="rawAvatarUrl" class="avatar-image" :src="rawAvatarUrl" :fallback="brandLogoUrl || '/static/logo.png'" mode="aspectFill" />
+            <image v-else class="avatar-image" :src="brandLogoUrl || '/static/logo.png'" mode="aspectFit" />
           </view>
           <view class="user-copy">
             <text class="hello-title">{{ authStore.displayName }}</text>
@@ -13,7 +14,7 @@
           </view>
         </view>
         <button class="bell-button" @click="goMessages">
-          <view class="icon-mask bell-icon" :style="iconMask('/static/icons/ai-icon/bell.svg', '#4e5969')" />
+          <view class="icon-mask bell-icon" :style="iconMask('/static/icons/ai-icon/bell.svg', '#475569')" />
           <view v-if="unreadCount > 0" class="bell-badge">
             <text>{{ unreadCount > 99 ? '99+' : unreadCount }}</text>
           </view>
@@ -28,27 +29,19 @@
               <text class="section-subtitle">待处理事项与未读消息</text>
             </view>
             <button class="section-action" aria-label="刷新工作概览" @click="refreshWorkspace">
-              <AiIcon icon="/static/icons/ai-icon/refresh-cw.svg" color="#4266f7" size="sm" />
+              <AiIcon icon="/static/icons/ai-icon/refresh-cw.svg" color="#3b82f6" size="sm" />
             </button>
           </view>
           <view class="overview-list">
             <button class="overview-item" @click="goTodo">
-              <view class="overview-icon"><AiIcon icon="/static/icons/ai-icon/check-square.svg" color="#4266f7" size="sm" /></view>
-              <view class="overview-copy">
-                <text class="overview-title">待办任务</text>
-                <text class="overview-desc">{{ todoCount > 0 ? '有审批任务等待处理' : '当前没有待处理任务' }}</text>
-              </view>
+              <text class="overview-title">待办任务</text>
               <view class="overview-metric"><text>{{ todoCount > 99 ? '99+' : todoCount }}</text><text>项</text></view>
-              <AiIcon icon="/static/icons/ai-icon/chevron-right.svg" color="#86909c" size="sm" />
+              <text class="overview-desc">查看并处理</text>
             </button>
             <button class="overview-item" @click="goMessages">
-              <view class="overview-icon"><AiIcon icon="/static/icons/ai-icon/bell.svg" color="#4266f7" size="sm" /></view>
-              <view class="overview-copy">
-                <text class="overview-title">未读消息</text>
-                <text class="overview-desc">{{ unreadCount > 0 ? '有新的业务通知' : '消息已全部查看' }}</text>
-              </view>
+              <text class="overview-title">未读消息</text>
               <view class="overview-metric"><text>{{ unreadCount > 99 ? '99+' : unreadCount }}</text><text>条</text></view>
-              <AiIcon icon="/static/icons/ai-icon/chevron-right.svg" color="#86909c" size="sm" />
+              <text class="overview-desc">查看最新提醒</text>
             </button>
           </view>
         </view>
@@ -70,7 +63,12 @@
               <view class="shortcut-icon"><AiIcon :icon="item.icon" :color="item.color" size="md" /></view>
               <text class="shortcut-label">{{ item.label }}</text>
             </button>
+            <button v-if="allMenuItems.length" class="shortcut-item shortcut-more" @click="openMenuSheet">
+              <view class="shortcut-icon"><AiIcon icon="/static/icons/ai-icon/grid.svg" color="#94a3b8" size="md" /></view>
+              <text class="shortcut-label">更多</text>
+            </button>
           </view>
+          <view v-if="!menuItems.length" class="menu-empty-inline">暂无可在移动端打开的授权应用</view>
         </view>
 
         <view class="feed-section">
@@ -81,7 +79,7 @@
             </view>
             <button class="section-link" @click="goMessages">
               <text>全部消息</text>
-              <view class="icon-mask arrow-icon" :style="iconMask('/static/icons/ai-icon/arrow-right.svg', '#4266f7')" />
+              <view class="icon-mask arrow-icon" :style="iconMask('/static/icons/ai-icon/arrow-right.svg', '#3b82f6')" />
             </button>
           </view>
 
@@ -103,10 +101,10 @@
                 </view>
                 <text class="message-desc">{{ message.desc }}</text>
               </view>
-              <AiIcon icon="/static/icons/ai-icon/chevron-right.svg" color="#86909c" size="sm" />
+              <AiIcon icon="/static/icons/ai-icon/chevron-right.svg" color="#94a3b8" size="sm" />
             </button>
             <view v-if="!messages.length" class="message-empty-card">
-              <AiIcon icon="/static/icons/ai-icon/check-circle.svg" color="#16815d" size="md" />
+              <AiIcon icon="/static/icons/ai-icon/check-circle.svg" color="#10b981" size="md" />
               <text>暂无新提醒</text>
             </view>
           </view>
@@ -130,7 +128,7 @@
         @clear="clearMenuSearch"
       />
 
-      <scroll-view class="menu-browser" scroll-y :show-scrollbar="false">
+      <scroll-view class="menu-browser" scroll-y :show-scrollbar="false" refresher-enabled :refresher-triggered="menuRefreshing" @refresherrefresh="refreshMenus">
         <view v-if="filteredMenuGroups.length" class="menu-module-list">
           <view v-for="group in filteredMenuGroups" :key="group.key" class="menu-module">
             <view class="menu-module-head">
@@ -150,14 +148,14 @@
                   <text class="menu-list-name">{{ item.label }}</text>
                   <text class="menu-list-desc">打开功能</text>
                 </view>
-                <AiIcon icon="/static/icons/ai-icon/chevron-right.svg" color="#86909c" size="sm" />
+                <AiIcon icon="/static/icons/ai-icon/chevron-right.svg" color="#94a3b8" size="sm" />
               </button>
             </view>
           </view>
         </view>
         <view v-else class="menu-empty">
           <view class="menu-empty-icon">
-            <AiIcon icon="/static/icons/ai-icon/inbox.svg" color="#86909c" size="lg" />
+            <AiIcon icon="/static/icons/ai-icon/inbox.svg" color="#94a3b8" size="lg" />
           </view>
           <text class="menu-empty-title">{{ menuSearchKeyword ? '暂无匹配' : '暂无菜单' }}</text>
           <text class="menu-empty-desc">{{ menuSearchKeyword ? '换个关键词再试试' : '当前还没有可用的应用菜单' }}</text>
@@ -165,13 +163,13 @@
       </scroll-view>
     </AiPopupSheet>
 
-    <AiTabBar active="home" />
+    <AiTabBar active="home" :unread-count="unreadCount" />
   </view>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onPullDownRefresh, onShow } from '@dcloudio/uni-app'
 import AiAuthImage from '@/components/AiAuthImage.vue'
 import AiFeedbackHost from '@/components/feedback/AiFeedbackHost.vue'
 import AiIcon from '@/components/AiIcon.vue'
@@ -179,77 +177,28 @@ import AiPopupSheet from '@/components/AiPopupSheet.vue'
 import AiSearchBar from '@/components/AiSearchBar.vue'
 import AiTabBar from '@/components/AiTabBar.vue'
 import api from '@/api'
-import { useAuthStore } from '@/store'
+import { useAppStore, useAuthStore } from '@/store'
 import { resolveStaticUrl } from '@/utils/assets'
-import { DEFAULT_AVATAR_URL } from '@/utils/file'
 import { toast } from '@/utils/notify'
+import { buildMobileMenuGroups, flattenMobileMenus } from '@/utils/mobile-menu'
 
 const authStore = useAuthStore()
+const appStore = useAppStore()
+const defaultBrandLogo = resolveStaticUrl('/static/logo.png')
 
 const unreadCount = ref(0)
 const todoCount = ref(0)
 const latestMessages = ref([])
 const menuSheetVisible = ref(false)
 const menuSearchKeyword = ref('')
+const menuRefreshing = ref(false)
 
 const rawAvatarUrl = computed(() => authStore.avatar)
+const brandLogoUrl = computed(() => appStore.brandLogoUrl || defaultBrandLogo)
+const allMenuItems = computed(() => flattenMobileMenus(authStore.menus))
+const menuItems = computed(() => allMenuItems.value.slice(0, 3))
 
-const fallbackMenuItems = [
-  {
-    key: 'account',
-    label: '账户',
-    icon: '/static/icons/ai-icon/pocket.svg',
-    color: '#4266f7',
-    bgClass: 'bg-blue',
-  },
-  {
-    key: 'cards',
-    label: '卡包',
-    icon: '/static/icons/ai-icon/credit-card.svg',
-    color: '#4266f7',
-    bgClass: 'bg-indigo',
-  },
-  {
-    key: 'analytics',
-    label: '数据',
-    icon: '/static/icons/ai-icon/pie-chart.svg',
-    color: '#4266f7',
-    bgClass: 'bg-purple',
-  },
-  {
-    key: 'service',
-    label: '服务',
-    icon: '/static/icons/ai-icon/zap.svg',
-    color: '#4266f7',
-    bgClass: 'bg-amber',
-  },
-]
-
-const moreMenuItem = {
-  key: 'more',
-  label: '更多',
-  icon: '/static/icons/ai-icon/grid.svg',
-  color: '#4266f7',
-  bgClass: 'bg-teal',
-  isMore: true,
-}
-
-const menuToneList = [
-  { icon: '/static/icons/ai-icon/pocket.svg', color: '#4266f7', bgClass: 'bg-blue' },
-  { icon: '/static/icons/ai-icon/credit-card.svg', color: '#4266f7', bgClass: 'bg-blue' },
-  { icon: '/static/icons/ai-icon/pie-chart.svg', color: '#4266f7', bgClass: 'bg-blue' },
-  { icon: '/static/icons/ai-icon/zap.svg', color: '#4266f7', bgClass: 'bg-blue' },
-  { icon: '/static/icons/ai-icon/message-square.svg', color: '#4266f7', bgClass: 'bg-blue' },
-  { icon: '/static/icons/ai-icon/briefcase.svg', color: '#4266f7', bgClass: 'bg-blue' },
-]
-
-const menuItems = computed(() => {
-  const backendItems = flattenMenus(authStore.menus)
-  const sourceItems = backendItems.length ? backendItems : fallbackMenuItems
-  return sourceItems.slice(0, 7).concat(moreMenuItem)
-})
-
-const menuGroups = computed(() => buildMenuGroups(authStore.menus))
+const menuGroups = computed(() => buildMobileMenuGroups(authStore.menus))
 const filteredMenuGroups = computed(() => {
   const keyword = normalizeSearchText(menuSearchKeyword.value)
   if (!keyword) {
@@ -271,136 +220,6 @@ const filteredMenuGroups = computed(() => {
 })
 const messages = computed(() => latestMessages.value.slice(0, 2))
 
-function flattenMenus(menus = []) {
-  const result = []
-
-  function walk(list = []) {
-    sortMenus(list)
-      .filter(isVisibleMenu)
-      .forEach((menu) => {
-        const children = Array.isArray(menu.children) ? menu.children : []
-        if (children.length) {
-          walk(children)
-          return
-        }
-        if (isNavigableMenu(menu)) {
-          result.push(normalizeMenuEntry(menu, result.length))
-        }
-      })
-  }
-
-  walk(menus)
-  return result
-}
-
-function buildMenuGroups(menus = []) {
-  const groups = []
-  const topLevelItems = []
-
-  sortMenus(menus)
-    .filter(isVisibleMenu)
-    .forEach((menu) => {
-      const children = Array.isArray(menu.children) ? menu.children : []
-      const childItems = collectMenuEntries(children, groups.length)
-      if (childItems.length) {
-        groups.push({
-          key: `group-${menu.id || menu.resourceName || groups.length}`,
-          label: menu.resourceName || menu.title || menu.name || '未命名模块',
-          items: childItems,
-        })
-        return
-      }
-
-      if (isNavigableMenu(menu)) {
-        topLevelItems.push(normalizeMenuEntry(menu, topLevelItems.length))
-      }
-    })
-
-  if (topLevelItems.length) {
-    groups.unshift({
-      key: 'quick',
-      label: '常用',
-      items: topLevelItems,
-    })
-  }
-
-  if (!groups.length) {
-    groups.push({
-      key: 'template',
-      label: '模板',
-      items: fallbackMenuItems,
-    })
-  }
-
-  return groups
-}
-
-function collectMenuEntries(list = [], offset = 0) {
-  const result = []
-
-  function walk(children = []) {
-    sortMenus(children)
-      .filter(isVisibleMenu)
-      .forEach((menu) => {
-        const nextChildren = Array.isArray(menu.children) ? menu.children : []
-        if (nextChildren.length) {
-          walk(nextChildren)
-          return
-        }
-        if (isNavigableMenu(menu)) {
-          result.push(normalizeMenuEntry(menu, offset + result.length))
-        }
-      })
-  }
-
-  walk(list)
-  return result
-}
-
-function sortMenus(list = []) {
-  return [...list].sort((a, b) => Number(a?.sort || 0) - Number(b?.sort || 0))
-}
-
-function isVisibleMenu(menu) {
-  return menu && menu.visible !== 0 && menu.menuStatus !== 0
-}
-
-function isNavigableMenu(menu) {
-  return Boolean(String(menu?.component || menu?.path || '').trim())
-}
-
-function isRegisteredH5Route(path) {
-  const normalized = String(path || '').split('?')[0].replace(/^\//, '')
-  return [
-    'pages/index/index',
-    'pages/message/index',
-    'pages/todo',
-    'pages/mine/index',
-    'pages/demo/loading/index',
-    'pages/app-entry',
-    'pages/lowcode-runtime',
-  ].includes(normalized)
-}
-
-function normalizeMenuEntry(menu, index = 0) {
-  const tone = menuToneList[index % menuToneList.length]
-  return {
-    ...tone,
-    key: menu.id || menu.path || menu.resourceName,
-    label: menu.resourceName || menu.title || menu.name || '未命名',
-    path: menu.path,
-    component: menu.component,
-    icon: normalizeMenuIcon(menu.icon, tone.icon),
-    external: menu.isExternal === 1,
-    fromBackend: true,
-  }
-}
-
-function normalizeMenuIcon(icon, fallbackIcon) {
-  const iconValue = String(icon || '').trim()
-  return iconValue || fallbackIcon
-}
-
 function normalizeSearchText(value) {
   return String(value || '').trim().toLowerCase()
 }
@@ -408,6 +227,11 @@ function normalizeSearchText(value) {
 onShow(async () => {
   hideNativeTabBar()
   await refreshWorkspace({ silent: true })
+})
+
+onPullDownRefresh(async () => {
+  try { await refreshWorkspace({ silent: true }) }
+  finally { uni.stopPullDownRefresh() }
 })
 
 function hideNativeTabBar() {
@@ -434,7 +258,7 @@ function goMine() {
 }
 
 function goMessages() {
-  uni.navigateTo({ url: '/pages/message/index' })
+  uni.switchTab({ url: '/pages/message/index' })
 }
 
 function goTodo() {
@@ -442,23 +266,7 @@ function goTodo() {
 }
 
 function handleShortcut(item) {
-  if (item.isMore) {
-    openMenuSheet()
-    return
-  }
-  if (item.key === 'account') {
-    goMine()
-    return
-  }
-  if (item.key === 'component-demo') {
-    uni.navigateTo({ url: '/pages/demo/loading/index' })
-    return
-  }
-  if (item.fromBackend) {
-    openBackendMenu(item)
-    return
-  }
-  toast(`${item.label}待接入`, { type: 'info' })
+  openBackendMenu(item)
 }
 
 function openMenuSheet() {
@@ -471,42 +279,28 @@ function clearMenuSearch() {
 }
 
 function openMenuEntry(item) {
-  if (item.isMore) {
-    return
-  }
   menuSheetVisible.value = false
   handleShortcut(item)
 }
 
 function openBackendMenu(item) {
-  const path = item.component || item.path
-  if (String(path || '').split('?')[0] === '/pages/todo') {
-    uni.switchTab({ url: '/pages/todo' })
-    return
-  }
-  if (path && path.startsWith('/pages/')) {
-    if (isRegisteredH5Route(path)) {
-      uni.navigateTo({ url: path })
-      return
-    }
-    uni.navigateTo({ url: `/pages/app-entry?title=${encodeURIComponent(item.label)}&path=${encodeURIComponent(path)}` })
-    return
-  }
-  const lowcodeConfigKey = resolveLowcodeConfigKey(path)
-  if (lowcodeConfigKey) {
-    uni.navigateTo({ url: `/pages/lowcode-runtime?configKey=${encodeURIComponent(lowcodeConfigKey)}&title=${encodeURIComponent(item.label)}` })
-    return
-  }
-  toast(`${item.label}页面待接入`, { type: 'info' })
+  if (!item.target) return
+  const url = item.target.url
+  if (item.target.tab) uni.switchTab({ url: url.split('?')[0] })
+  else uni.navigateTo({ url })
 }
 
-function resolveLowcodeConfigKey(path) {
-  return String(path || '').match(/(?:crud-page|crud)\/([^/?]+)/)?.[1] || ''
+async function refreshMenus() {
+  if (menuRefreshing.value) return
+  menuRefreshing.value = true
+  try { await authStore.fetchAccessSnapshot() }
+  finally { menuRefreshing.value = false }
 }
 
 function openMessage(message) {
   if (message.fromBackend) {
-    uni.navigateTo({ url: `/pages/message/index?id=${message.id}` })
+    uni.setStorageSync('forge_h5_pending_message_id', String(message.id))
+    goMessages()
     return
   }
   goMessages()
@@ -590,7 +384,7 @@ function normalizeHomeMessage(message) {
     desc: stripHtml(message.content || message.description || '-'),
     time: formatMessageTime(message.createTime || message.receiveTime),
     icon: isApproval ? '/static/icons/ai-icon/check-square.svg' : '/static/icons/ai-icon/message-square.svg',
-    color: unread ? '#4266f7' : '#4e5969',
+    color: unread ? '#3b82f6' : '#475569',
     bgClass: isApproval ? 'bg-emerald' : unread ? 'bg-blue' : 'bg-slate',
     unread,
     fromBackend: true,

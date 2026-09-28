@@ -7,6 +7,10 @@
         :title="node.label || node.props?.header || ''"
         :collapsible="isCollapsibleCard(node)"
         :collapsed-by-default="node.props?.collapsedByDefault === true"
+        :bordered="node.props?.bordered !== false"
+        :embedded="node.props?.embedded === true"
+        :segmented="node.props?.segmented === true"
+        :size="node.props?.size || 'medium'"
       >
         <LowcodeLayoutNodes
           :ref="instance => setChildLayoutRef(nodeKey(node), instance)"
@@ -24,7 +28,7 @@
       </CardSection>
 
       <!-- Mobile containers: desktop grids/tables collapse into a readable stack. -->
-      <view v-else-if="isContainerNode(node)" :class="containerClass(node)">
+      <view v-else-if="isContainerNode(node)" :class="containerClass(node)" :style="containerStyle(node)">
         <LowcodeLayoutNodes
           :ref="instance => setChildLayoutRef(nodeKey(node), instance)"
           :nodes="node.children || []"
@@ -71,8 +75,8 @@
           v-for="item in paneChildren(node)"
           :key="item.key"
           :title="item.label || '分组'"
-          :collapsible="true"
-          :collapsed-by-default="node.props?.accordion !== true && item.props?.collapsedByDefault === true"
+            :collapsible="item.props?.disabled !== true"
+            :collapsed-by-default="collapseItemClosed(node, item)"
         >
           <LowcodeLayoutNodes
             :ref="instance => setChildLayoutRef(`${nodeKey(node)}:${nodeKey(item)}`, instance)"
@@ -133,6 +137,7 @@ import {
   resolveFieldControl,
   resolveFieldLinkageContext,
 } from '@/utils/lowcode-runtime'
+import { normalizeMobileFieldContract, validateMobileFieldValue } from '@/utils/mobile-field-contract'
 
 defineOptions({ name: 'LowcodeLayoutNodes' })
 
@@ -170,6 +175,28 @@ function containerClass(node) {
   return ['lowcode-layout-container', `is-${resolveType(node)}`]
 }
 
+function containerStyle(node) {
+  const values = node.props || {}
+  const type = resolveType(node)
+  const style = {}
+  if (['box', 'space'].includes(type)) {
+    style.display = 'flex'
+    style.flexDirection = values.direction === 'horizontal' || values.direction === 'row' ? 'row' : 'column'
+    style.justifyContent = values.justifyContent || values.justify || 'flex-start'
+    style.alignItems = values.alignItems || values.align || 'stretch'
+    style.flexWrap = values.wrap === true || values.wrap === 'wrap' ? 'wrap' : 'nowrap'
+    style.gap = spacingValue(values.gap ?? values.size)
+  }
+  if (type === 'grid') {
+    style['--lowcode-grid-columns'] = String(Math.max(1, Number(values.columns || 1)))
+    style['--lowcode-grid-gap'] = spacingValue(values.gutter ?? values.rowGap)
+    style.alignItems = values.alignItems || 'stretch'
+    style.justifyItems = values.justifyItems || 'stretch'
+  }
+  if (values.cellBackground) style.backgroundColor = safeColor(values.cellBackground)
+  return style
+}
+
 function isCollapsibleCard(node) {
   return node.props?.collapsible === true
 }
@@ -199,7 +226,31 @@ function paneChildren(node) {
 }
 
 function tabLabels(node) {
-  return paneChildren(node).map(pane => pane.label || '标签页')
+  return paneChildren(node).map(pane => ({
+    label: pane.label || pane.props?.label || '标签页',
+    name: pane.props?.name || pane.key,
+    disabled: pane.props?.disabled === true,
+  }))
+}
+
+function collapseItemClosed(node, item) {
+  if (item.props?.collapsedByDefault === true) return true
+  const expanded = Array.isArray(node.props?.defaultExpandedNames) ? node.props.defaultExpandedNames.map(String) : []
+  if (expanded.length) return !expanded.includes(String(item.props?.name || item.key))
+  return false
+}
+
+function spacingValue(value) {
+  if (value === undefined || value === null || value === '') return '16rpx'
+  if (typeof value === 'number') return `${Math.max(0, value)}rpx`
+  if (value === 'small') return '12rpx'
+  if (value === 'large') return '32rpx'
+  return /^\d+(?:\.\d+)?(?:rpx|px|rem|em|%)$/.test(String(value)) ? String(value) : '16rpx'
+}
+
+function safeColor(value) {
+  const text = String(value || '')
+  return /^#[0-9a-f]{3,8}$/i.test(text) || /^rgba?\([\d\s.,%]+\)$/i.test(text) ? text : undefined
 }
 
 // ── Visible nodes with runtime control ──
@@ -223,7 +274,7 @@ const visibleNodes = computed(() => props.nodes
 // ── Field enrichment (same logic as LowcodeForm) ──
 
 function enrichField(node) {
-  return {
+  return normalizeMobileFieldContract({
     ...node,
     props: {
       ...(node.props || {}),
@@ -236,7 +287,7 @@ function enrichField(node) {
       route: { query: props.context.routeQuery || {} },
       user: props.context.user || {},
     }),
-  }
+  })
 }
 
 function fieldOptions(node) {
@@ -292,12 +343,11 @@ function setChildLayoutRef(key, instance) {
 function collectFieldErrors(nodes, fieldErrors) {
   for (const node of nodes) {
     if (isFieldNode(node)) {
-      const control = resolveFieldControl(node, { record: props.data, formData: props.data, row: props.data })
-      if (!control.visible || !control.required || props.readonly || control.readonly) continue
-      const value = props.data[node.field]
-      if (value === undefined || value === null || value === '' || (Array.isArray(value) && !value.length)) {
-        fieldErrors[node.field] = node.requiredMessage || `请输入${node.label}`
-      }
+      const field = normalizeMobileFieldContract(node)
+      const control = resolveFieldControl(field, { record: props.data, formData: props.data, row: props.data })
+      if (!control.visible || props.readonly || control.readonly) continue
+      const message = validateMobileFieldValue({ ...field, required: control.required }, props.data[node.field])
+      if (message) fieldErrors[node.field] = message
     }
     else if (Array.isArray(node.children)) {
       collectFieldErrors(node.children, fieldErrors)
@@ -325,8 +375,12 @@ defineExpose({ validate })
 .lowcode-layout { display: flex; flex-direction: column; }
 .lowcode-layout-container { min-width: 0; }
 .lowcode-layout-container.is-grid, .lowcode-layout-container.is-table, .lowcode-layout-container.is-box { margin-bottom: 18rpx; }
-.lowcode-layout-container.is-table { padding: 14rpx; border: 1rpx solid var(--forge-color-border, #c9cdd4); border-radius: 12rpx; }
+.lowcode-layout-container.is-grid > :deep(.lowcode-layout) { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--lowcode-grid-gap, 16rpx); }
+.lowcode-layout-container.is-table { padding: 14rpx; border: 1rpx solid var(--forge-color-border, #cbd5e1); border-radius: 12rpx; }
 .lowcode-layout-container.is-space > :deep(.lowcode-layout) { gap: 16rpx; }
 .lowcode-layout-tabs { margin-bottom: 24rpx; }
 .lowcode-layout-collapse { margin-bottom: 24rpx; }
+@media (min-width: 768px) {
+  .lowcode-layout-container.is-grid > :deep(.lowcode-layout) { grid-template-columns: repeat(var(--lowcode-grid-columns, 1), minmax(0, 1fr)); }
+}
 </style>

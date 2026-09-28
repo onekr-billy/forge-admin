@@ -5,6 +5,7 @@
 
 import { parseJson, resolveChildRows, resolveChildTitle } from './lowcode-runtime.js'
 import { normalizeMobileComponentType, resolveMobileComponent } from '../components/lowcode/mobile-component-registry.js'
+import { normalizeMobileFieldContract } from './mobile-field-contract.js'
 
 /**
  * 将后端 context.fields 转换为 LowcodeForm 所需的 mainFields 格式
@@ -41,13 +42,24 @@ export function adaptBusinessTaskFields(rawFields = [], fieldPermissions = [], o
         disabled: readonly,
         itemPermissions,
       }
-      return {
+      return normalizeMobileFieldContract({
+        // 先完整保留后端/PC 设计器协议，再覆盖移动端权限结论。
+        // 未显式列出的未来声明式属性也不能在审批链路中丢失。
+        ...item,
         field,
         fieldCode: field,
         label: item?.label || item?.fieldName || field,
         type,
         props,
-        required: writable && (typeof permission?.required === 'boolean' ? permission.required : item?.required === true),
+        validation: {
+          ...(item?.props?.validation || {}),
+          ...(item?.validation || {}),
+        },
+        rules: item?.rules || item?.validation?.rules || item?.props?.validation?.rules || [],
+        required: writable && (typeof permission?.required === 'boolean'
+          ? permission.required
+          : item?.required === true || item?.validation?.required === true || item?.props?.validation?.required === true),
+        requiredMessage: item?.requiredMessage || item?.validation?.requiredMessage || item?.props?.validation?.requiredMessage,
         readonly,
         hidden: item?.hidden === true,
         formVisible: readable,
@@ -68,7 +80,7 @@ export function adaptBusinessTaskFields(rawFields = [], fieldPermissions = [], o
         arrayConfig: { ...(item?.arrayConfig || item?.props?.arrayConfig || {}) },
         businessType: item?.businessType || item?.props?.businessType,
         limit: item?.limit ?? item?.props?.limit,
-      }
+      })
     })
     .filter(Boolean)
 }
@@ -154,8 +166,18 @@ function normalizeFieldOptions(raw) {
  * @returns {Array} pageSections
  */
 export function buildDefaultPageSections(fields = [], children = [], configuredSections = null) {
+  const sourceChildren = Array.isArray(children) ? children : []
   const sections = Array.isArray(configuredSections) && configuredSections.length
-    ? configuredSections.map(section => ({ ...section }))
+    ? configuredSections.map((section) => {
+        if (String(section?.sectionType || '') !== 'child_table') return { ...section }
+        const child = resolveConfiguredSectionChild(section, sourceChildren)
+        return {
+          ...section,
+          ...(child?.relationKey ? { relationKey: child.relationKey } : {}),
+          displayMode: section.displayMode || child?.displayMode || 'card_list',
+          title: section.title || resolveChildTitle(child || {}),
+        }
+      })
     : []
   if (!sections.length && fields.length) {
     sections.push({
@@ -169,7 +191,7 @@ export function buildDefaultPageSections(fields = [], children = [], configuredS
     })
   }
   const configuredRelations = new Set(sections.map(section => String(section?.relationKey || '')).filter(Boolean))
-  ;(Array.isArray(children) ? children : []).forEach((child, index) => {
+  ;sourceChildren.forEach((child, index) => {
     if (!child?.relationKey) return
     if (configuredRelations.has(String(child.relationKey))) return
     sections.push({
@@ -177,12 +199,34 @@ export function buildDefaultPageSections(fields = [], children = [], configuredS
       sectionType: 'child_table',
       title: resolveChildTitle(child),
       relationKey: child.relationKey,
-      displayMode: 'card_list',
+      displayMode: child.displayMode || 'card_list',
       collapsible: false,
       collapsedByDefault: false,
     })
   })
   return sections
+}
+
+function resolveConfiguredSectionChild(section = {}, children = []) {
+  const sectionKeys = relationIdentityVariants(section.relationKey, section.sectionId, section.id)
+  return children.find((child) => {
+    const childKeys = relationIdentityVariants(child?.relationKey, child?.modelCode, child?.key)
+    return [...sectionKeys].some(key => childKeys.has(key))
+  }) || null
+}
+
+function relationIdentityVariants(...values) {
+  const result = new Set()
+  values.forEach((value) => {
+    const normalized = String(value || '').replace(/[^a-z0-9]/gi, '').toLowerCase()
+    if (!normalized) return
+    result.add(normalized)
+    result.add(normalized.replace(/^child/, ''))
+    result.add(normalized.replace(/^cgou/, ''))
+    result.add(normalized.replace(/^childcgou/, ''))
+  })
+  result.delete('')
+  return result
 }
 
 /**

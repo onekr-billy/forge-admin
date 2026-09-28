@@ -1,12 +1,8 @@
 <template>
   <view class="mine-page">
     <AiFeedbackHost />
-    <view class="mine-content">
-      <view class="mine-header">
-        <text class="mine-title">账户</text>
-        <text class="mine-subtitle">账号、租户与安全设置</text>
-      </view>
-
+    <scroll-view class="mine-scroll" scroll-y :show-scrollbar="true">
+      <view class="mine-content">
       <view class="profile-card">
 
         <AiImageUpload
@@ -19,7 +15,8 @@
         >
           <view class="avatar-frame">
             <view class="avatar-inner">
-              <AiAuthImage class="avatar-image" :src="rawAvatarUrl" :fallback="DEFAULT_AVATAR_URL" mode="aspectFill" />
+              <AiAuthImage v-if="rawAvatarUrl" class="avatar-image" :src="rawAvatarUrl" :fallback="brandLogoUrl || '/static/logo.png'" mode="aspectFit" />
+              <image v-else class="avatar-image" :src="brandLogoUrl || '/static/logo.png'" mode="aspectFit" />
             </view>
             <view class="avatar-edit">
               <AiIcon icon="/static/icons/ai-icon/camera.svg" color="#ffffff" size="sm" />
@@ -32,8 +29,9 @@
 
         <view class="profile-copy">
           <text class="profile-name">{{ authStore.displayName }}</text>
+          <text class="profile-account">{{ userInfo.username || userInfo.userName || '当前账号' }}</text>
           <view class="member-badge">
-            <AiIcon icon="/static/icons/ai-icon/shield.svg" color="#4266f7" size="sm" />
+            <AiIcon icon="/static/icons/ai-icon/shield.svg" color="#3b82f6" size="sm" />
             <text>{{ authStore.roleText }}</text>
           </view>
         </view>
@@ -46,6 +44,8 @@
           :key="groupIndex"
           class="menu-group"
         >
+          <text class="menu-group-title">{{ group.label }}</text>
+          <view class="menu-group-card">
           <view
             v-for="item in group.items"
             :key="item.key"
@@ -63,13 +63,19 @@
             <AiIcon
               v-if="!item.danger"
               icon="/static/icons/ai-icon/chevron-right.svg"
-              color="#86909c"
+              color="#94a3b8"
               size="sm"
             />
           </view>
+          </view>
         </view>
       </view>
-    </view>
+      <view class="logout-card" @click="handleLogout">
+        <AiIcon icon="/static/icons/ai-icon/log-out.svg" color="#ef4444" size="md" />
+        <text>退出登录</text>
+      </view>
+      </view>
+    </scroll-view>
 
     <AiPopupSheet
       v-model="profileSheetVisible"
@@ -89,7 +95,8 @@
           @upload-end="avatarUploading = false"
         >
           <view class="avatar-large">
-            <AiAuthImage class="avatar-large-image" :src="rawAvatarUrl" :fallback="DEFAULT_AVATAR_URL" mode="aspectFill" />
+            <AiAuthImage v-if="rawAvatarUrl" class="avatar-large-image" :src="rawAvatarUrl" :fallback="brandLogoUrl || '/static/logo.png'" mode="aspectFit" />
+            <image v-else class="avatar-large-image" :src="brandLogoUrl || '/static/logo.png'" mode="aspectFit" />
             <view class="avatar-large-action">
               <AiIcon icon="/static/icons/ai-icon/camera.svg" color="#ffffff" size="sm" />
               <text>{{ avatarUploading ? '上传中' : '更换头像' }}</text>
@@ -187,7 +194,7 @@
             @click="handleTenantSwitch(tenant)"
           >
             <view class="tenant-row-icon">
-              <AiIcon icon="/static/icons/ai-icon/layers.svg" :color="isCurrentTenant(tenant) ? '#4266f7' : '#4e5969'" size="sm" />
+              <AiIcon icon="/static/icons/ai-icon/layers.svg" :color="isCurrentTenant(tenant) ? '#3b82f6' : '#475569'" size="sm" />
             </view>
             <view class="tenant-row-main">
               <text class="tenant-row-name">{{ tenant.tenantName }}</text>
@@ -197,7 +204,7 @@
             <AiIcon
               v-else-if="isCurrentTenant(tenant)"
               icon="/static/icons/ai-icon/check-circle.svg"
-              color="#4266f7"
+              color="#3b82f6"
               size="sm"
             />
           </view>
@@ -223,14 +230,14 @@
             <text class="setting-title">消息免打扰</text>
             <text class="setting-desc">开启后保留消息红点，不做本机提醒</text>
           </view>
-          <switch :checked="messageQuietMode" color="#4266f7" @change="toggleQuietMode" />
+          <wd-switch v-model="messageQuietMode" active-color="#3b82f6" @change="toggleQuietMode" />
         </view>
         <view class="setting-row setting-row-button" @click="clearLocalCache">
           <view class="setting-copy">
             <text class="setting-title">清理安全会话缓存</text>
             <text class="setting-desc">清理接口加密会话，不退出登录</text>
           </view>
-          <AiIcon icon="/static/icons/ai-icon/trash.svg" color="#f53f3f" size="sm" />
+          <AiIcon icon="/static/icons/ai-icon/trash.svg" color="#ef4444" size="sm" />
         </view>
       </view>
     </AiPopupSheet>
@@ -244,7 +251,7 @@
     >
       <view class="support-card">
         <view class="support-icon">
-          <AiIcon icon="/static/icons/ai-icon/info.svg" color="#4266f7" size="lg" />
+          <AiIcon icon="/static/icons/ai-icon/info.svg" color="#3b82f6" size="lg" />
         </view>
         <text class="support-title">Forge 移动端</text>
         <text class="support-desc">支持移动端菜单、消息中心、流程待办和账号自助维护。遇到权限或页面打不开时，请先在首页刷新信息。</text>
@@ -276,16 +283,20 @@ import AiImageUpload from '@/components/AiImageUpload.vue'
 import AiPopupSheet from '@/components/AiPopupSheet.vue'
 import AiTabBar from '@/components/AiTabBar.vue'
 import api from '@/api'
-import { useAuthStore } from '@/store'
+import { useAppStore, useAuthStore } from '@/store'
 import { resetKeyExchange } from '@/utils/crypto/key-exchange'
 import { showConfirmDialog } from '@/utils/dialog'
 import { DEFAULT_AVATAR_URL } from '@/utils/file'
 import { toast } from '@/utils/notify'
+import { resolveStaticUrl } from '@/utils/assets'
 
 const authStore = useAuthStore()
+const appStore = useAppStore()
+const defaultBrandLogo = resolveStaticUrl('/static/logo.png')
 const userInfo = computed(() => authStore.userInfo || {})
 
 const rawAvatarUrl = computed(() => authStore.avatar)
+const brandLogoUrl = computed(() => appStore.brandLogoUrl || defaultBrandLogo)
 
 const profileSheetVisible = ref(false)
 const passwordSheetVisible = ref(false)
@@ -345,7 +356,7 @@ const securityItems = computed(() => {
       label: '登录账号',
       value: userInfo.value.username,
       icon: '/static/icons/ai-icon/user.svg',
-      color: '#4266f7',
+      color: '#3b82f6',
     })
   }
   if (maskedPhone.value) {
@@ -353,7 +364,7 @@ const securityItems = computed(() => {
       label: '绑定手机',
       value: maskedPhone.value,
       icon: '/static/icons/ai-icon/phone.svg',
-      color: '#4266f7',
+      color: '#3b82f6',
     })
   }
   if (maskedEmail.value) {
@@ -361,7 +372,7 @@ const securityItems = computed(() => {
       label: '绑定邮箱',
       value: maskedEmail.value,
       icon: '/static/icons/ai-icon/mail.svg',
-      color: '#4266f7',
+      color: '#3b82f6',
     })
   }
   if (authStore.roleText) {
@@ -369,7 +380,7 @@ const securityItems = computed(() => {
       label: '角色',
       value: authStore.roleText,
       icon: '/static/icons/ai-icon/shield.svg',
-      color: '#4266f7',
+      color: '#3b82f6',
     })
   }
   return items
@@ -377,13 +388,14 @@ const securityItems = computed(() => {
 
 const menuGroups = computed(() => [
   {
+    label: '账户与安全',
     items: [
       {
         key: 'profile',
         icon: '/static/icons/ai-icon/user.svg',
         label: '个人信息',
         desc: '姓名、手机、邮箱和头像',
-        color: '#4266f7',
+        color: '#3b82f6',
         bgClass: 'bg-blue',
       },
       {
@@ -391,7 +403,7 @@ const menuGroups = computed(() => [
         icon: '/static/icons/ai-icon/key.svg',
         label: '修改密码',
         desc: '更新当前登录密码',
-        color: '#4266f7',
+        color: '#3b82f6',
         bgClass: 'bg-purple',
       },
       {
@@ -399,7 +411,7 @@ const menuGroups = computed(() => [
         icon: '/static/icons/ai-icon/shield.svg',
         label: '安全中心',
         desc: '账号绑定和角色信息',
-        color: '#4266f7',
+        color: '#3b82f6',
         bgClass: 'bg-indigo',
       },
       ...(showTenantSwitch.value
@@ -408,7 +420,7 @@ const menuGroups = computed(() => [
             icon: '/static/icons/ai-icon/briefcase.svg',
             label: '切换租户',
             desc: currentTenantName.value,
-            color: '#4266f7',
+            color: '#3b82f6',
             bgClass: 'bg-blue',
           }]
         : []),
@@ -417,19 +429,20 @@ const menuGroups = computed(() => [
         icon: '/static/icons/ai-icon/bell.svg',
         label: '消息中心',
         desc: '站内消息和流程提醒',
-        color: '#4266f7',
+        color: '#3b82f6',
         bgClass: 'bg-cyan',
       },
     ],
   },
   {
+    label: '设置与帮助',
     items: [
       {
         key: 'help',
         icon: '/static/icons/ai-icon/help-circle.svg',
         label: '帮助与支持',
         desc: '移动端能力说明',
-        color: '#4266f7',
+        color: '#3b82f6',
         bgClass: 'bg-emerald',
       },
       {
@@ -437,17 +450,8 @@ const menuGroups = computed(() => [
         icon: '/static/icons/ai-icon/settings.svg',
         label: '通用设置',
         desc: '消息提醒和本机缓存',
-        color: '#4e5969',
+        color: '#475569',
         bgClass: 'bg-slate',
-      },
-      {
-        key: 'logout',
-        icon: '/static/icons/ai-icon/log-out.svg',
-        label: '退出登录',
-        desc: '清除当前登录态',
-        color: '#f53f3f',
-        bgClass: 'bg-rose',
-        danger: true,
       },
     ],
   },
@@ -488,7 +492,7 @@ function handleMenu(item) {
 }
 
 function goMessages() {
-  uni.navigateTo({ url: '/pages/message/index' })
+  uni.switchTab({ url: '/pages/message/index' })
 }
 
 function openProfileSheet() {
@@ -683,7 +687,7 @@ function isCurrentTenant(tenant) {
 }
 
 function toggleQuietMode(event) {
-  messageQuietMode.value = Boolean(event.detail.value)
+  messageQuietMode.value = Boolean(event?.value ?? messageQuietMode.value)
   uni.setStorageSync('forge_h5_quiet_mode', messageQuietMode.value ? '1' : '0')
   toast(messageQuietMode.value ? '已开启免打扰' : '已关闭免打扰', { type: 'success' })
 }

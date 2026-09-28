@@ -1,6 +1,6 @@
 <template>
-  <view v-if="control.visible" class="lowcode-field">
-    <view class="lowcode-field__label">
+  <view v-if="control.visible" class="lowcode-field" :class="fieldClasses">
+    <view v-if="normalizedField.showLabel !== false" class="lowcode-field__label">
       <text>{{ field.label }}</text>
       <text v-if="control.required" class="lowcode-field__required">*</text>
     </view>
@@ -11,16 +11,21 @@
         :reason="descriptor.reason"
         :value="modelValue"
       />
-      <view v-else-if="readonly || descriptor.capability === MOBILE_COMPONENT_CAPABILITY.READONLY" class="lowcode-field__readonly">
-        {{ displayValue }}
+      <view
+        v-else-if="(readonly || descriptor.capability === MOBILE_COMPONENT_CAPABILITY.READONLY) && !usesDedicatedReadonlyRenderer"
+        class="lowcode-field__readonly"
+        :class="readonlyClasses"
+      >
+        <text class="lowcode-field__readonly-value">{{ displayValue }}</text>
+        <button v-if="fieldProps.copyable === true && displayValue !== '-'" class="lowcode-field__copy" @click="copyDisplayValue">复制</button>
       </view>
       <LowcodeArrayField
         v-else-if="descriptor.renderer === 'array'"
         ref="arrayFieldRef"
         :model-value="arrayValue"
-        :field="field"
+        :field="normalizedField"
         :readonly="readonly"
-        :disabled="disabled"
+        :disabled="effectiveDisabled"
         @update:model-value="updateValue"
         @change="emit('change', $event)"
       />
@@ -29,8 +34,8 @@
           class="lowcode-field__range-input"
           type="number"
           :model-value="rangeValue[0]"
-          :disabled="disabled"
-          :placeholder="field.props?.startPlaceholder || '开始值'"
+          :disabled="effectiveDisabled"
+          :placeholder="fieldProps.startPlaceholder || '开始值'"
           @update:model-value="updateRangeValue(0, $event)"
           @blur="emit('blur')"
         />
@@ -39,8 +44,8 @@
           class="lowcode-field__range-input"
           type="number"
           :model-value="rangeValue[1]"
-          :disabled="disabled"
-          :placeholder="field.props?.endPlaceholder || '结束值'"
+          :disabled="effectiveDisabled"
+          :placeholder="fieldProps.endPlaceholder || '结束值'"
           @update:model-value="updateRangeValue(1, $event)"
           @blur="emit('blur')"
         />
@@ -48,9 +53,11 @@
       <view v-else-if="descriptor.renderer === 'barcode-scanner'" class="lowcode-field__barcode">
         <AiField
           :model-value="modelValue"
-          :placeholder="field.props?.placeholder || '请输入或扫描条码'"
-          :maxlength="field.props?.maxlength || 2048"
-          :clearable="field.props?.allowManualInput !== false"
+          :placeholder="fieldProps.placeholder || '请输入或扫描条码'"
+          :maxlength="fieldProps.maxLength || 2048"
+          :clearable="fieldProps.clearable !== false && fieldProps.allowManualInput !== false"
+          :disabled="effectiveDisabled"
+          :readonly="fieldProps.allowManualInput === false"
           @update:model-value="updateValue"
           @blur="emit('blur')"
           @confirm="completeManualScan"
@@ -59,30 +66,62 @@
           class="lowcode-field__scan"
           size="sm"
           :loading="scanning"
-          :disabled="scanning"
+          :disabled="effectiveDisabled || scanning"
           @click="scan"
         >
-          {{ scanning ? '扫描中' : (field.props?.buttonText || '扫码') }}
+          {{ scanning ? '扫描中' : (fieldProps.buttonText || '扫码') }}
         </AiButton>
       </view>
       <AiTextarea
         v-else-if="descriptor.renderer === 'textarea'"
         :model-value="modelValue"
-        :maxlength="field.props?.maxlength || 2048"
-        :disabled="disabled"
-        :placeholder="field.props?.placeholder || `请输入${field.label}`"
-        :show-word-limit="field.props?.showWordLimit !== false"
+        :maxlength="fieldProps.maxLength || 2048"
+        :disabled="effectiveDisabled"
+        :readonly="readonly"
+        :placeholder="fieldProps.placeholder || `请输入${field.label}`"
+        :show-word-limit="fieldProps.showCount === true"
+        :auto-height="fieldProps.autosize === true"
+        :min-height="textareaMinHeight"
+        :clearable="fieldProps.clearable === true"
         @update:model-value="updateValue"
         @blur="emit('blur')"
       />
+      <view v-else-if="descriptor.renderer === 'text' && fieldProps.pair === true" class="lowcode-field__range">
+        <AiField
+          class="lowcode-field__range-input"
+          :model-value="pairValue[0]"
+          :disabled="effectiveDisabled"
+          :readonly="readonly"
+          :placeholder="fieldProps.startPlaceholder || fieldProps.placeholder || '请输入开始值'"
+          :maxlength="fieldProps.maxLength || 2048"
+          @update:model-value="value => updatePairValue(0, value)"
+          @blur="emit('blur')"
+        />
+        <text class="lowcode-field__range-separator">{{ fieldProps.separator || '—' }}</text>
+        <AiField
+          class="lowcode-field__range-input"
+          :model-value="pairValue[1]"
+          :disabled="effectiveDisabled"
+          :readonly="readonly"
+          :placeholder="fieldProps.endPlaceholder || fieldProps.placeholder || '请输入结束值'"
+          :maxlength="fieldProps.maxLength || 2048"
+          @update:model-value="value => updatePairValue(1, value)"
+          @blur="emit('blur')"
+        />
+      </view>
       <AiField
         v-else-if="descriptor.renderer === 'text'"
         :model-value="modelValue"
         type="text"
-        :placeholder="field.props?.placeholder || `请输入${field.label}`"
-        :maxlength="field.props?.maxlength || 2048"
-        :clearable="field.props?.clearable !== false"
-        :disabled="disabled"
+        :placeholder="fieldProps.placeholder || `请输入${field.label}`"
+        :maxlength="fieldProps.maxLength || 2048"
+        :clearable="fieldProps.clearable !== false"
+        :disabled="effectiveDisabled"
+        :readonly="readonly"
+        :autofocus="fieldProps.autofocus === true"
+        :show-count="fieldProps.showCount === true"
+        :prefix="fieldProps.prefix"
+        :suffix="fieldProps.suffix"
         @update:model-value="updateValue"
         @blur="emit('blur')"
       />
@@ -90,21 +129,25 @@
         v-else-if="descriptor.renderer === 'number' || descriptor.renderer === 'money'"
         type="number"
         :model-value="modelValue"
-        :disabled="disabled"
-        :placeholder="field.props?.placeholder || `请输入${field.label}`"
-        @update:model-value="updateValue"
-        @blur="emit('blur')"
+        :disabled="effectiveDisabled"
+        :readonly="readonly"
+        :placeholder="fieldProps.placeholder || `请输入${field.label}`"
+        :clearable="fieldProps.clearable === true"
+        :prefix="descriptor.renderer === 'money' ? (fieldProps.currencySymbol || '¥') : fieldProps.prefix"
+        :suffix="fieldProps.suffix"
+        @update:model-value="updateNumericValue"
+        @blur="completeNumericInput"
       />
       <LowcodeEntitySelector
         v-else-if="isRemoteSelectorField"
-        :field="field"
+        :field="normalizedField"
         :model-value="modelValue"
         :options="options"
         :form-data="formData"
         :context="context"
-        :disabled="disabled"
-        :clearable="field.props?.clearable !== false"
-        :placeholder="field.props?.placeholder || `请选择${field.label}`"
+        :disabled="effectiveDisabled"
+        :clearable="fieldProps.clearable !== false"
+        :placeholder="fieldProps.placeholder || `请选择${field.label}`"
         @update:model-value="updateValue"
         @change="emit('change', $event)"
         @selection="emit('selection', $event)"
@@ -113,8 +156,14 @@
         v-else-if="descriptor.renderer === 'picker' && options.length"
         :model-value="modelValue"
         :options="options"
-        :placeholder="field.props?.placeholder || `请选择${field.label}`"
+        :placeholder="fieldProps.placeholder || `请选择${field.label}`"
         :title="field.label"
+        :multiple="fieldProps.multiple === true"
+        :disabled="effectiveDisabled"
+        :clearable="fieldProps.clearable !== false"
+        :filterable="fieldProps.filterable === true"
+        :min="Number(fieldProps.min || 0)"
+        :max="Number(fieldProps.max || 0)"
         @update:model-value="updateValue"
         @change="emit('change', $event)"
       />
@@ -123,8 +172,8 @@
         :model-value="modelValue"
         :options="options"
         :button="descriptor.renderer === 'radio-button'"
-        :inline="field.props?.inline !== false"
-        :disabled="disabled"
+        :inline="fieldProps.direction !== 'vertical' && fieldProps.inline !== false"
+        :disabled="effectiveDisabled"
         @update:model-value="updateValue"
         @change="emit('change', $event)"
       />
@@ -132,41 +181,48 @@
         v-else-if="descriptor.renderer === 'checkbox' || descriptor.renderer === 'transfer'"
         :model-value="modelValue"
         :options="options"
-        :button="field.props?.displayMode === 'button'"
-        :inline="field.props?.inline !== false"
-        :min="Number(field.props?.min || 0)"
-        :max="Number(field.props?.max || 0)"
-        :disabled="disabled"
+        :button="fieldProps.displayMode === 'button'"
+        :inline="fieldProps.direction !== 'vertical' && fieldProps.inline !== false"
+        :min="Number(fieldProps.min || 0)"
+        :max="Number(fieldProps.max || 0)"
+        :disabled="effectiveDisabled"
         @update:model-value="updateValue"
         @change="emit('change', $event)"
       />
-      <wd-switch
-        v-else-if="descriptor.renderer === 'switch'"
-        :model-value="switchValue"
-        :disabled="disabled"
-        active-color="var(--forge-color-primary, #4266f7)"
-        @update:model-value="updateValue"
-        @change="emit('change', $event?.value ?? $event)"
-      />
+      <view v-else-if="descriptor.renderer === 'switch'" class="lowcode-field__switch">
+        <wd-switch
+          :model-value="switchValue"
+          :disabled="effectiveDisabled || fieldProps.loading === true"
+          active-color="var(--forge-color-primary, #3b82f6)"
+          @update:model-value="updateSwitchValue"
+          @change="handleSwitchChange"
+        />
+        <text v-if="fieldProps.checkedText || fieldProps.uncheckedText" class="lowcode-field__switch-text">
+          {{ switchValue ? fieldProps.checkedText : fieldProps.uncheckedText }}
+        </text>
+      </view>
       <wd-slider
         v-else-if="descriptor.renderer === 'slider'"
         :model-value="numericValue"
-        :min="Number(field.min ?? field.props?.min ?? 0)"
-        :max="Number(field.max ?? field.props?.max ?? 100)"
-        :step="Number(field.step ?? field.props?.step ?? 1)"
-        :disabled="disabled"
-        show-value
+        :min="Number(fieldProps.min ?? 0)"
+        :max="Number(fieldProps.max ?? 100)"
+        :step="Number(fieldProps.step ?? 1)"
+        :disabled="effectiveDisabled"
+        :range="fieldProps.range === true"
+        :reverse="fieldProps.reverse === true"
+        :show-value="fieldProps.showTooltip !== false"
         @update:model-value="updateValue"
         @change="emit('change', $event?.value ?? $event)"
       />
       <wd-rate
         v-else-if="descriptor.renderer === 'rate'"
         :model-value="numericValue"
-        :count="Number(field.props?.count || 5)"
-        :disabled="disabled"
+        :count="Number(fieldProps.count || 5)"
+        :disabled="effectiveDisabled"
         :readonly="readonly"
-        :allow-half="field.props?.allowHalf !== false"
-        active-color="#ff7d00"
+        :allow-half="fieldProps.allowHalf === true"
+        :clearable="fieldProps.clearable === true"
+        :active-color="fieldProps.color || 'var(--forge-color-primary, #3b82f6)'"
         @update:model-value="updateValue"
         @change="emit('change', $event?.value ?? $event)"
       />
@@ -175,39 +231,65 @@
         :model-value="modelValue"
         :type="fieldType"
         :title="field.label"
-        :placeholder="field.props?.placeholder || `请选择${field.label}`"
-        :min="field.min ?? field.props?.min ?? field.props?.minDate"
-        :max="field.max ?? field.props?.max ?? field.props?.maxDate"
-        :disabled="disabled"
-        :clearable="field.props?.clearable !== false"
+        :placeholder="fieldProps.placeholder || `请选择${field.label}`"
+        :start-placeholder="fieldProps.startPlaceholder"
+        :end-placeholder="fieldProps.endPlaceholder"
+        :min="fieldProps.min ?? fieldProps.minDate"
+        :max="fieldProps.max ?? fieldProps.maxDate"
+        :disabled="effectiveDisabled"
+        :readonly="readonly"
+        :clearable="fieldProps.clearable !== false"
+        :format="fieldProps.format"
+        :value-format="fieldProps.valueFormat"
         @update:model-value="updateValue"
         @change="emit('change', $event)"
         @blur="emit('blur')"
       />
       <view v-else-if="descriptor.renderer === 'color'" class="lowcode-field__color">
-        <view class="lowcode-field__color-preview" :style="{ backgroundColor: validColorValue }" />
+        <view v-if="fieldProps.showPreview !== false" class="lowcode-field__color-preview" :style="{ backgroundColor: validColorValue }" />
         <AiField
           :model-value="modelValue"
-          placeholder="#4266f7"
+          :placeholder="fieldProps.showAlpha ? '#3b82f6FF / rgba(...)' : '#3b82f6'"
           :maxlength="32"
+          :disabled="effectiveDisabled"
+          :readonly="readonly"
+          :clearable="fieldProps.clearable !== false"
           @update:model-value="updateValue"
           @blur="emit('blur')"
         />
+        <view v-if="colorSwatches.length" class="lowcode-field__swatches">
+          <button
+            v-for="color in colorSwatches"
+            :key="color"
+            class="lowcode-field__swatch"
+            :style="{ backgroundColor: color }"
+            :disabled="effectiveDisabled"
+            @click="updateValue(color)"
+          />
+        </view>
       </view>
       <AiFileUpload
         v-else-if="descriptor.renderer === 'file-upload'"
         :model-value="modelValue"
-        :business-type="field.businessType || field.props?.businessType || 'lowcode_attachment'"
-        :max-count="Number(field.limit || field.props?.limit || field.props?.maxCount || 9)"
-        :readonly="readonly"
+        :business-type="field.businessType || fieldProps.businessType || 'lowcode_attachment'"
+        :max-count="Number(fieldProps.maxCount || 9)"
+        :max-size="Number(fieldProps.maxSize || 0)"
+        :accept="fieldProps.accept || ''"
+        :multiple="fieldProps.multiple === true"
+        :show-remove-button="fieldProps.showRemoveButton !== false"
+        :readonly="readonly || effectiveDisabled"
         @update:model-value="updateValue"
       />
-      <AiImageUpload
+      <LowcodeImageUpload
         v-else-if="descriptor.renderer === 'image-upload'"
         :model-value="modelValue"
-        :business-type="field.businessType || field.props?.businessType || 'lowcode_image'"
-        :crop="field.props?.crop === true"
-        :readonly="readonly || disabled"
+        :business-type="field.businessType || fieldProps.businessType || 'lowcode_image'"
+        :crop="fieldProps.crop === true"
+        :max-count="Number(fieldProps.maxCount || 1)"
+        :max-size="Number(fieldProps.maxSize || 0)"
+        :multiple="fieldProps.multiple === true"
+        :show-remove-button="fieldProps.showRemoveButton !== false"
+        :readonly="readonly || effectiveDisabled"
         @update:model-value="updateValue"
       />
       <AiSignaturePad
@@ -231,8 +313,8 @@
       />
     </view>
     <text v-if="error" class="lowcode-field__error">{{ error }}</text>
-    <text v-if="scanMessage || hint" class="lowcode-field__hint" :class="{ 'is-error': scanMessage }">
-      {{ scanMessage || hint }}
+    <text v-if="scanMessage || fieldHint" class="lowcode-field__hint" :class="{ 'is-error': scanMessage }">
+      {{ scanMessage || fieldHint }}
     </text>
   </view>
 </template>
@@ -244,17 +326,22 @@ import AiCheckboxGroup from '@/components/AiCheckboxGroup.vue'
 import AiDateTimePicker from '@/components/AiDateTimePicker.vue'
 import AiField from '@/components/AiField.vue'
 import AiFileUpload from '@/components/AiFileUpload.vue'
-import AiImageUpload from '@/components/AiImageUpload.vue'
 import AiRadioGroup from '@/components/AiRadioGroup.vue'
 import AiSelect from '@/components/AiSelect.vue'
 import AiSignaturePad from '@/components/AiSignaturePad.vue'
 import AiTextarea from '@/components/AiTextarea.vue'
 import LowcodeArrayField from './LowcodeArrayField.vue'
 import LowcodeEntitySelector from './LowcodeEntitySelector.vue'
+import LowcodeImageUpload from './LowcodeImageUpload.vue'
 import LowcodeUnsupported from './LowcodeUnsupported.vue'
 import { MOBILE_COMPONENT_CAPABILITY, resolveMobileComponent } from './mobile-component-registry'
 import { scanBarcode } from '@/utils/barcode-scanner'
 import { resolveMobileSelectionLabels } from '@/utils/mobile-selector-runtime'
+import {
+  formatMobileFieldValue,
+  mobileFieldValueEquals,
+  normalizeMobileFieldContract,
+} from '@/utils/mobile-field-contract'
 
 const props = defineProps({
   field: { type: Object, default: () => ({}) },
@@ -273,20 +360,54 @@ const scanning = ref(false)
 const scanMessage = ref('')
 const arrayFieldRef = ref(null)
 const platform = resolveRuntimePlatform()
-const descriptor = computed(() => resolveMobileComponent(props.field.componentKey || props.field.type, { platform }))
+const normalizedField = computed(() => normalizeMobileFieldContract(props.field))
+const fieldProps = computed(() => normalizedField.value.props || {})
+const descriptor = computed(() => resolveMobileComponent(normalizedField.value.componentKey || normalizedField.value.type, { platform }))
 const fieldType = computed(() => descriptor.value.type)
 const isNumberRangeField = computed(() => descriptor.value.renderer === 'number-range')
 const isDateTimeField = computed(() => ['datetime-picker', 'datetime-range'].includes(descriptor.value.renderer))
+const usesDedicatedReadonlyRenderer = computed(() => ['array', 'file-upload', 'image-upload', 'signature'].includes(descriptor.value.renderer))
 const isSingleSelectField = computed(() => ['picker', 'remote-select', 'entity-select', 'tree-select', 'cascader', 'record-selector'].includes(descriptor.value.renderer))
 const isRemoteSelectorField = computed(() => ['remote-select', 'entity-select', 'tree-select', 'cascader', 'record-selector'].includes(descriptor.value.renderer))
 const isOptionBackedField = computed(() => isSingleSelectField.value || ['radio', 'radio-button', 'checkbox', 'transfer'].includes(descriptor.value.renderer))
+const compactRow = computed(() => [
+  'text', 'number', 'money', 'picker', 'remote-select', 'entity-select',
+  'tree-select', 'cascader', 'record-selector', 'datetime-picker', 'switch',
+].includes(descriptor.value.renderer))
+const fieldClasses = computed(() => ({
+  'lowcode-field--compact-row': compactRow.value,
+  'is-round': fieldProps.value.round === true,
+  'is-loading': fieldProps.value.loading === true,
+  [`is-size-${fieldProps.value.size}`]: Boolean(fieldProps.value.size),
+  [`is-status-${fieldProps.value.status}`]: Boolean(fieldProps.value.status),
+}))
+const readonlyClasses = computed(() => ({
+  'is-ellipsis': fieldProps.value.ellipsis === true,
+  'is-strong': fieldProps.value.strong === true,
+  'is-italic': fieldProps.value.italic === true,
+  'is-underline': fieldProps.value.underline === true,
+  'is-delete': fieldProps.value.delete === true,
+  'is-code': fieldProps.value.code === true,
+  [`is-text-${fieldProps.value.type}`]: Boolean(fieldProps.value.type),
+}))
+const effectiveDisabled = computed(() => props.disabled || normalizedField.value.disabled === true || fieldProps.value.loading === true)
+const textareaMinHeight = computed(() => `${Math.max(3, Number(fieldProps.value.rows || 3)) * 42}rpx`)
 const arrayValue = computed(() => Array.isArray(props.modelValue) ? props.modelValue : [])
 const numericValue = computed(() => {
   const number = Number(props.modelValue)
   return Number.isFinite(number) ? number : 0
 })
-const switchValue = computed(() => props.modelValue === true || props.modelValue === 1 || props.modelValue === '1' || props.modelValue === 'true')
-const validColorValue = computed(() => /^#[0-9a-f]{3,8}$/i.test(String(props.modelValue || '')) ? String(props.modelValue) : '#c9cdd4')
+const switchValue = computed(() => mobileFieldValueEquals(props.modelValue, fieldProps.value.checkedValue))
+const validColorValue = computed(() => isSafeColor(props.modelValue) ? String(props.modelValue) : '#cbd5e1')
+const colorSwatches = computed(() => (Array.isArray(fieldProps.value.swatches) ? fieldProps.value.swatches : []).filter(isSafeColor))
+const fieldHint = computed(() => {
+  if (props.hint) return props.hint
+  if (descriptor.value.renderer === 'money' && fieldProps.value.showChinese === true)
+    return toChineseCurrency(props.modelValue)
+  if (descriptor.value.renderer === 'rate' && fieldProps.value.texts && props.modelValue !== '')
+    return fieldProps.value.texts?.[props.modelValue] || fieldProps.value.texts?.[String(props.modelValue)] || ''
+  return normalizedField.value.description || fieldProps.value.description || ''
+})
 const rangeValue = computed(() => {
   const value = props.modelValue
   if (Array.isArray(value)) return [value[0] ?? '', value[1] ?? '']
@@ -295,8 +416,12 @@ const rangeValue = computed(() => {
   // while exposing the new two-endpoint shape to the submit payload.
   return [value, '']
 })
-const control = computed(() => props.field.__runtimeControl || { visible: true, required: props.field.required === true })
-const readonly = computed(() => props.readonly || props.disabled || props.field.readonly === true || control.value.readonly)
+const pairValue = computed(() => {
+  if (Array.isArray(props.modelValue)) return [props.modelValue[0] ?? '', props.modelValue[1] ?? '']
+  return ['', '']
+})
+const control = computed(() => props.field.__runtimeControl || { visible: true, required: normalizedField.value.required === true })
+const readonly = computed(() => props.readonly || effectiveDisabled.value || normalizedField.value.readonly === true || control.value.readonly)
 const displayValue = computed(() => {
   const value = props.modelValue
   if (isNumberRangeField.value || descriptor.value.renderer === 'datetime-range') {
@@ -317,18 +442,44 @@ const displayValue = computed(() => {
       .map(item => props.options.find(option => String(option.value) === String(item))?.label || item)
       .join('、')
   }
-  if (descriptor.value.renderer === 'switch') return switchValue.value ? '是' : '否'
-  if (value === undefined || value === null || value === '') return '-'
-  if (Array.isArray(value)) return value.length ? value.join('、') : '-'
-  if (typeof value === 'object') {
-    try { return JSON.stringify(value) }
-    catch { return '[复杂数据]' }
-  }
-  return String(value)
+  return formatMobileFieldValue(normalizedField.value, value, props.options)
 })
 
 function updateValue(value) {
   emit('update:modelValue', value)
+}
+
+function updateNumericValue(value) {
+  if (value === '' || value === undefined || value === null) {
+    updateValue('')
+    return
+  }
+  const number = Number(value)
+  updateValue(Number.isFinite(number) ? number : value)
+}
+
+function completeNumericInput() {
+  const value = Number(props.modelValue)
+  if (Number.isFinite(value)) {
+    const min = numberValue(fieldProps.value.min)
+    const max = numberValue(fieldProps.value.max)
+    const precision = numberValue(fieldProps.value.precision)
+    let next = value
+    if (min !== undefined) next = Math.max(min, next)
+    if (max !== undefined) next = Math.min(max, next)
+    if (precision !== undefined) next = Number(next.toFixed(Math.max(0, precision)))
+    if (next !== props.modelValue) updateValue(next)
+  }
+  emit('blur')
+}
+
+function updateSwitchValue(checked) {
+  updateValue(checked ? fieldProps.value.checkedValue : fieldProps.value.uncheckedValue)
+}
+
+function handleSwitchChange(event) {
+  const checked = event?.value ?? event
+  emit('change', checked ? fieldProps.value.checkedValue : fieldProps.value.uncheckedValue)
 }
 
 function updateRangeValue(index, value) {
@@ -337,12 +488,22 @@ function updateRangeValue(index, value) {
   emit('update:modelValue', next)
 }
 
+function updatePairValue(index, value) {
+  const next = [...pairValue.value]
+  next[index] = value
+  updateValue(next)
+}
+
+function copyDisplayValue() {
+  uni.setClipboardData({ data: String(displayValue.value) })
+}
+
 async function scan() {
   if (scanning.value) return
   scanning.value = true
   scanMessage.value = ''
   try {
-    const result = await scanBarcode({ timeoutMs: props.field.props?.timeoutMs })
+    const result = await scanBarcode({ timeoutMs: fieldProps.value.timeoutMs })
     updateValue(result.value)
     emit('scan', result)
     emit('blur')
@@ -353,6 +514,59 @@ async function scan() {
   finally {
     scanning.value = false
   }
+}
+
+function numberValue(value) {
+  if (value === undefined || value === null || value === '') return undefined
+  const number = Number(value)
+  return Number.isFinite(number) ? number : undefined
+}
+
+function toChineseCurrency(value) {
+  const number = Number(value)
+  if (!Number.isFinite(number) || number < 0 || number > 9999999999999.99) return ''
+  if (number === 0) return '人民币零元整'
+  const digits = '零壹贰叁肆伍陆柒捌玖'
+  const units = ['', '拾', '佰', '仟']
+  const groups = ['', '万', '亿', '兆']
+  const [integerText, decimalText = ''] = number.toFixed(2).split('.')
+  let integer = Number(integerText)
+  let result = ''
+  let groupIndex = 0
+  let needZero = false
+  while (integer > 0) {
+    const group = integer % 10000
+    if (group) {
+      let groupResult = ''
+      let position = 0
+      let current = group
+      while (current > 0) {
+        const digit = current % 10
+        if (digit) {
+          groupResult = `${digits[digit]}${units[position]}${needZero ? '零' : ''}${groupResult}`
+          needZero = false
+        }
+        else if (groupResult) needZero = true
+        current = Math.floor(current / 10)
+        position += 1
+      }
+      result = `${groupResult.replace(/零+$/g, '')}${groups[groupIndex]}${result}`
+    }
+    else if (result) needZero = true
+    integer = Math.floor(integer / 10000)
+    groupIndex += 1
+  }
+  const jiao = Number(decimalText[0] || 0)
+  const fen = Number(decimalText[1] || 0)
+  const decimal = `${jiao ? `${digits[jiao]}角` : ''}${fen ? `${digits[fen]}分` : ''}` || '整'
+  return `人民币${result.replace(/零+/g, '零')}元${decimal}`
+}
+
+function isSafeColor(value) {
+  const text = String(value || '').trim()
+  return /^#[0-9a-f]{3,8}$/i.test(text)
+    || /^rgba?\([\d\s.,%]+\)$/i.test(text)
+    || /^hsla?\([\d\s.,%a-z]+\)$/i.test(text)
 }
 
 function completeManualScan() {
@@ -395,20 +609,43 @@ defineExpose({ validate })
 
 <style lang="scss" scoped>
 .lowcode-field { margin-bottom: 32rpx; }
-.lowcode-field__label { display: flex; margin-bottom: 12rpx; color: #4e5969; font-size: 28rpx; font-weight: 400; line-height: 1.5; }
-.lowcode-field__required { margin-left: 6rpx; color: #f53f3f; }
+.lowcode-field__label { display: flex; margin-bottom: 12rpx; color: #475569; font-size: 28rpx; font-weight: 400; line-height: 1.5; }
+.lowcode-field__required { margin-left: 6rpx; color: #ef4444; }
 .lowcode-field__control { min-height: 88rpx; }
-.lowcode-field__readonly { min-height: 88rpx; padding: 20rpx 24rpx; border: 1rpx solid var(--border-color); border-radius: var(--radius-control); color: #4e5969; background: #f7f8fa; box-sizing: border-box; line-height: 1.5; word-break: break-all; }
+.lowcode-field__readonly { min-height: 88rpx; padding: 20rpx 24rpx; border: 1rpx solid var(--border-color); border-radius: var(--radius-control); color: #475569; background: #f8fafc; box-sizing: border-box; line-height: 1.5; word-break: break-all; }
+.lowcode-field__readonly { display: flex; align-items: center; gap: 12rpx; }
+.lowcode-field__readonly-value { min-width: 0; flex: 1; }
+.lowcode-field__readonly.is-ellipsis .lowcode-field__readonly-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lowcode-field__readonly.is-strong { font-weight: 600; }
+.lowcode-field__readonly.is-italic { font-style: italic; }
+.lowcode-field__readonly.is-underline { text-decoration: underline; }
+.lowcode-field__readonly.is-delete { text-decoration: line-through; }
+.lowcode-field__readonly.is-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.lowcode-field__readonly.is-text-primary { color: var(--forge-color-primary, #3b82f6); }
+.lowcode-field__readonly.is-text-success { color: var(--forge-color-success, #16a34a); }
+.lowcode-field__readonly.is-text-warning { color: var(--forge-color-warning, #f59e0b); }
+.lowcode-field__readonly.is-text-error { color: var(--forge-color-danger, #ef4444); }
+.lowcode-field__copy { min-height: 52rpx; margin: 0; padding: 0 12rpx; border: 0; color: var(--forge-color-primary, #3b82f6); font-size: 22rpx; line-height: 52rpx; background: transparent; }
+.lowcode-field__copy::after { border: 0; }
 .lowcode-field__barcode { display: flex; align-items: center; gap: 12rpx; }
 .lowcode-field__barcode :deep(.ai-field) { flex: 1; min-width: 0; }
 .lowcode-field__scan { flex: 0 0 auto; }
 .lowcode-field__range { display: flex; align-items: center; gap: 10rpx; }
 .lowcode-field__range-input { min-width: 0; flex: 1; }
-.lowcode-field__range-separator { flex: 0 0 auto; color: #86909c; font-size: 24rpx; }
-.lowcode-field__color { display: flex; align-items: center; gap: 12rpx; }
-.lowcode-field__color-preview { width: 88rpx; height: 88rpx; flex: 0 0 auto; border: 1rpx solid var(--forge-color-border, #c9cdd4); border-radius: var(--radius-control); }
+.lowcode-field__range-separator { flex: 0 0 auto; color: #94a3b8; font-size: 24rpx; }
+.lowcode-field__color { display: flex; flex-wrap: wrap; align-items: center; gap: 12rpx; }
+.lowcode-field__color-preview { width: 88rpx; height: 88rpx; flex: 0 0 auto; border: 1rpx solid var(--forge-color-border, #cbd5e1); border-radius: var(--radius-control); }
 .lowcode-field__color :deep(.ai-field) { min-width: 0; flex: 1; }
-.lowcode-field__error { display: block; margin-top: 8rpx; color: #f53f3f; font-size: 24rpx; }
-.lowcode-field__hint { display: block; margin-top: 8rpx; color: #86909c; font-size: 22rpx; }
-.lowcode-field__hint.is-error { color: #f53f3f; }
+.lowcode-field__swatches { display: flex; flex: 0 0 100%; flex-wrap: wrap; gap: 10rpx; }
+.lowcode-field__swatch { width: 44rpx; height: 44rpx; min-height: 44rpx; margin: 0; padding: 0; border: 2rpx solid #fff; border-radius: 8rpx; box-shadow: 0 0 0 1rpx var(--forge-color-border, #cbd5e1); }
+.lowcode-field__swatch::after { border: 0; }
+.lowcode-field__error { display: block; margin-top: 8rpx; color: #ef4444; font-size: 24rpx; }
+.lowcode-field__hint { display: block; margin-top: 8rpx; color: #94a3b8; font-size: 22rpx; }
+.lowcode-field__hint.is-error { color: #ef4444; }
+.lowcode-field__switch { display: flex; min-height: 88rpx; align-items: center; gap: 12rpx; }
+.lowcode-field__switch-text { color: #64748b; font-size: 22rpx; }
+.lowcode-field.is-status-error :deep(.ai-field__control), .lowcode-field.is-status-error :deep(.ai-textarea) { border-color: var(--forge-color-danger, #ef4444); }
+.lowcode-field.is-status-warning :deep(.ai-field__control), .lowcode-field.is-status-warning :deep(.ai-textarea) { border-color: var(--forge-color-warning, #f59e0b); }
+.lowcode-field.is-round :deep(.ai-field__control), .lowcode-field.is-round :deep(.ai-textarea) { border-radius: 999rpx; }
+.lowcode-field.is-loading { opacity: .72; }
 </style>

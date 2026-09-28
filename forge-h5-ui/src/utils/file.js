@@ -3,6 +3,7 @@ import { resolveStaticUrl } from '@/utils/assets'
 
 const blobUrlCache = new Map()
 const fileAccessUrlCache = new Map()
+const fileAccessUrlPending = new Map()
 export const DEFAULT_AVATAR_URL = resolveStaticUrl('/static/icons/ai-icon/user.svg')
 
 export function getFileDownloadUrl(fileId) {
@@ -99,26 +100,42 @@ export async function resolveFileAccessUrl(fileData, options = {}) {
     return fileAccessUrlCache.get(rawValue)
   }
 
+  // 同一个头像可能同时出现在保留的页面栈中；复用进行中的请求，避免并发击穿地址接口。
+  if (fileAccessUrlPending.has(rawValue)) {
+    return fileAccessUrlPending.get(rawValue)
+  }
+
   if (options.forceRefresh) {
     fileAccessUrlCache.delete(rawValue)
   }
 
   const prefix = import.meta.env.VITE_REQUEST_PREFIX || ''
-  const response = await fetch(`${prefix}/api/file/url/${encodeURIComponent(rawValue)}`, {
-    headers: getAuthHeaders(),
-  })
-  if (!response.ok) {
-    throw new Error('文件访问地址获取失败')
-  }
+  const pending = (async () => {
+    const response = await fetch(`${prefix}/api/file/url/${encodeURIComponent(rawValue)}`, {
+      headers: getAuthHeaders(),
+    })
+    if (!response.ok) {
+      throw new Error('文件访问地址获取失败')
+    }
 
-  const result = await response.json()
-  if (!(result?.code === 200 || result?.respCode === '0000') || !result?.data) {
-    throw new Error(result?.message || result?.msg || '文件访问地址获取失败')
-  }
+    const result = await response.json()
+    if (!(result?.code === 200 || result?.respCode === '0000') || !result?.data) {
+      throw new Error(result?.message || result?.msg || '文件访问地址获取失败')
+    }
 
-  const accessUrl = normalizeFileAccessUrl(result.data)
-  fileAccessUrlCache.set(rawValue, accessUrl)
-  return accessUrl
+    const accessUrl = normalizeFileAccessUrl(result.data)
+    fileAccessUrlCache.set(rawValue, accessUrl)
+    return accessUrl
+  })()
+  fileAccessUrlPending.set(rawValue, pending)
+  try {
+    return await pending
+  }
+  finally {
+    if (fileAccessUrlPending.get(rawValue) === pending) {
+      fileAccessUrlPending.delete(rawValue)
+    }
+  }
 }
 
 export function revokeCachedFileBlobUrl(fileData) {

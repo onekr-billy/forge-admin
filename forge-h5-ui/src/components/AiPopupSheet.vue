@@ -38,12 +38,12 @@ defineProps({
   description: { type: String, default: '' },
   placement: { type: String, default: 'bottom' },
   maxHeight: { type: String, default: '78vh' },
-  bodyMaxHeight: { type: String, default: 'calc(78vh - 172rpx - env(safe-area-inset-bottom))' },
+  bodyMaxHeight: { type: String, default: 'calc(78dvh - 128px)' },
   zIndex: { type: [Number, String], default: 9990 },
   mask: { type: Boolean, default: true },
   closeOnMask: { type: Boolean, default: true },
   showClose: { type: Boolean, default: true },
-  showHandle: { type: Boolean, default: true },
+  showHandle: { type: Boolean, default: false },
   scroll: { type: Boolean, default: true },
   round: { type: Boolean, default: true },
 })
@@ -52,20 +52,20 @@ function close() { emit('update:modelValue', false) }
 </script>
 
 <style lang="scss" scoped>
-.ai-popup-sheet__panel { display: flex; width: 100vw; min-height: 120rpx; flex-direction: column; overflow: hidden; padding: 12rpx 32rpx 0; background: #fff; box-sizing: border-box; }
-.ai-popup-sheet__panel.is-round { border-radius: var(--forge-radius-popup, 12rpx) var(--forge-radius-popup, 12rpx) 0 0; }
-.ai-popup-sheet__handle { width: 56rpx; height: 5rpx; margin: 0 auto 16rpx; border-radius: 4rpx; background: #c9cdd4; }
-.ai-popup-sheet__head { display: flex; align-items: flex-start; gap: 16rpx; margin-bottom: 18rpx; padding-bottom: 18rpx; border-bottom: 1rpx solid var(--border-light); }
+.ai-popup-sheet__panel { display: flex; width: 100vw; min-height: 60px; flex-direction: column; overflow: hidden; padding: 20px 20px 0; background: #fff; box-shadow: var(--forge-shadow-float); box-sizing: border-box; }
+.ai-popup-sheet__panel.is-round { border-radius: var(--forge-radius-popup, 24px) var(--forge-radius-popup, 24px) 0 0; }
+.ai-popup-sheet__handle { width: 28px; height: 3px; margin: 0 auto 8px; border-radius: 2px; background: #cbd5e1; }
+.ai-popup-sheet__head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 18px; padding-bottom: 16px; border-bottom: 1px solid var(--border-light); }
 .ai-popup-sheet__title-block { min-width: 0; flex: 1; }
 .ai-popup-sheet__title, .ai-popup-sheet__desc { display: block; }
-.ai-popup-sheet__title { color: var(--text-strong); font-size: 32rpx; font-weight: 500; }
-.ai-popup-sheet__desc { margin-top: 5rpx; color: var(--text-muted); font-size: 21rpx; }
-.ai-popup-sheet__close { display: flex; width: 88rpx; height: 88rpx; align-items: center; justify-content: center; margin: -18rpx -18rpx 0 0; padding: 0; border: 0; border-radius: var(--radius-control); color: var(--text-secondary); font-size: 32rpx; background: transparent; }
+.ai-popup-sheet__title { color: var(--text-strong); font-size: 17px; font-weight: 700; line-height: 1.35; }
+.ai-popup-sheet__desc { margin-top: 3px; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+.ai-popup-sheet__close { display: flex; width: 40px; height: 40px; align-items: center; justify-content: center; margin: -9px -9px 0 0; padding: 0; border: 0; border-radius: 50%; color: var(--text-muted); font-size: 20px; line-height: 1; background: transparent; }
 .ai-popup-sheet__close::after { border: 0; }
 .ai-popup-sheet__body { min-height: 0; flex: 1 1 auto; overflow-y: auto; }
-.ai-popup-sheet__content { padding-bottom: 8rpx; }
-.ai-popup-sheet__footer { flex: 0 0 auto; padding: 18rpx 0 calc(18rpx + env(safe-area-inset-bottom)); border-top: 1rpx solid var(--border-light); background: #fff; }
-:deep(.wd-popup) { background: transparent; }
+.ai-popup-sheet__content { padding-bottom: 4px; }
+.ai-popup-sheet__footer { flex: 0 0 auto; margin-top: 18px; padding: 16px 0; border-top: 1px solid var(--border-light); background: #fff; }
+:deep(.wd-popup) { max-height: 100dvh; overflow: hidden; box-sizing: border-box; background: transparent; }
 
 @media (min-width: 1024px) {
   .ai-popup-sheet__panel {

@@ -65,7 +65,6 @@ export default {
 </script>
 
 <style lang="scss">
-@import "uview-plus/index.scss";
 @import "@/styles/theme.css";
 @import "@/styles/global.css";
 

@@ -2,10 +2,7 @@
 	"easycom": {
 		"autoscan": true,
 		"custom": {
-			"^wd-(.*)": "wot-design-uni/components/wd-$1/wd-$1.vue",
-			"^u--(.*)": "uview-plus/components/u-$1/u-$1.vue",
-			"^up-(.*)": "uview-plus/components/u-$1/u-$1.vue",
-			"^u-([^-].*)": "uview-plus/components/u-$1/u-$1.vue"
+			"^wd-(.*)": "wot-design-uni/components/wd-$1/wd-$1.vue"
 		}
 	},
 	"pages": [ //pages数组中第一项表示应用启动页，参考：https://uniapp.dcloud.io/collocation/pages
@@ -18,13 +15,15 @@
 		{
 			"path": "pages/index/index",
 			"style": {
-				"navigationBarTitleText": "工作台"
+				"navigationBarTitleText": "工作台",
+				"enablePullDownRefresh": true
 			}
 		},
 		{
 			"path": "pages/message/index",
 			"style": {
-				"navigationBarTitleText": "消息中心"
+				"navigationBarTitleText": "消息中心",
+				"enablePullDownRefresh": true
 			}
 		},
 		{
@@ -36,7 +35,8 @@
 		{
 			"path": "pages/todo",
 			"style": {
-				"navigationBarTitleText": "待办"
+				"navigationBarTitleText": "审批中心",
+				"enablePullDownRefresh": true
 			}
 		},
 		{
@@ -71,8 +71,8 @@
 		}
 	],
 	"tabBar": {
-		"color": "#86909C",
-		"selectedColor": "#4266F7",
+		"color": "#94A3B8",
+		"selectedColor": "#3B82F6",
 		"backgroundColor": "#FFFFFF",
 		"borderStyle": "white",
 		"list": [
@@ -89,6 +89,12 @@
 				"selectedIconPath": "static/icons/ai-icon/check-square.svg"
 			},
 			{
+				"pagePath": "pages/message/index",
+				"text": "消息",
+				"iconPath": "static/icons/ai-icon/message-square.svg",
+				"selectedIconPath": "static/icons/ai-icon/message-square.svg"
+			},
+			{
 				"pagePath": "pages/mine/index",
 				"text": "我的",
 				"iconPath": "static/icons/ai-icon/user.svg",
@@ -100,6 +106,6 @@
 		"navigationBarTextStyle": "black",
 		"navigationBarTitleText": "Forge H5",
 		"navigationBarBackgroundColor": "#FFFFFF",
-		"backgroundColor": "#F2F3F5"
+		"backgroundColor": "#F4F5F7"
 	}
 }

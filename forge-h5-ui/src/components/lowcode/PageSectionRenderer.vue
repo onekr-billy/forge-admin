@@ -1,6 +1,12 @@
 <template>
   <view class="section-runtime" :class="{ 'section-runtime--with-bottom-bar': visibleBottomActions.length }">
     <template v-for="section in visibleSections" :key="section.sectionId">
+      <AiTabs
+        v-if="isFirstChildSection(section) && childSections.length > 1"
+        v-model="activeChildSectionIndex"
+        class="section-child-tabs"
+        :tabs="childSectionTabs"
+      />
       <CardSection
         v-if="section.sectionType === 'card'"
         :title="section.title"
@@ -10,7 +16,7 @@
         <LowcodeForm
           :ref="instance => setMainFormRef(section, instance)"
           :fields="resolveFields(section)"
-          :nodes="mainNodes.length && section.sectionId === 'main' ? mainNodes : []"
+          :nodes="mainNodes.length && String(section.sectionId) === mainNodeSectionId ? mainNodes : []"
           :data="mainData"
           :current-children="childData"
           :dict-options="dictOptions"
@@ -22,8 +28,8 @@
       </CardSection>
 
       <CardSection
-        v-else-if="isChildSection(section, 'inline_grid')"
-        :title="section.title"
+        v-else-if="isActiveChildSection(section) && isChildSection(section, 'inline_grid')"
+        :title="childSectionTitle(section)"
         :collapsible="section.collapsible === true"
         :collapsed-by-default="section.collapsedByDefault === true"
       >
@@ -97,8 +103,8 @@
       </CardSection>
 
       <CardSection
-        v-else-if="isChildSection(section, 'card_list')"
-        :title="section.title"
+        v-else-if="isActiveChildSection(section) && isChildSection(section, 'card_list')"
+        :title="childSectionTitle(section)"
         :collapsible="section.collapsible === true"
         :collapsed-by-default="section.collapsedByDefault === true"
       >
@@ -171,8 +177,8 @@
       </CardSection>
 
       <CardSection
-        v-else-if="isChildSection(section, 'bottom_sheet')"
-        :title="section.title"
+        v-else-if="isActiveChildSection(section) && isChildSection(section, 'bottom_sheet')"
+        :title="childSectionTitle(section)"
         :collapsible="section.collapsible === true"
         :collapsed-by-default="section.collapsedByDefault === true"
       >
@@ -196,7 +202,7 @@
             <text class="section-sheet-trigger__label">查看{{ section.title || '明细' }}</text>
             <text class="section-sheet-trigger__count">{{ visibleChildRows(section).length }} 条记录</text>
           </view>
-          <AiIcon name="chevron-right" color="#4266f7" size="sm" />
+          <AiIcon name="chevron-right" color="#3b82f6" size="sm" />
         </button>
       </CardSection>
     </template>
@@ -237,6 +243,7 @@
 import { computed, ref, watch } from 'vue'
 import AiButton from '@/components/AiButton.vue'
 import AiIcon from '@/components/AiIcon.vue'
+import AiTabs from '@/components/AiTabs.vue'
 import BottomSheet from './BottomSheet.vue'
 import CardSection from './CardSection.vue'
 import LowcodeForm from './LowcodeForm.vue'
@@ -283,6 +290,7 @@ const emit = defineEmits([
 
 const sheetVisible = ref(false)
 const activeSheetSectionId = ref('')
+const activeChildSectionIndex = ref(0)
 const visibleSections = computed(() => resolveVisiblePageSections(
   props.sections,
   props.mode,
@@ -290,6 +298,15 @@ const visibleSections = computed(() => resolveVisiblePageSections(
   props.currentFlowNodeKey,
 ))
 const visibleBottomActions = computed(() => resolveBottomBarActions(props.bottomBar, props.mainData, props.mode, props.permissions))
+const childSections = computed(() => visibleSections.value
+  .filter(section => section.sectionType === 'child_table' && Boolean(childConfig(section))))
+const childSectionTabs = computed(() => childSections.value.map(section => ({ label: section.title || '明细' })))
+const mainNodeSectionId = computed(() => {
+  const fieldCodes = new Set(props.mainFields.map(field => String(field?.field || '')).filter(Boolean))
+  const section = visibleSections.value.find(item => item.sectionType === 'card'
+    && (item.sectionId === 'main' || (Array.isArray(item.fields) && item.fields.some(field => fieldCodes.has(String(field))))))
+  return String(section?.sectionId || '')
+})
 const activeSheetSection = computed(() => visibleSections.value
   .find(section => String(section.sectionId) === activeSheetSectionId.value) || null)
 const activeSheetChild = computed(() => childConfig(activeSheetSection.value))
@@ -298,6 +315,10 @@ const activeSheetRows = computed(() => activeSheetSection.value ? visibleChildRo
 watch(visibleSections, () => {
   if (activeSheetSectionId.value && !activeSheetSection.value)
     sheetVisible.value = false
+})
+
+watch(childSections, (sections) => {
+  if (activeChildSectionIndex.value >= sections.length) activeChildSectionIndex.value = 0
 })
 
 function resolveFields(section) {
@@ -321,6 +342,19 @@ function isChildSection(section, displayMode) {
   return section.sectionType === 'child_table'
     && String(section.displayMode || 'card_list') === displayMode
     && Boolean(childConfig(section))
+}
+
+function isFirstChildSection(section) {
+  return String(childSections.value[0]?.sectionId || '') === String(section?.sectionId || '')
+}
+
+function isActiveChildSection(section) {
+  if (childSections.value.length <= 1) return true
+  return String(childSections.value[activeChildSectionIndex.value]?.sectionId || '') === String(section?.sectionId || '')
+}
+
+function childSectionTitle(section) {
+  return childSections.value.length > 1 ? '' : section.title
 }
 
 function canAddChild(section) {
@@ -427,6 +461,10 @@ function isDeletedRow(row = {}) {
   padding-bottom: 220rpx;
 }
 
+.section-child-tabs {
+  margin: 4rpx 0 20rpx;
+}
+
 .section-child-head,
 .section-child-row__head {
   display: flex;
@@ -447,7 +485,7 @@ function isDeletedRow(row = {}) {
 }
 
 .section-child-count {
-  color: #4e5969;
+  color: #475569;
   font-size: 23rpx;
   font-weight: 500;
 }
@@ -464,7 +502,7 @@ function isDeletedRow(row = {}) {
 .section-sheet-row {
   min-width: 0;
   padding: 22rpx 0;
-  border-top: 1rpx solid #e5e6eb;
+  border-top: 1rpx solid #e2e8f0;
 }
 
 .section-child-row:first-child,
@@ -487,7 +525,7 @@ function isDeletedRow(row = {}) {
 .section-child-row__title,
 .section-sheet-row__title {
   display: block;
-  color: #1d2129;
+  color: #1e293b;
   font-size: 24rpx;
   font-weight: 500;
 }
@@ -501,7 +539,7 @@ function isDeletedRow(row = {}) {
 
 .section-empty {
   padding: 30rpx 0 12rpx;
-  color: #86909c;
+  color: #94a3b8;
   font-size: 24rpx;
   text-align: center;
 }
@@ -543,13 +581,13 @@ function isDeletedRow(row = {}) {
 }
 
 .section-sheet-trigger__label {
-  color: #1d2129;
+  color: #1e293b;
   font-size: 26rpx;
   font-weight: 500;
 }
 
 .section-sheet-trigger__count {
-  color: #86909c;
+  color: #94a3b8;
   font-size: 22rpx;
 }
 
@@ -561,13 +599,13 @@ function isDeletedRow(row = {}) {
 }
 
 .section-readonly-field__label {
-  color: #86909c;
+  color: #94a3b8;
   font-size: 22rpx;
 }
 
 .section-readonly-field__value {
   min-width: 0;
-  color: #1d2129;
+  color: #1e293b;
   font-size: 24rpx;
   line-height: 1.45;
   overflow-wrap: anywhere;
@@ -584,7 +622,7 @@ function isDeletedRow(row = {}) {
   flex-wrap: wrap;
   gap: 16rpx;
   padding: 16rpx 32rpx calc(16rpx + env(safe-area-inset-bottom));
-  border-top: 1rpx solid #e5e6eb;
+  border-top: 1rpx solid #e2e8f0;
   background: #fff;
 }
 

@@ -35,15 +35,18 @@ const props = defineProps({
 const emit = defineEmits(['load', 'error'])
 const currentSrc = ref('')
 let loadSeq = 0
+let retriedInputKey = ''
 
-watch(() => props.src, () => {
+watch([() => sourceKey(props.src), () => props.fallback], () => {
+  retriedInputKey = ''
   loadImage()
 }, { immediate: true })
 
 async function loadImage(forceRefresh = false) {
   const seq = ++loadSeq
+  // 文件 ID 需要异步换取访问地址，先显示品牌兜底，避免请求期间出现空白头像。
+  currentSrc.value = props.fallback
   if (!props.src) {
-    currentSrc.value = props.fallback
     return
   }
 
@@ -64,7 +67,17 @@ async function loadImage(forceRefresh = false) {
 }
 
 function handleError(error) {
-  if (props.src && !currentSrc.value?.startsWith('blob:')) {
+  const failedSource = String(currentSrc.value || '')
+  const fallbackSource = String(props.fallback || '')
+  const inputKey = sourceKey(props.src)
+  // 重试次数必须按原始文件 ID 计数，不能按每次都会变化的临时签名 URL 计数。
+  // 兜底图自身失败也不能触发源文件刷新，否则隐藏页面仍会持续请求文件地址接口。
+  if (inputKey
+    && failedSource
+    && failedSource !== fallbackSource
+    && !failedSource.startsWith('blob:')
+    && retriedInputKey !== inputKey) {
+    retriedInputKey = inputKey
     loadImage(true)
     return
   }
@@ -73,6 +86,11 @@ function handleError(error) {
     return
   }
   emit('error', error)
+}
+
+function sourceKey(source) {
+  if (!source || typeof source !== 'object') return String(source || '').trim()
+  return String(source.accessUrl || source.fileId || source.filePath || source.url || '').trim()
 }
 </script>
 

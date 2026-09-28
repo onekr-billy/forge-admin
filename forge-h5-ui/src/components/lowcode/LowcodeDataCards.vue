@@ -57,16 +57,16 @@ function treeIndent(depth) { return props.tree ? { paddingLeft: `${Math.min(5, d
 </script>
 
 <style lang="scss" scoped>
-.mobile-data-cards__title { margin-bottom: 16rpx; color: #1d2129; font-size: 32rpx; font-weight: 500; }
+.mobile-data-cards__title { margin-bottom: 16rpx; color: #1e293b; font-size: 32rpx; font-weight: 500; }
 .mobile-data-cards__list { display: flex; flex-direction: column; gap: 14rpx; }
 .mobile-data-card { padding: 32rpx; border: 1rpx solid var(--border-color); border-radius: var(--radius-card); background: #fff; }
-.mobile-data-card__head { display: flex; align-items: center; gap: 10rpx; color: #1d2129; font-size: 28rpx; font-weight: 500; }
-.mobile-data-card__branch { color: #86909c; }
+.mobile-data-card__head { display: flex; align-items: center; gap: 10rpx; color: #1e293b; font-size: 28rpx; font-weight: 500; }
+.mobile-data-card__branch { color: #94a3b8; }
 .mobile-data-card__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14rpx 18rpx; margin-top: 16rpx; }
 .mobile-data-card__field { display: flex; min-width: 0; flex-direction: column; gap: 4rpx; }
-.mobile-data-card__field text:first-child { color: #86909c; font-size: 20rpx; }
-.mobile-data-card__field text:last-child { overflow: hidden; color: #4e5969; font-size: 23rpx; text-overflow: ellipsis; white-space: nowrap; }
-.mobile-data-cards__empty { padding: 32rpx; border: 1rpx dashed var(--border-color); border-radius: var(--radius-card); color: #4e5969; font-size: 24rpx; text-align: center; background: #f7f8fa; }
+.mobile-data-card__field text:first-child { color: #94a3b8; font-size: 20rpx; }
+.mobile-data-card__field text:last-child { overflow: hidden; color: #475569; font-size: 23rpx; text-overflow: ellipsis; white-space: nowrap; }
+.mobile-data-cards__empty { padding: 32rpx; border: 1rpx dashed var(--border-color); border-radius: var(--radius-card); color: #475569; font-size: 24rpx; text-align: center; background: #f8fafc; }
 
 @media (min-width: 1024px) {
   .mobile-data-cards__list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }

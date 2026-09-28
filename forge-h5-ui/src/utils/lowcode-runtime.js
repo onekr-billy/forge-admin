@@ -1,4 +1,5 @@
 import { normalizeMobileComponentType, resolveMobileComponent } from '../components/lowcode/mobile-component-registry.js'
+import { normalizeMobileFieldContract } from './mobile-field-contract.js'
 
 const DANGEROUS_KEYS = new Set([
   'url', 'uri', 'headers', 'header', 'authorization', 'credential', 'credentials',
@@ -542,20 +543,22 @@ export function normalizeDesignerField(component = {}) {
     return null
   const validation = component.validation || {}
   const visibility = component.visibility || {}
-  return {
+  return normalizeMobileFieldContract({
     ...component,
     field,
     label: component.label || field,
     type: resolveDesignerFieldType(component),
     props: { ...(component.props || {}) },
-    required: validation.required === true,
+    validation,
+    rules: component.rules || validation.rules || [],
+    required: validation.required === true || component.required === true,
     requiredMessage: validation.requiredMessage,
     readonly: visibility.readonly === true,
     hidden: visibility.hidden === true,
     defaultValue: component.defaultValue ?? component.props?.defaultValue,
     runtimeRules: component.props?.runtimeRules || component.runtimeRules || [],
     formVisible: component.formVisible !== false,
-  }
+  })
 }
 
 function resolveDesignerFieldType(component = {}) {
@@ -659,7 +662,7 @@ export function normalizeDesignerComponents(config = {}, formDesignerSchema) {
 
 export function normalizeField(field = {}) {
   const type = normalizeMobileComponentType(field.type || field.componentType || 'input')
-  return {
+  return normalizeMobileFieldContract({
     ...field,
     field: String(field.field || field.sourceField || '').trim(),
     label: field.label || field.field || '',
@@ -668,7 +671,7 @@ export function normalizeField(field = {}) {
     runtimeRules: field.runtimeRules || field.props?.runtimeRules || [],
     required: field.required === true,
     readonly: field.readonly === true,
-  }
+  })
 }
 
 export function resolveRuntimeZoneCanvasFieldRefs(zone = {}) {

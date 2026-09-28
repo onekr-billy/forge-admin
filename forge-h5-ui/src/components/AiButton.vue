@@ -59,24 +59,24 @@ function handleClick(event) {
   min-width: 0;
   margin: 0;
   border-radius: var(--forge-radius-control, 12rpx) !important;
-  font-weight: 500;
+  font-weight: 700;
   box-shadow: none !important;
 }
 
-.ai-button--sm { min-height: 88rpx; }
-.ai-button--md { min-height: 88rpx; }
-.ai-button--lg { min-height: 96rpx; }
-.ai-button--secondary { color: var(--forge-color-text-secondary, #4e5969) !important; border-color: var(--forge-color-border, #c9cdd4) !important; background: #fff !important; }
-.ai-button--outline { color: var(--forge-color-text-secondary, #4e5969) !important; border-color: var(--forge-color-border, #c9cdd4) !important; background: #fff !important; }
-.ai-button--ghost { color: var(--forge-color-primary, #4266f7) !important; background: transparent !important; }
-.ai-button--danger { color: var(--forge-color-danger, #f53f3f) !important; border-color: rgba(245, 63, 63, .38) !important; background: #fff !important; }
-.ai-button__content { display: flex; min-width: 0; align-items: center; justify-content: center; gap: 12rpx; }
+.ai-button--sm { min-height: 44px; }
+.ai-button--md { min-height: 44px; }
+.ai-button--lg { min-height: 48px; border-radius: 999px !important; }
+.ai-button--secondary { color: var(--forge-color-text-secondary, #475569) !important; border-color: transparent !important; background: #f1f5f9 !important; }
+.ai-button--outline { color: var(--forge-color-primary, #3b82f6) !important; border-color: var(--forge-color-primary, #3b82f6) !important; background: #fff !important; }
+.ai-button--ghost { color: var(--forge-color-primary, #3b82f6) !important; background: transparent !important; }
+.ai-button--danger { color: var(--forge-color-danger, #ef4444) !important; border-color: rgba(239, 68, 68, .28) !important; background: #fff !important; }
+.ai-button__content { display: flex; min-width: 0; min-height: inherit; align-items: center; justify-content: center; gap: 6px; }
 .ai-button__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ai-button__icon { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; }
 
 @media (hover: hover) {
   .ai-button--secondary:hover,
-  .ai-button--outline:hover { background: var(--forge-surface-muted, #f7f8fa) !important; }
+  .ai-button--outline:hover { background: var(--forge-surface-muted, #f8fafc) !important; }
   .ai-button--ghost:hover { opacity: .82; }
 }
 </style>

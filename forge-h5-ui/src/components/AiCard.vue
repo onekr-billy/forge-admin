@@ -7,16 +7,16 @@
 
 <script setup>
 defineProps({
-  borderRadius: { type: String, default: '6px' },
+  borderRadius: { type: String, default: '20px' },
   border: { type: Boolean, default: true },
   title: { type: String, default: '' },
-  padding: { type: String, default: '16px' },
+  padding: { type: String, default: '20px' },
 })
 </script>
 
 <style lang="scss" scoped>
-.ai-card { overflow: hidden; margin: 0; border: 1rpx solid var(--forge-color-border, #c9cdd4); background: var(--forge-color-surface, #fff); box-shadow: none; }
+.ai-card { overflow: hidden; margin: 0; border: 1px solid var(--forge-color-border-subtle, #f1f5f9); background: var(--forge-color-surface, #fff); box-shadow: var(--shadow-soft); }
 .ai-card__body { box-sizing: border-box; }
 :deep(.wd-card__content) { padding: 0; }
-:deep(.wd-card__title-content) { border-color: var(--forge-color-border-subtle, #e5e6eb); }
+:deep(.wd-card__title-content) { border-color: var(--forge-color-border-subtle, #e2e8f0); }
 </style>

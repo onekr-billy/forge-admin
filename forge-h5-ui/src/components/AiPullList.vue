@@ -174,7 +174,7 @@ function handleLoad() {
   min-height: 104rpx;
   align-items: center;
   justify-content: center;
-  color: #86909c;
+  color: #94a3b8;
   font-size: 24rpx;
   font-weight: 500;
 }
@@ -188,14 +188,14 @@ function handleLoad() {
 .ai-pull-list__spinner {
   width: 28rpx;
   height: 28rpx;
-  border: 3rpx solid #86909c;
+  border: 3rpx solid #94a3b8;
   border-right-color: transparent;
   border-radius: 999rpx;
   animation: ai-pull-list-spin 0.8s linear infinite;
 }
 
 .ai-pull-list__finished {
-  color: #86909c;
+  color: #94a3b8;
 }
 
 @keyframes ai-pull-list-spin {

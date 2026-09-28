@@ -92,9 +92,6 @@ importers:
       sm-crypto:
         specifier: ^0.4.0
         version: 0.4.0
-      uview-plus:
-        specifier: ^3.8.18
-        version: 3.8.86
       vue:
         specifier: ^3.4.21
         version: 3.5.40(typescript@5.9.3)
@@ -4114,10 +4111,6 @@ packages:
   utils-merge@1.0.1:
     resolution: {integrity: sha512-pMZTvIkT1d+TFGvDOqodOclx0QWkkgi6Tdoa8gC8ffGAAqz9pzPTZWAybbsHHoED/ztMtkv/VoYTYyShUn81hA==}
     engines: {node: '>= 0.4.0'}
-
-  uview-plus@3.8.86:
-    resolution: {integrity: sha512-L/Rc9MfJ7Z+YVe5EQZ2yhkTUBqshvTsIQMKpkoWWgQPV/kGAOmiP3zxAWftkpQ38bmiIHVVLteJqi6KqIzevZw==}
-    engines: {HBuilderX: ^3.1.0, uni-app: ^4.66, uni-app-x: ''}
 
   v8-to-istanbul@8.1.1:
     resolution: {integrity: sha512-FGtKtv3xIpR6BYhvgH8MI/y78oT7d8Au3ww4QIxymrCtZEh5b8gCw2siywE+puhEmuWKDtmfrvF5UlB298ut3w==}
@@ -9415,8 +9408,6 @@ snapshots:
   util-deprecate@1.0.2: {}
 
   utils-merge@1.0.1: {}
-
-  uview-plus@3.8.86: {}
 
   v8-to-istanbul@8.1.1:
     dependencies:

@@ -11,6 +11,7 @@
       :maxlength="Number(maxlength)"
       :disabled="disabled"
       :readonly="readonly"
+      :focus="autofocus"
       :auto-height="autoHeight"
       :show-word-limit="showWordLimit"
       :clearable="clearable"
@@ -33,9 +34,10 @@ defineProps({
   modelValue: { type: [String, Number], default: '' },
   placeholder: { type: String, default: '' },
   maxlength: { type: [String, Number], default: 500 },
-  minHeight: { type: String, default: '148rpx' },
+  minHeight: { type: String, default: '96px' },
   disabled: { type: Boolean, default: false },
   readonly: { type: Boolean, default: false },
+  autofocus: { type: Boolean, default: false },
   autoHeight: { type: Boolean, default: false },
   showWordLimit: { type: Boolean, default: true },
   clearable: { type: Boolean, default: false },
@@ -59,32 +61,42 @@ function handleBlur(event) {
 <style lang="scss" scoped>
 .ai-textarea {
   width: 100%;
-  padding: 8rpx 12rpx;
-  border: 1rpx solid var(--forge-color-border, #c9cdd4);
-  border-radius: var(--forge-radius-control, 12rpx);
-  background: #fff;
+  padding: 4px 8px;
+  border: 1px solid var(--forge-color-border-subtle, #f1f5f9);
+  border-radius: 12px;
+  background: #f8fafc;
   box-sizing: border-box;
   transition: border-color .16s ease, background-color .16s ease;
 }
 
 .ai-textarea.is-focused {
-  border-color: var(--forge-color-primary, #4266f7);
+  border-color: var(--forge-color-primary, #3b82f6);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, .1);
 }
 
-.ai-textarea.is-error { border-color: var(--forge-color-danger, #f53f3f); }
-.ai-textarea.is-disabled { background: var(--forge-color-surface-subtle, #f7f8fa); opacity: .76; }
+.ai-textarea.is-error { border-color: var(--forge-color-danger, #ef4444); }
+.ai-textarea.is-disabled { background: var(--forge-color-surface-subtle, #f8fafc); opacity: .76; }
 .ai-textarea__control { width: 100%; }
-.ai-textarea__error { display: block; padding: 2rpx 12rpx 8rpx; color: var(--forge-color-danger, #f53f3f); font-size: 22rpx; }
+.ai-textarea__error { display: block; padding: 2rpx 12rpx 8rpx; color: var(--forge-color-danger, #ef4444); font-size: 22rpx; }
 
 :deep(.wd-textarea) {
-  padding: 10rpx 8rpx;
+  padding: 10px 12px;
   background: transparent;
 }
 
 :deep(.wd-textarea__inner) {
-  min-height: 112rpx;
-  color: var(--forge-color-text, #1d2129);
-  font-size: 28rpx;
+  height: 70px !important;
+  min-height: 70px;
+  color: var(--forge-color-text, #1e293b);
+  font-size: 14px;
   line-height: 1.5;
+}
+
+:deep(.uni-textarea-textarea),
+:deep(.uni-textarea-placeholder),
+:deep(.wd-textarea__placeholder) {
+  font-size: 14px !important;
+  line-height: 1.5 !important;
 }
 </style>

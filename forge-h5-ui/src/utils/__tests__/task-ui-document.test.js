@@ -55,6 +55,35 @@ test('document component metadata restores strong selector type and data source'
   assert.equal(field.props.fieldMappings[0].targetField, 'ownerName')
 })
 
+test('document keeps PC field, validation, default and layout properties intact', () => {
+  const resolved = resolveTaskUiDocument({
+    protocolVersion: '1',
+    fields: [{ field: 'amount', writable: true, readable: true, type: 'input' }],
+    uiDocument: { version: '1', components: [{
+      componentKey: 'card',
+      props: { bordered: false, collapsible: true, size: 'small' },
+      children: [{
+        componentKey: 'money',
+        field: 'amount',
+        label: '申请金额',
+        editable: true,
+        defaultValue: 10,
+        validation: { required: true, min: 1, requiredMessage: '请输入申请金额' },
+        props: { precision: 2, currencySymbol: '¥', showChinese: true, futureDeclarativeProp: 'kept' },
+      }],
+    }] },
+  })
+
+  assert.equal(resolved.nodes[0].props.bordered, false)
+  assert.equal(resolved.nodes[0].props.collapsible, true)
+  assert.equal(resolved.fields[0].type, 'money')
+  assert.equal(resolved.fields[0].required, true)
+  assert.equal(resolved.fields[0].validation.min, 1)
+  assert.equal(resolved.fields[0].defaultValue, 10)
+  assert.equal(resolved.fields[0].props.precision, 2)
+  assert.equal(resolved.fields[0].props.futureDeclarativeProp, 'kept')
+})
+
 test('document-only field renders while explicit readonly and invisible nodes stay protected', () => {
   const resolved = resolveTaskUiDocument({
     protocolVersion: '1', fields: [],
@@ -97,6 +126,40 @@ test('designer readonly props cannot be bypassed by writable approval permission
   assert.deepEqual(buildBusinessTaskFormData({ fields: resolved.fields, mainData: { systemCode: 'A001' } }), {})
 })
 
+test('current approval permission overrides stale uiDocument editable flags', () => {
+  const resolved = resolveTaskUiDocument({
+    protocolVersion: '1',
+    fields: [
+      { field: 'fieldInput', type: 'input', readable: true, writable: true, readonly: false, props: { readonly: false, disabled: false } },
+      { field: 'fieldNumber', type: 'number', readable: true, writable: true, readonly: false, props: { readonly: false, disabled: false } },
+    ],
+    fieldPermissions: [
+      { field: 'fieldInput', readable: true, writable: true, editable: true },
+      { field: 'fieldNumber', readable: true, writable: true, editable: true },
+    ],
+    uiDocument: {
+      version: '1',
+      sections: [
+        { sectionId: 'section_default', sectionType: 'card', title: '基本信息', fields: ['fieldInput', 'fieldNumber'] },
+        { sectionId: 'child_business_object_hl92', sectionType: 'child_table', title: '指标汇总', fields: [] },
+      ],
+      components: [
+        { componentKey: 'input', field: 'fieldInput', editable: false },
+        { componentKey: 'number', field: 'fieldNumber', editable: false },
+      ],
+    },
+  })
+
+  assert.deepEqual(resolved.fields.map(field => [field.field, field.readonly]), [
+    ['fieldInput', false],
+    ['fieldNumber', false],
+  ])
+  assert.deepEqual(resolved.sections.map(section => section.sectionId), [
+    'section_default',
+    'child_business_object_hl92',
+  ])
+})
+
 test('empty visible document tree never reintroduces off-canvas fields', () => {
   const resolved = resolveTaskUiDocument({
     protocolVersion: '1',
@@ -132,7 +195,9 @@ test('approval page sends the JSON tree through the shared layout renderer', () 
   const sections = readFileSync(new URL('../../components/lowcode/PageSectionRenderer.vue', import.meta.url), 'utf8')
   const layout = readFileSync(new URL('../../components/lowcode/LowcodeLayoutNodes.vue', import.meta.url), 'utf8')
   assert.match(page, /:main-nodes="mainNodes"/)
-  assert.match(sections, /:nodes="mainNodes\.length && section\.sectionId === 'main' \? mainNodes : \[\]"/)
+  assert.match(sections, /:nodes="mainNodes\.length && String\(section\.sectionId\) === mainNodeSectionId \? mainNodes : \[\]"/)
+  assert.match(sections, /const mainNodeSectionId = computed/)
+  assert.match(sections, /<AiTabs[\s\S]*childSections\.length > 1/)
   assert.match(layout, /function isFieldNode\(node\)/)
   assert.doesNotMatch(layout, /isCardLikeNode/)
   assert.match(layout, /:current-children="currentChildren"/)

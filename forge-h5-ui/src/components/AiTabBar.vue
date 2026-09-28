@@ -8,8 +8,10 @@
         :class="{ 'is-active': currentKey === tab.key }"
         @click="handleTabClick(tab)"
       >
-        <view v-if="currentKey === tab.key" class="ai-tabbar__active" />
-        <view class="ai-tabbar__icon" :style="iconMask(tab.icon, currentKey === tab.key ? '#4266f7' : '#86909c')" />
+        <view class="ai-tabbar__icon-wrap">
+          <view class="ai-tabbar__icon" :style="iconMask(tab.icon, currentKey === tab.key ? '#3b82f6' : '#94a3b8')" />
+          <text v-if="tab.key === 'message' && displayUnreadCount" class="ai-tabbar__badge">{{ displayUnreadCount }}</text>
+        </view>
         <text class="ai-tabbar__label">{{ tab.label }}</text>
       </button>
     </view>
@@ -17,8 +19,9 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
+import api from '@/api'
 import { resolveStaticUrl } from '@/utils/assets'
 
 const props = defineProps({
@@ -26,6 +29,7 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  unreadCount: { type: [Number, String], default: null },
 })
 
 const tabs = [
@@ -42,12 +46,24 @@ const tabs = [
     icon: '/static/icons/ai-icon/check-square.svg',
   },
   {
+    key: 'message',
+    label: '消息',
+    path: '/pages/message/index',
+    icon: '/static/icons/ai-icon/message-square.svg',
+  },
+  {
     key: 'mine',
     label: '我的',
     path: '/pages/mine/index',
     icon: '/static/icons/ai-icon/user.svg',
   },
 ]
+
+const fetchedUnreadCount = ref(0)
+const displayUnreadCount = computed(() => {
+  const count = Number(props.unreadCount ?? fetchedUnreadCount.value) || 0
+  return count > 99 ? '99+' : count > 0 ? String(count) : ''
+})
 
 const currentKey = computed(() => {
   if (props.active) {
@@ -61,11 +77,22 @@ const currentKey = computed(() => {
 
 onMounted(() => {
   hideNativeTabBar()
+  if (props.unreadCount === null) refreshUnreadCount()
 })
 
 onShow(() => {
   hideNativeTabBar()
+  if (props.unreadCount === null) refreshUnreadCount()
 })
+
+async function refreshUnreadCount() {
+  try {
+    const response = await api.getUnreadMessageCount()
+    const data = response?.data
+    fetchedUnreadCount.value = Number(typeof data === 'number' ? data : data?.totalCount ?? data?.unreadCount ?? data?.count ?? 0) || 0
+  }
+  catch { fetchedUnreadCount.value = 0 }
+}
 
 function hideNativeTabBar() {
   if (typeof uni === 'undefined' || typeof uni.hideTabBar !== 'function') {
@@ -110,10 +137,11 @@ function handleTabClick(tab) {
 .ai-tabbar {
   display: flex;
   width: 100%;
-  min-height: calc(104rpx + env(safe-area-inset-bottom));
-  padding: 8rpx 24rpx env(safe-area-inset-bottom);
-  border-top: 1rpx solid var(--border-color);
+  min-height: calc(64px + env(safe-area-inset-bottom));
+  padding: 6px 24px env(safe-area-inset-bottom);
+  border-top: 1px solid var(--border-light);
   background: #fff;
+  box-shadow: 0 -8px 24px -18px rgba(15, 23, 42, .18);
   pointer-events: auto;
 }
 
@@ -124,7 +152,7 @@ function handleTabClick(tab) {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 88rpx;
+  min-height: 48px;
   margin: 0;
   padding: 0;
   border: 0;
@@ -141,31 +169,41 @@ function handleTabClick(tab) {
   background: var(--surface-muted);
 }
 
-.ai-tabbar__active {
-  position: absolute;
-  top: -9rpx;
-  left: 50%;
-  width: 44rpx;
-  height: 4rpx;
-  background: var(--primary-color);
-  transform: translateX(-50%);
-}
+.ai-tabbar__icon-wrap { position: relative; width: 22px; height: 22px; }
 
 .ai-tabbar__icon {
   position: relative;
   z-index: 1;
-  width: 38rpx;
-  height: 38rpx;
+  width: 22px;
+  height: 22px;
   transition: background-color 0.15s ease;
+}
+
+.ai-tabbar__badge {
+  position: absolute;
+  top: -8px;
+  right: -14px;
+  display: flex;
+  min-width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--forge-color-danger);
+  font-size: 10px;
+  line-height: 1;
 }
 
 .ai-tabbar__label {
   position: relative;
   z-index: 1;
-  margin-top: 8rpx;
+  margin-top: 4px;
   color: var(--text-muted);
-  font-size: 20rpx;
-  font-weight: 500;
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .ai-tabbar__item.is-active .ai-tabbar__label {

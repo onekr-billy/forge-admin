@@ -61,6 +61,10 @@ const props = defineProps({
     type: Number,
     default: 0.9,
   },
+  maxSize: {
+    type: Number,
+    default: 0,
+  },
   readonly: {
     type: Boolean,
     default: false,
@@ -79,9 +83,14 @@ async function openPicker() {
     return
   }
   const picked = await chooseImageFile()
-  if (!picked?.url) {
-    return
-  }
+    if (!picked?.url) {
+      return
+    }
+    const size = Number(picked.file?.size || 0)
+    if (props.maxSize > 0 && size > props.maxSize * 1024 * 1024) {
+      toast(`图片不能超过 ${props.maxSize}MB`, { type: 'warning' })
+      return
+    }
 
   try {
     let useCropper = false

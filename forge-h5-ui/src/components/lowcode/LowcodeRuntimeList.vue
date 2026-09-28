@@ -1,19 +1,19 @@
 <template>
-  <view class="runtime-list-workspace" :class="{ 'runtime-list-workspace--without-filter': !searchFields.length }">
+  <view class="runtime-list-workspace" :class="{ 'runtime-list-workspace--without-filter': searchFields.length !== 1 }">
   <view class="runtime-list-head">
     <view class="runtime-toolbar__copy">
       <text class="runtime-toolbar__title">{{ config.tableComment || config.objectName || title }}</text>
       <text class="runtime-toolbar__desc">共 {{ total }} 条记录，按卡片浏览和办理</text>
     </view>
     <view class="runtime-list-head__actions">
-      <AiButton v-if="searchFields.length" size="sm" variant="secondary" @click="$emit('toggle-search')">
-        {{ searchExpanded ? '收起筛选' : `筛选${activeSearchCount ? `(${activeSearchCount})` : ''}` }}
+      <AiButton v-if="searchFields.length" size="sm" variant="secondary" @click="searchFields.length > 1 ? openFilter() : $emit('toggle-search')">
+        {{ searchFields.length > 1 ? `筛选${activeSearchCount ? `(${activeSearchCount})` : ''}` : searchExpanded ? '收起筛选' : '筛选' }}
       </AiButton>
       <AiButton size="sm" @click="$emit('create')">新增</AiButton>
     </view>
   </view>
 
-  <view v-if="searchFields.length" class="runtime-filter-shell">
+  <view v-if="searchFields.length === 1" class="runtime-filter-shell">
     <view v-if="!searchExpanded" class="runtime-filter-summary" @click="$emit('toggle-search')">
       <view><text class="runtime-filter-summary__title">筛选条件</text><text class="runtime-filter-summary__desc">{{ searchSummary }}</text></view>
       <text class="runtime-filter-summary__arrow">展开</text>
@@ -52,13 +52,18 @@
     <text>第 {{ page }} / {{ pageCount }} 页</text>
     <AiButton size="sm" variant="secondary" :disabled="page >= pageCount" @click="$emit('change-page', 1)">下一页</AiButton>
   </view>
+  <!-- 多条件查询只在弹层中编辑草稿，确认时才同步到运行时查询状态。 -->
+  <AiFilterSheet v-if="searchFields.length > 1" v-model="filterVisible" title="筛选记录" @reset="resetFilterDraft" @apply="applyFilterDraft">
+    <LowcodeForm :fields="searchFields" :data="draftSearchData" :dict-options="dictOptions" :context="context" />
+  </AiFilterSheet>
   </view>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import AiButton from '@/components/AiButton.vue'
 import AiEmpty from '@/components/AiEmpty.vue'
+import AiFilterSheet from '@/components/AiFilterSheet.vue'
 import LowcodeForm from '@/components/lowcode/LowcodeForm.vue'
 import { actionVisible, normalizeActions, resolveActionPermission } from '@/utils/lowcode-runtime'
 
@@ -78,7 +83,24 @@ const props = defineProps({
   permissions: { type: Array, default: () => [] },
 })
 
-defineEmits(['toggle-search', 'create', 'search-change', 'reset-search', 'search', 'open-row', 'action', 'change-page'])
+const emit = defineEmits(['toggle-search', 'create', 'search-change', 'reset-search', 'search', 'open-row', 'action', 'change-page'])
+
+const filterVisible = ref(false)
+const draftSearchData = reactive({})
+function openFilter() {
+  Object.keys(draftSearchData).forEach(key => delete draftSearchData[key])
+  Object.assign(draftSearchData, props.searchData)
+  filterVisible.value = true
+}
+function resetFilterDraft() {
+  Object.keys(draftSearchData).forEach(key => delete draftSearchData[key])
+}
+function applyFilterDraft() {
+  Object.keys(props.searchData).forEach(key => delete props.searchData[key])
+  Object.assign(props.searchData, draftSearchData)
+  filterVisible.value = false
+  emit('search')
+}
 
 const pageCount = computed(() => Math.max(1, Math.ceil(Number(props.total || 0) / props.pageSize)))
 const activeSearchCount = computed(() => Object.values(props.searchData).filter(value => value !== undefined && value !== null && value !== '' && !(Array.isArray(value) && !value.length)).length)
@@ -131,7 +153,7 @@ function formatValue(value, column = {}) {
 .runtime-record-list { display: flex; flex-direction: column; gap: 10rpx; }
 .runtime-record-card { padding: 18rpx 20rpx; border: 1rpx solid var(--border-color); border-radius: var(--radius-card); background: #fff; }
 .runtime-record-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18rpx; margin-bottom: 18rpx; }
-.runtime-record-card__status { padding: 4rpx 8rpx; border: 1rpx solid #4266f7; border-radius: 4rpx; color: var(--primary-color); font-size: 19rpx; background: var(--primary-soft); }
+.runtime-record-card__status { padding: 4rpx 8rpx; border: 1rpx solid #3b82f6; border-radius: 4rpx; color: var(--primary-color); font-size: 19rpx; background: var(--primary-soft); }
 .runtime-record-card__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16rpx 20rpx; }
 .runtime-record-card__item { min-width: 0; display: flex; flex-direction: column; gap: 5rpx; }
 .runtime-record-card__label { color: var(--text-muted); font-size: 19rpx; }

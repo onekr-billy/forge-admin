@@ -53,7 +53,7 @@
         </view>
 
         <view class="zoom-control">
-          <AiIcon icon="/static/icons/ai-icon/image.svg" color="#86909c" size="sm" />
+          <AiIcon icon="/static/icons/ai-icon/image.svg" color="#94a3b8" size="sm" />
           <slider
             :value="zoomPercent"
             min="0"
@@ -65,7 +65,7 @@
             @changing="handleZoomChange"
             @change="handleZoomChange"
           />
-          <AiIcon icon="/static/icons/ai-icon/maximize-2.svg" color="#86909c" size="sm" />
+          <AiIcon icon="/static/icons/ai-icon/maximize-2.svg" color="#94a3b8" size="sm" />
         </view>
 
         <view class="cropper-actions">
@@ -118,9 +118,9 @@ const shape = ref('circle')
 const loading = ref(false)
 
 const shapeOptions = [
-  { value: 'circle', label: '圆形', icon: '/static/icons/ai-icon/circle.svg', color: '#4266f7' },
-  { value: 'round', label: '圆角', icon: '/static/icons/ai-icon/square.svg', color: '#16815d' },
-  { value: 'square', label: '方形', icon: '/static/icons/ai-icon/crop.svg', color: '#ff7d00' },
+  { value: 'circle', label: '圆形', icon: '/static/icons/ai-icon/circle.svg', color: '#3b82f6' },
+  { value: 'round', label: '圆角', icon: '/static/icons/ai-icon/square.svg', color: '#10b981' },
+  { value: 'square', label: '方形', icon: '/static/icons/ai-icon/crop.svg', color: '#f97316' },
 ]
 
 const baseScale = computed(() => Math.max(
@@ -394,7 +394,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   color: #ffffff;
-  background: #1d2129;
+  background: #1e293b;
 }
 
 .cropper-topbar {
@@ -429,7 +429,7 @@ onUnmounted(() => {
   height: 88rpx;
   border: 1rpx solid rgba(255, 255, 255, 0.18);
   border-radius: 8rpx;
-  background: #1d2129;
+  background: #1e293b;
 }
 
 .topbar-title {
@@ -463,7 +463,7 @@ onUnmounted(() => {
 }
 
 .topbar-text text {
-  color: #4266f7;
+  color: #3b82f6;
   font-size: 25rpx;
   font-weight: 500;
 }
@@ -528,7 +528,7 @@ onUnmounted(() => {
 .cropper-panel {
   padding: 22rpx 28rpx calc(28rpx + env(safe-area-inset-bottom));
   border-top: 1rpx solid rgba(255, 255, 255, 0.1);
-  background: #1d2129;
+  background: #1e293b;
 }
 
 .shape-tabs {
@@ -547,16 +547,16 @@ onUnmounted(() => {
   padding: 0;
   border: 1rpx solid rgba(255, 255, 255, 0.12);
   border-radius: 8rpx;
-  background: #1d2129;
+  background: #1e293b;
 }
 
 .shape-tab.active {
-  border-color: #4266f7;
-  background: #4266f7;
+  border-color: #3b82f6;
+  background: #3b82f6;
 }
 
 .shape-tab text {
-  color: #c9cdd4;
+  color: #cbd5e1;
   font-size: 24rpx;
   font-weight: 500;
 }
@@ -587,13 +587,13 @@ onUnmounted(() => {
 }
 
 .action-button--ghost {
-  color: #c9cdd4;
+  color: #cbd5e1;
   border: 1rpx solid rgba(255, 255, 255, 0.18);
-  background: #1d2129;
+  background: #1e293b;
 }
 
 .action-button--primary {
   color: #ffffff;
-  background: #4266f7;
+  background: #3b82f6;
 }
 </style>

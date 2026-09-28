@@ -1,112 +1,75 @@
 <template>
-  <view class="ai-dropdown-menu">
-    <view class="dropdown-trigger" @click="toggleDropdown">
+  <wd-select-picker
+    v-model="selectedValue"
+    type="radio"
+    :columns="options"
+    value-key="value"
+    label-key="label"
+    :title="title"
+    :filterable="filterable"
+    :filter-placeholder="filterPlaceholder"
+    :show-confirm="false"
+    :safe-area-inset-bottom="true"
+    :z-index="10010"
+    root-portal
+    @confirm="handleConfirm"
+  >
+    <view class="dropdown-trigger">
       <slot name="trigger">
         <view class="default-trigger">
           <text>{{ selectedLabel || placeholder }}</text>
+          <wd-icon name="arrow-down" size="16px" color="#94a3b8" />
         </view>
       </slot>
     </view>
-    
-    <view class="dropdown-overlay" v-if="visible" @click="close">
-      <view class="dropdown-popup" @click.stop>
-        <view 
-          v-for="(option, index) in options" 
-          :key="index"
-          class="dropdown-option"
-          :class="{ 'dropdown-option--selected': modelValue === option.value }"
-          @click="selectOption(option)"
-        >
-          <text class="option-label">{{option.label}}</text>
-        </view>
-      </view>
-    </view>
-  </view>
+  </wd-select-picker>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
 
 const props = defineProps({
-  modelValue: {
-    type: [String, Number],
-    default: ''
-  },
-  options: {
-    type: Array,
-    default: () => []
-  },
-  placeholder: {
-    type: String,
-    default: '请选择'
-  }
+  modelValue: { type: [String, Number, Boolean], default: '' },
+  options: { type: Array, default: () => [] },
+  placeholder: { type: String, default: '请选择' },
+  title: { type: String, default: '请选择' },
+  filterable: { type: Boolean, default: false },
+  filterPlaceholder: { type: String, default: '搜索选项' },
 })
 
 const emit = defineEmits(['update:modelValue', 'change'])
 
-const visible = ref(false)
-
-const selectedLabel = computed(() => {
-  const selected = props.options.find(o => o.value === props.modelValue)
-  return selected ? selected.label : ''
+const selectedValue = computed({
+  get: () => props.modelValue,
+  set: value => emit('update:modelValue', value),
 })
 
-const toggleDropdown = () => {
-  visible.value = !visible.value
-}
+const selectedLabel = computed(() => {
+  const selected = props.options.find(option => option.value === props.modelValue)
+  return selected?.label || ''
+})
 
-const close = () => {
-  visible.value = false
-}
-
-const selectOption = (option) => {
-  emit('update:modelValue', option.value)
-  emit('change', option.value)
-  close()
+function handleConfirm(event) {
+  emit('change', event?.value)
 }
 </script>
 
 <style lang="scss" scoped>
-.ai-dropdown-menu {
-  position: relative;
-}
-
 .dropdown-trigger {
   cursor: pointer;
 }
 
-.dropdown-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 1000;
-}
-
-.dropdown-popup {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
+.default-trigger {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--forge-color-border, #e2e8f0);
+  border-radius: var(--forge-radius-control, 12rpx);
+  color: var(--forge-color-text-regular, #475569);
   background: #fff;
-  border-radius: 12px 12px 0 0;
-  max-height: 50vh;
-  overflow-y: auto;
-}
-
-.dropdown-option {
-  padding: 16px;
-  border-bottom: 1px solid #eee;
-  
-  &--selected {
-    color: var(--primary-color, #4266f7);
-    background: #f5f5f5;
-  }
-}
-
-.option-label {
-  font-size: 14px;
+  box-sizing: border-box;
 }
 </style>

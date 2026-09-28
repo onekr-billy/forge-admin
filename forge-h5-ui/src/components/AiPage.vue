@@ -1,13 +1,14 @@
 <template>
   <view class="page-detail" :style="{ background: backgroundColor }">
-    <uni-nav-bar 
+    <wd-navbar
       :left-arrow="leftArrow" 
-      @clickLeft="onClickLeft" 
-      @clickRight="onClickRight"
+      @click-left="onClickLeft"
+      @click-right="onClickRight"
       :fixed="true"
-      :border="false"
+      :bordered="false"
+      placeholder
       v-if="isNavBar">
-      <template #default>
+      <template #title>
         <view style="display: flex;align-items: center">
           <slot name="title-left"></slot>
           <text>{{title}}</text>
@@ -16,7 +17,7 @@
       <template #right>
         <slot name="nav-bar-right"></slot>
       </template>
-    </uni-nav-bar>
+    </wd-navbar>
     
     <view class="page-detail_top" :style="{ padding: marginTop ? '0px' : '10px' }" v-if="$slots.top">
       <slot name="top"></slot>
@@ -50,7 +51,7 @@ const props = defineProps({
   },
   backgroundColor: {
     type: String,
-    default: "var(--page-bg, #f2f3f5)",
+    default: "var(--page-bg, #f4f5f7)",
   },
   isNavBar: {
     type: Boolean,
@@ -149,7 +150,7 @@ defineExpose({
     position: fixed;
     bottom: 0;
     width: 100%;
-    border-top: 1px solid var(--forge-border, #c9cdd4);
+    border-top: 1px solid var(--forge-border, #cbd5e1);
     background: #fff;
     box-sizing: border-box;
     padding: 16px;

@@ -4,7 +4,7 @@
     :disabled="disabled"
     :inline="inline"
     :shape="button ? 'button' : 'dot'"
-    checked-color="var(--forge-color-primary, #4266f7)"
+    checked-color="var(--forge-color-primary, #3b82f6)"
     @change="handleChange"
   >
     <wd-radio
@@ -55,11 +55,19 @@ const handleChange = (event) => {
 }
 
 :deep(.wd-radio) {
-  min-height: 88rpx;
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   margin: 0;
+  padding: 0 12px;
+  box-sizing: border-box;
 }
 
-:deep(.wd-radio.is-button) {
-  border-radius: var(--radius-control);
-}
+:deep(.wd-radio__shape) { flex: 0 0 auto; align-self: center; margin-top: 0 !important; }
+:deep(.wd-radio__label) { display: flex; min-height: 20px; align-items: center; align-self: center; margin: 0; line-height: 20px; }
+:deep(.wd-radio.is-button) { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; margin: 0; text-align: center; }
+:deep(.wd-radio.is-button .wd-radio__label),
+:deep(.wd-radio.is-button-radio .wd-radio__label) { display: flex; width: 100%; height: 44px; min-height: 44px; align-items: center; justify-content: center; padding: 0 14px; border-radius: var(--radius-control); line-height: 20px; box-sizing: border-box; }
 </style>

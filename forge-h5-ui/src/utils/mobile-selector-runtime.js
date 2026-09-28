@@ -1,5 +1,5 @@
 const ALLOWED_OPTION_API_PREFIXES = ['/system/', '/ai/', '/api/']
-const MULTIPLE_TYPES = new Set(['userSelect', 'orgTreeSelect', 'objectReference', 'recordSelector', 'treeSelect', 'cascader', 'customSelect'])
+const MULTIPLE_TYPES = new Set(['userSelect', 'orgTreeSelect', 'regionTreeSelect', 'objectReference', 'recordSelector', 'treeSelect', 'cascader', 'customSelect'])
 
 export function normalizeMobileSelectorConfig(field = {}) {
   const fragments = [
@@ -29,6 +29,7 @@ export function normalizeMobileSelectorConfig(field = {}) {
     merged.objectCode,
     merged.businessObjectCode,
     merged.targetObjectCode,
+    merged.targetObject,
     merged.targetEntityCode,
     merged.candidateObjectCode,
     merged.referenceObjectCode,
@@ -38,9 +39,11 @@ export function normalizeMobileSelectorConfig(field = {}) {
     field.objectCode,
     field.businessObjectCode,
     field.targetObjectCode,
+    field.targetObject,
     field.props?.objectCode,
     field.props?.businessObjectCode,
     field.props?.targetObjectCode,
+    field.props?.targetObject,
   )
   const querySource = parseObject(merged.querySource || field.querySource || field.props?.querySource)
   const linkageContext = parseObject(field.props?.linkageContext)
@@ -55,14 +58,14 @@ export function normalizeMobileSelectorConfig(field = {}) {
     businessObjectCode: firstText(merged.businessObjectCode, field.businessObjectCode, field.props?.businessObjectCode, objectCode),
     targetObjectCode: firstText(merged.targetObjectCode, field.targetObjectCode, field.props?.targetObjectCode, objectCode),
     suiteCode: firstText(merged.suiteCode, field.suiteCode, field.props?.suiteCode),
-    labelField: firstText(merged.labelField, merged.labelName, merged.labelSourceField, field.labelField, field.props?.labelField, defaultLabelField(type)),
+    labelField: firstText(merged.labelField, merged.displayField, merged.labelName, merged.labelSourceField, field.labelField, field.displayField, field.props?.labelField, field.props?.displayField, defaultLabelField(type)),
     valueField: firstText(merged.valueField, merged.valueName, field.valueField, field.props?.valueField, defaultValueField(type)),
     childrenField: firstText(merged.childrenField, field.childrenField, field.props?.childrenField, 'children'),
     labelValueField: firstText(merged.labelValueField, field.labelValueField, field.props?.labelValueField, field.field ? `${field.field}Name` : ''),
     targetLabelField: firstText(merged.targetLabelField, merged.labelTargetField, field.props?.targetLabelField),
     api: firstText(merged.api, field.api, field.props?.api),
     method: firstText(merged.method, field.method, field.props?.method),
-    params: { ...parseObject(merged.params), ...parseObject(field.params), ...parseObject(field.props?.params), ...linkageParams },
+    params: { ...parseObject(merged.paramsText), ...parseObject(merged.params), ...parseObject(field.paramsText), ...parseObject(field.params), ...parseObject(field.props?.paramsText), ...parseObject(field.props?.params), ...linkageParams },
     searchParams: { ...parseObject(merged.searchParams), ...parseObject(field.searchParams), ...parseObject(field.props?.searchParams) },
     displayFields: firstArray(merged.displayFields, field.displayFields, field.props?.displayFields),
     keywordFields: firstArray(merged.keywordFields, field.keywordFields, field.props?.keywordFields),
@@ -72,6 +75,11 @@ export function normalizeMobileSelectorConfig(field = {}) {
     keywordParam: firstText(merged.keywordParam, field.keywordParam, field.props?.keywordParam, 'keyword'),
     rootCode: firstText(merged.rootCode, field.rootCode, field.props?.rootCode),
     dataRight: merged.dataRight ?? field.dataRight ?? field.props?.dataRight,
+    filterable: firstBoolean(merged.filterable, field.filterable, field.props?.filterable, true),
+    checkStrategy: firstText(merged.checkStrategy, field.checkStrategy, field.props?.checkStrategy, 'all'),
+    cascade: firstBoolean(merged.cascade, field.cascade, field.props?.cascade, true),
+    leafOnly: firstBoolean(merged.leafOnly, field.leafOnly, field.props?.leafOnly, false),
+    maxLevel: firstNumber(merged.maxLevel, field.maxLevel, field.props?.maxLevel, field.level, field.props?.level),
   }
 }
 
@@ -257,6 +265,21 @@ function firstArray(...values) {
     if (typeof value === 'string' && value.trim()) return value.split(/[\n,]/).map(item => item.trim()).filter(Boolean)
   }
   return []
+}
+
+function firstBoolean(...values) {
+  for (const value of values) {
+    if (typeof value === 'boolean') return value
+  }
+  return false
+}
+
+function firstNumber(...values) {
+  for (const value of values) {
+    const number = Number(value)
+    if (value !== '' && value !== undefined && value !== null && Number.isFinite(number)) return number
+  }
+  return undefined
 }
 
 function readPath(source, path = '') {

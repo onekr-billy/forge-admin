@@ -38,7 +38,7 @@ public class FlowClient {
     private final ObjectMapper objectMapper;
 
     /** 流程服务地址，默认本地 */
-    private String flowServiceUrl = "http://localhost:8080";
+    private String flowServiceUrl = "http://localhost:8081";
 
     /** Token（静态配置，如需鉴权透传，设置后每次请求携带 Authorization 头） */
     private String token;

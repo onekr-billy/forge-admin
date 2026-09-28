@@ -5,6 +5,9 @@
     :show-nav="false"
     :safe-bottom="pageChrome.safeBottom"
     :padded="pageChrome.padded"
+    :refresher-enabled="mode === 'list'"
+    :refreshing="listRefreshing"
+    @refresh="refreshListByPull"
   >
     <AiFeedbackHost />
     <view v-if="loading" class="runtime-state">
@@ -177,7 +180,7 @@
 </template>
 
 <script setup>
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { onLoad, onUnload } from '@dcloudio/uni-app'
 import { storeToRefs } from 'pinia'
 import AiButton from '@/components/AiButton.vue'
@@ -210,6 +213,7 @@ import {
 } from '@/utils/lowcode-runtime'
 
 const authStore = useAuthStore()
+const listRefreshing = ref(false)
 const runtimeStore = useLowcodeRuntimeStore()
 const {
   configKey, title, loading, saving, errorMessage, config, mode, currentId, records, total, page,
@@ -280,6 +284,14 @@ const runtimeData = useLowcodeRuntimeData({
   handleError,
 })
 const { loadRuntime, loadList, loadListDebounced, resetSearch, loadDetail, initializeForm, dispose: disposeRuntimeData } = runtimeData
+
+async function refreshListByPull() {
+  if (mode.value !== 'list' || listRefreshing.value) return
+  listRefreshing.value = true
+  try { await loadList() }
+  catch (error) { handleError(error) }
+  finally { listRefreshing.value = false }
+}
 
 onLoad(async query => {
   runtimeStore.initializeRoute(query || {})

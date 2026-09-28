@@ -19,32 +19,13 @@ test('preserves range controls and writable metadata for H5', () => {
     props: { startPlaceholder: '开始日期', endPlaceholder: '结束日期' },
   }])
 
-  assert.deepEqual(fields[0], {
-    field: 'period',
-    fieldCode: 'period',
-    label: '有效期',
-    type: 'daterange',
-    props: {
-      startPlaceholder: '开始日期',
-      endPlaceholder: '结束日期',
-      dictType: undefined,
-      readonly: false,
-      disabled: false,
-      itemPermissions: [],
-    },
-    required: false,
-    readonly: false,
-    hidden: false,
-    formVisible: true,
-    defaultValue: undefined,
-    runtimeRules: [],
-    options: [],
-    itemSchema: [],
-    itemPermissions: [],
-    arrayConfig: {},
-    businessType: undefined,
-    limit: undefined,
-  })
+  assert.equal(fields[0].field, 'period')
+  assert.equal(fields[0].type, 'daterange')
+  assert.equal(fields[0].readonly, false)
+  assert.equal(fields[0].formVisible, true)
+  assert.equal(fields[0].props.startPlaceholder, '开始日期')
+  assert.equal(fields[0].props.endPlaceholder, '结束日期')
+  assert.deepEqual(fields[0].itemPermissions, [])
 })
 
 test('BPMN readable and writable keys take precedence over legacy aliases', () => {
@@ -149,6 +130,24 @@ test('builds default approval sections for main and child forms', () => {
     fields: ['title'],
   }])
   assert.deepEqual(configured.map(section => section.sectionId), ['configured-main', 'child:items'])
+})
+
+test('binds uiDocument child sections to relation configs by section id', () => {
+  const children = adaptChildrenConfig([{
+    key: 'cgou_business_object_hl92',
+    modelCode: 'cgou_business_object_hl92',
+    relationKey: 'business_object_hl92',
+    displayMode: 'inline_grid',
+    fields: [{ field: 'fieldInput', readable: true, writable: true }],
+  }])
+  const sections = buildDefaultPageSections([{ field: 'title' }], children, [
+    { sectionId: 'section_default', sectionType: 'card', fields: ['title'] },
+    { sectionId: 'child_business_object_hl92', sectionType: 'child_table', title: '指标汇总', fields: [] },
+  ])
+
+  assert.equal(sections.length, 2)
+  assert.equal(sections[1].relationKey, 'business_object_hl92')
+  assert.equal(sections[1].displayMode, 'inline_grid')
 })
 
 test('detects child-only writable approval forms', () => {

@@ -1,33 +1,46 @@
 <template>
   <view class="todo-detail-page">
     <AiFeedbackHost />
-    <scroll-view class="detail-scroll" scroll-y :show-scrollbar="false">
-      <view v-if="loading" class="detail-skeleton">
-        <AiListSkeleton :rows="2" />
-        <AiListSkeleton :rows="4" compact />
-      </view>
+    <scroll-view class="detail-scroll" scroll-y :show-scrollbar="true">
+      <TodoDetailSkeleton v-if="loading" />
       <template v-else-if="task">
-        <TodoTaskSummary :task="task" />
-        <button class="detail-refresh" @click="refresh"><AiIcon name="refresh-cw" color="#4266f7" size="sm" /><text>刷新详情</text></button>
+        <TodoTaskSummary :task="task" @refresh="refresh" />
 
-        <AiTabs v-model="activeTabIndex" :tabs="detailTabs" class="detail-tabs">
-          <AiTab :index="0">
-          <view v-if="formLoading" class="page-hint">正在加载表单…</view>
+        <view class="detail-content">
+          <!-- 动态业务表单 -->
+          <view v-if="formLoading" class="content-panel detail-loading-card">
+            <TodoDetailSkeleton form-only />
+          </view>
           <view v-else-if="blockedReason" class="blocked-panel">
-            <AiIcon icon="/static/icons/ai-icon/info.svg" color="#4266f7" size="md" />
-            <text class="blocked-title">请在 PC 端处理</text>
-            <text class="blocked-copy">{{ blockedReason }}</text>
+            <view class="blocked-panel__icon">
+              <AiIcon icon="/static/icons/ai-icon/info.svg" color="#3b82f6" size="md" />
+            </view>
+            <view class="blocked-panel__copy">
+              <text class="blocked-title">请在 PC 端处理</text>
+              <text class="blocked-copy">{{ blockedReason }}</text>
+            </view>
           </view>
 
-          <view v-else class="content-panel">
-            <view v-if="businessProviderUnavailable" class="form-provider-notice">
-              <text>流程服务未加载该业务表单 Provider，当前仅能展示表单字段结构；部署 Provider 后会自动加载实际数据和节点权限。</text>
-            </view>
-            <view v-if="businessFormHasWritableFields" class="form-panel-head">
-              <text>业务表单</text>
-              <button class="save-form-button" :disabled="actionLoading || formSaving" @click="saveBusinessFields">
+          <view v-else-if="showBusinessFormPanel" class="content-panel">
+            <view class="detail-section-head">
+              <view class="detail-section-heading">
+                <view class="detail-section-icon"><AiIcon icon="/static/icons/ai-icon/file-text.svg" color="#3b82f6" size="sm" /></view>
+                <view>
+                  <text class="detail-section-title">表单信息</text>
+                  <text class="detail-section-desc">当前审批节点对应的业务内容</text>
+                </view>
+              </view>
+              <button
+                v-if="businessFormHasWritableFields"
+                class="save-form-button"
+                :disabled="actionLoading || formSaving"
+                @click="saveBusinessFields"
+              >
                 {{ formSaving ? '暂存中' : '暂存修改' }}
               </button>
+            </view>
+            <view v-if="businessProviderUnavailable" class="form-provider-notice">
+              <text>流程服务未加载该业务表单 Provider，当前仅能展示表单字段结构；部署 Provider 后会自动加载实际数据和节点权限。</text>
             </view>
             <PageSectionRenderer
               v-if="hasLowcodeForm"
@@ -70,44 +83,50 @@
                 </view>
               </view>
             </view>
-            <view v-if="!readonlyMode" class="comment-row">
-              <text class="form-label">审批意见<text v-if="requireComment" class="required-mark"> *</text></text>
-              <AiTextarea v-model="comment" maxlength="500" placeholder="请输入审批意见" />
-              <view v-if="commentPhrases.length" class="comment-presets">
-                <button
-                  v-for="phrase in commentPhrases"
-                  :key="phrase.id"
-                  class="comment-preset"
-                  :class="{ active: comment === phrase.content }"
-                  @click="comment = phrase.content"
-                >
-                  {{ phrase.content }}
-                </button>
-              </view>
-              <view class="comment-preset-actions">
-                <button
-                  v-if="canSaveCommentPhrase"
-                  class="comment-preset-link"
-                  :disabled="phraseSaving"
-                  @click="saveCommentPhrase"
-                >
-                  {{ phraseSaving ? '保存中' : '存为常用' }}
-                </button>
+          </view>
+
+          <!-- 流程进度与审批记录在同一卡片连续展示 -->
+          <view class="workflow-panel">
+            <view class="detail-section-head">
+              <view class="detail-section-heading">
+                <view class="detail-section-icon"><AiIcon icon="/static/icons/ai-icon/check-circle.svg" color="#3b82f6" size="sm" /></view>
+                <view>
+                  <text class="detail-section-title">审批流程</text>
+                  <text class="detail-section-desc">节点进度与办理记录</text>
+                </view>
               </view>
             </view>
-            <view v-if="!readonlyMode && requireSignature" class="comment-row signature-row">
+            <view class="trace-sections">
+              <TodoFlowTrace mode="process" :loading="diagramLoading" :items="processNodes" />
+              <TodoFlowTrace mode="history" :loading="historyLoading" :items="history" />
+            </view>
+          </view>
+
+          <!-- 处理模式下才展示审批意见和签名 -->
+          <view v-if="!readonlyMode" class="approval-comment-panel">
+            <view class="detail-section-head">
+              <view class="detail-section-heading">
+                <view class="detail-section-icon"><AiIcon icon="/static/icons/ai-icon/edit-3.svg" color="#3b82f6" size="sm" /></view>
+                <view>
+                  <text class="detail-section-title">审批意见<text v-if="requireComment" class="required-mark"> *</text></text>
+                  <text class="detail-section-desc">填写本次处理意见</text>
+                </view>
+              </view>
+            </view>
+            <view class="comment-row">
+              <FlowCommentPhraseInput
+                v-model="comment"
+                maxlength="500"
+                min-height="96px"
+                :placeholder="requireComment ? '请输入审批意见' : '请输入审批意见（选填）'"
+              />
+            </view>
+            <view v-if="requireSignature" class="comment-row signature-row">
               <text class="form-label">手写签名<text class="required-mark"> *</text></text>
               <AiSignaturePad ref="approvalSignatureRef" v-model="signature" />
             </view>
           </view>
-          </AiTab>
-          <AiTab :index="1">
-            <TodoFlowTrace mode="history" :loading="historyLoading" :items="history" />
-          </AiTab>
-          <AiTab :index="2">
-            <TodoFlowTrace mode="process" :loading="diagramLoading" :items="processNodes" />
-          </AiTab>
-        </AiTabs>
+        </view>
       </template>
       <view v-else class="page-hint">待办不存在或已处理</view>
     </scroll-view>
@@ -115,10 +134,10 @@
     <view v-if="task && !readonlyMode" class="action-bar">
       <AiButton v-if="isCandidateTask" block size="sm" :loading="claimLoading" @click="claimTask">签收后处理</AiButton>
       <template v-else>
-        <AiButton v-if="canDelegate || canTerminate" class="more-action" size="sm" variant="secondary" :disabled="Boolean(blockedReason) || actionLoading" @click="moreVisible = true">
-          <template #leftIcon><AiIcon icon="/static/icons/ai-icon/more-horizontal.svg" color="#4e5969" size="sm" /></template>
-          更多
-        </AiButton>
+        <button v-if="hasMoreActions" class="action-more-button" :disabled="Boolean(blockedReason) || actionLoading" @click="moreVisible = true">
+          <AiIcon icon="/static/icons/ai-icon/more-horizontal.svg" color="#475569" size="sm" />
+          <text>更多</text>
+        </button>
         <AiButton v-if="canReject" size="sm" variant="danger" :disabled="Boolean(blockedReason) || actionLoading" @click="canChooseReturnTarget ? openRejectTarget() : submitAction('reject')">驳回</AiButton>
         <AiButton v-if="canApprove" size="sm" :loading="actionLoading && pendingAction === 'approve'" :disabled="Boolean(blockedReason) || actionLoading" @click="submitAction('approve')">同意</AiButton>
       </template>
@@ -141,19 +160,24 @@
       </view>
     </AiPopupSheet>
 
-    <AiPopupSheet v-model="moreVisible" title="更多操作" description="操作权限以当前审批节点配置为准">
-      <view class="more-list">
-        <button v-if="canDelegate" class="more-row" @click="openDelegate">
-          <view class="more-row__icon"><AiIcon icon="/static/icons/ai-icon/user-plus.svg" color="#4266f7" size="sm" /></view>
-          <view class="more-row__copy"><text>转办</text><text>交由其他成员继续处理</text></view>
-          <AiIcon icon="/static/icons/ai-icon/chevron-right.svg" color="#86909c" size="sm" />
+    <AiPopupSheet v-model="moreVisible" title="更多操作">
+      <view class="more-action-grid">
+        <button v-if="canRejectToStart" class="more-action-item warning" @click="submitMoreAction('rejectToStart')">
+          <view class="more-action-item__icon"><AiIcon icon="/static/icons/ai-icon/rotate-ccw.svg" color="#ff7d00" size="sm" /></view>
+          <text>退回发起人修改</text>
         </button>
-        <button v-if="canTerminate" class="more-row danger" @click="submitAction('terminate')">
-          <view class="more-row__icon"><AiIcon icon="/static/icons/ai-icon/x-circle.svg" color="#f53f3f" size="sm" /></view>
-          <view class="more-row__copy"><text>终结流程</text><text>结束当前流程，不可恢复</text></view>
-          <AiIcon icon="/static/icons/ai-icon/chevron-right.svg" color="#86909c" size="sm" />
+        <button v-if="canDelegate" class="more-action-item" @click="openDelegate">
+          <view class="more-action-item__icon"><AiIcon icon="/static/icons/ai-icon/user-plus.svg" color="#3b82f6" size="sm" /></view>
+          <text>转办</text>
+        </button>
+        <button v-if="canTerminate" class="more-action-item danger" @click="submitMoreAction('terminate')">
+          <view class="more-action-item__icon"><AiIcon icon="/static/icons/ai-icon/x-circle.svg" color="#ef4444" size="sm" /></view>
+          <text>终结流程</text>
         </button>
       </view>
+      <template #footer>
+        <button class="more-cancel-button" @click="moreVisible = false">取消</button>
+      </template>
     </AiPopupSheet>
 
     <AiPopupSheet v-model="delegateVisible" title="转办任务" description="选择处理人后，再确认转办" max-height="90vh" body-max-height="calc(90vh - 230rpx - env(safe-area-inset-bottom))">
@@ -161,7 +185,7 @@
       <view v-if="delegateUser" class="delegate-choice">
         <view class="delegate-choice__avatar"><AiAuthImage v-if="delegateUser.avatar" :src="delegateUser.avatar" mode="aspectFill" /><text v-else>{{ userInitial(delegateUser) }}</text></view>
         <view class="delegate-choice__copy"><text>已选择</text><text>{{ delegateUserName(delegateUser) }}</text></view>
-        <AiIcon icon="/static/icons/ai-icon/check-circle.svg" color="#4266f7" size="md" />
+        <AiIcon icon="/static/icons/ai-icon/check-circle.svg" color="#3b82f6" size="md" />
       </view>
       <view class="user-list">
         <AiListSkeleton v-if="usersLoading" :rows="3" compact />
@@ -202,11 +226,11 @@ import AiListSkeleton from '@/components/AiListSkeleton.vue'
 import AiPopupSheet from '@/components/AiPopupSheet.vue'
 import AiSearchBar from '@/components/AiSearchBar.vue'
 import AiSignaturePad from '@/components/AiSignaturePad.vue'
-import AiTab from '@/components/AiTab.vue'
-import AiTabs from '@/components/AiTabs.vue'
 import AiTextarea from '@/components/AiTextarea.vue'
+import FlowCommentPhraseInput from '@/components/flow/FlowCommentPhraseInput.vue'
 import PageSectionRenderer from '@/components/lowcode/PageSectionRenderer.vue'
 import TodoFlowTrace from '@/components/flow/TodoFlowTrace.vue'
+import TodoDetailSkeleton from '@/components/flow/TodoDetailSkeleton.vue'
 import TodoTaskSummary from '@/components/flow/TodoTaskSummary.vue'
 import { useBusinessTaskFormState } from '@/composables/lowcode/useBusinessTaskFormState'
 import api from '@/api'
@@ -215,7 +239,7 @@ import { showConfirmDialog } from '@/utils/dialog'
 import { createFlowActionCredentials } from '@/utils/flow-action-idempotency'
 import { compactObject as compact, parseNestedJson as parseJson, resolveApiErrorMessage as resolveErrorMessage } from '@/utils/flow-page'
 import { toast } from '@/utils/notify'
-import { hasDeclaredFormCreateRules, resolveTaskFormFields } from '@/utils/form-create-mobile'
+import { hasDeclaredFormCreateRules } from '@/utils/form-create-mobile'
 import { resolveTaskUiDocument } from '@/utils/task-ui-document'
 import { normalizeDictOptions } from '@/utils/lowcode-runtime'
 import {
@@ -236,6 +260,7 @@ const sourceMessageId = ref('')
 const task = ref(null)
 const formInfo = ref(null)
 const businessContext = ref(null)
+const businessContextError = ref('')
 const history = ref([])
 const loading = ref(true)
 const formLoading = ref(true)
@@ -243,13 +268,9 @@ const formSaving = ref(false)
 const historyLoading = ref(true)
 const diagramLoading = ref(true)
 const diagramInfo = ref(null)
-const activeTabIndex = ref(0)
-const detailTabs = ['业务内容', '审批记录', '流程进度']
 const pageMode = ref('todo')
 const approvalPointChecks = ref({})
 const comment = ref('')
-const commentPhrases = ref([])
-const phraseSaving = ref(false)
 const signature = ref('')
 const approvalSignatureRef = ref(null)
 const mainData = reactive({})
@@ -274,17 +295,16 @@ const delegateSignature = ref('')
 const delegateSignatureRef = ref(null)
 
 const userId = computed(() => String(authStore.userInfo?.id || authStore.userInfo?.userId || authStore.userInfo?.user_id || ''))
-const taskPolicySource = computed(() => formInfo.value || businessContext.value || {})
+// 业务表单上下文携带服务端最终策略，Flow 表单快照仅覆盖其中明确返回的属性。
+const taskPolicySource = computed(() => ({ ...(businessContext.value || {}), ...(formInfo.value || {}) }))
 const requireComment = computed(() => taskPolicySource.value?.requireComment !== false)
-const canSaveCommentPhrase = computed(() => {
-  const value = String(comment.value || '').trim()
-  return Boolean(value) && value.length <= 200 && !commentPhrases.value.some(item => item.content === value)
-})
+const requireSignature = computed(() => taskPolicySource.value?.requireSignature === true)
 const responsibilityDescription = computed(() => formInfo.value?.responsibilityDescription || '')
 const approvalPoints = computed(() => Array.isArray(formInfo.value?.approvalPoints) ? formInfo.value.approvalPoints : [])
 const isCandidateTask = computed(() => Number(task.value?.status) === 0 && !task.value?.assignee)
 const canApprove = computed(() => taskPolicySource.value?.allowApprove !== false)
 const canReject = computed(() => taskPolicySource.value?.allowReject !== false)
+const canRejectToStart = computed(() => taskPolicySource.value?.allowRejectToStart === true)
 const canReturn = computed(() => taskPolicySource.value?.allowReturn === true)
 const returnTargetOptions = computed(() => (Array.isArray(taskPolicySource.value?.returnTargets)
   ? taskPolicySource.value.returnTargets
@@ -302,6 +322,7 @@ function openRejectTarget() {
 }
 const canDelegate = computed(() => taskPolicySource.value?.allowDelegate !== false)
 const canTerminate = computed(() => taskPolicySource.value?.allowTerminate === true)
+const hasMoreActions = computed(() => canRejectToStart.value || canDelegate.value || canTerminate.value)
 const readonlyMode = computed(() => pageMode.value === 'readonly')
 const processNodes = computed(() => Array.isArray(diagramInfo.value?.nodes) ? diagramInfo.value.nodes : [])
 const businessSchemaFallback = computed(() => {
@@ -322,7 +343,7 @@ const mainFields = computed(() => {
     return adaptBusinessTaskFields(context.fields, context.fieldPermissions)
   if (businessSchemaFallback.value.length)
     return adaptBusinessTaskFields(businessSchemaFallback.value, context?.fieldPermissions)
-  return adaptBusinessTaskFields(resolveTaskFormFields(formInfo.value), formInfo.value?.fieldPermissions || formInfo.value?.formFieldPermissions)
+  return []
 })
 const allChildren = computed(() => adaptChildrenConfig(
   businessContext.value?.childrenConfig || [],
@@ -339,6 +360,9 @@ const runtimeContext = computed(() => ({
   currentUser: authStore.userInfo || {},
 }))
 const hasLowcodeForm = computed(() => mainFields.value.length > 0 || allChildren.value.length > 0)
+const showBusinessFormPanel = computed(() => Boolean(
+  businessContext.value && (isConfiguredBusinessTaskForm(businessContext.value) || hasLowcodeForm.value),
+))
 const formMode = computed(() => {
   if (readonlyMode.value || businessProviderUnavailable.value || (businessSchemaFallback.value.length > 0 && !documentForm.value?.hasComponentTree))
     return 'detail'
@@ -348,14 +372,16 @@ const businessFormHasWritableFields = computed(() =>
   hasWritableBusinessTaskForm(mainFields.value, allChildren.value) && formMode.value === 'edit',
 )
 const {
-  applyBusinessContext, replaceMainData, resetBusinessData, addBusinessChildRow, removeBusinessChildRow,
+  applyBusinessContext, resetBusinessData, addBusinessChildRow, removeBusinessChildRow,
 } = useBusinessTaskFormState({ mainData, childData, formInfo, seedApprovalPointChecks, getMode: () => formMode.value })
 const formSchemaUnavailable = computed(() =>
   !hasLowcodeForm.value && Boolean(
-    Object.keys(extractMainData(businessContext.value?.recordData) || formInfo.value?.variables || {}).length,
+    Object.keys(extractMainData(businessContext.value?.recordData) || {}).length,
   ),
 )
 const blockedReason = computed(() => {
+  if (businessContextError.value)
+    return `业务表单加载失败：${businessContextError.value}`
   if (!formInfo.value && !isConfiguredBusinessTaskForm(businessContext.value))
     return '未取得审批节点的表单和权限配置，请刷新后重试。'
   if (isConfiguredBusinessTaskForm(businessContext.value) && !hasLowcodeForm.value)
@@ -371,39 +397,8 @@ onLoad(async (options = {}) => {
   taskId.value = String(options.taskId || '')
   sourceMessageId.value = String(options.messageId || '')
   pageMode.value = options.mode === 'readonly' ? 'readonly' : 'todo'
-  await Promise.all([refresh(), loadCommentPhrases()])
+  await refresh()
 })
-
-async function loadCommentPhrases() {
-  try {
-    const res = await api.listUsableCommentPhrases()
-    commentPhrases.value = Array.isArray(res?.data) ? res.data.filter(item => item?.id && item?.content) : []
-  }
-  catch (error) {
-    commentPhrases.value = []
-    console.warn('加载常用审批意见失败:', error)
-  }
-}
-
-async function saveCommentPhrase() {
-  const value = String(comment.value || '').trim()
-  if (!value) {
-    toast('请输入审批意见', { type: 'warning' })
-    return
-  }
-  phraseSaving.value = true
-  try {
-    await api.createCommentPhrase({ content: value, scene: 'ALL', ownerType: 1 })
-    toast('已保存为常用意见', { type: 'success' })
-    await loadCommentPhrases()
-  }
-  catch (error) {
-    toast(error?.message || '保存常用意见失败', { type: 'error' })
-  }
-  finally {
-    phraseSaving.value = false
-  }
-}
 
 async function refresh() {
   if (!taskId.value) { loading.value = false; formLoading.value = false; return }
@@ -413,6 +408,7 @@ async function refresh() {
   diagramLoading.value = true
   formInfo.value = null
   businessContext.value = null
+  businessContextError.value = ''
   history.value = []
   diagramInfo.value = null
   resetBusinessData()
@@ -432,9 +428,13 @@ async function refresh() {
       task.value.processInstanceId ? api.getFlowTaskHistory(task.value.processInstanceId) : Promise.resolve({ data: [] }),
       task.value.processInstanceId ? api.getFlowDiagramInfo(task.value.processInstanceId) : Promise.resolve({ data: null }),
     ])
-    let context = readonlyMode.value
+    const context = readonlyMode.value
       ? await loadReadonlyBusinessContext({ taskId: currentTaskId })
       : await loadBusinessContext({ taskId: currentTaskId })
+    // 与 PC 的 loadTaskFormBundle 保持一致：优先复用业务上下文随响应携带的
+    // taskFormInfo JSON 快照，避免再次请求 Flow 后拿到不完整旧协议而渲染空白。
+    if (context?.taskFormInfo && typeof context.taskFormInfo === 'object')
+      formInfo.value = context.taskFormInfo
     if (!formInfo.value) {
       try {
         const response = readonlyMode.value
@@ -443,12 +443,9 @@ async function refresh() {
         formInfo.value = response?.data || null
       }
       catch (error) { console.warn('读取流程任务表单失败:', error) }
-      if (!isConfiguredBusinessTaskForm(context) && formInfo.value)
-        context = readonlyMode.value ? await loadReadonlyBusinessContext({ taskId: currentTaskId }) : await loadBusinessContext({ taskId: currentTaskId })
     }
     const [historyResult, diagramResult] = await tracePromise
     seedApprovalPointChecks(formInfo.value)
-    if (!isConfiguredBusinessTaskForm(context)) replaceMainData(formInfo.value?.variables)
     await loadDictOptions()
     if (historyResult.status === 'fulfilled') history.value = Array.isArray(historyResult.value?.data) ? historyResult.value.data : []
     if (diagramResult.status === 'fulfilled') diagramInfo.value = diagramResult.value?.data || null
@@ -476,6 +473,8 @@ async function loadReadonlyBusinessContext(overrides = {}) {
   }
   catch (error) {
     console.error('加载只读业务表单失败:', error)
+    businessContext.value = null
+    businessContextError.value = resolveErrorMessage(error, '接口未返回业务表单')
     return null
   }
 }
@@ -490,7 +489,11 @@ async function loadBusinessContext(overrides = {}) {
     return businessContext.value
   }
   catch (error) {
-    console.error('加载业务表单失败:', error)
+    // 审批业务表单只能信任 task-form-context 返回的记录、字段和节点权限。
+    // 接口失败时禁止用表单资产或流程变量拼装可编辑表单，避免展示错误数据。
+    businessContext.value = null
+    businessContextError.value = resolveErrorMessage(error, '接口未返回业务表单')
+    console.warn('业务表单上下文不可用，已停止渲染动态表单:', businessContextError.value)
     return null
   }
 }
@@ -583,6 +586,11 @@ async function openDelegate() {
   await loadUsers()
 }
 
+function submitMoreAction(action) {
+  moreVisible.value = false
+  submitAction(action)
+}
+
 function selectDelegateUser(user) {
   delegateUser.value = user || null
 }
@@ -664,8 +672,11 @@ async function submitAction(action) {
     return
   }
   if (!validateRequiredFields() || !hasSignature(actionSignature, signatureRef)) return
-  const labels = { approve: '同意', reject: '驳回', return: '退回', terminate: '终结流程', delegate: '转办' }
-  const confirmed = await showConfirmDialog({ title: `确认${labels[action]}`, description: '提交后将按当前流程策略执行，不能撤销。', confirmText: labels[action], isDestructive: ['reject', 'terminate'].includes(action) })
+  const labels = { approve: '同意', reject: '驳回', rejectToStart: '退回发起人修改', return: '退回', terminate: '终结流程', delegate: '转办' }
+  const descriptions = {
+    rejectToStart: '当前流程会保留并退回发起人，修改后可沿原流程重新提交。',
+  }
+  const confirmed = await showConfirmDialog({ title: `确认${labels[action]}`, description: descriptions[action] || '提交后将按当前流程策略执行，不能撤销。', confirmText: labels[action], isDestructive: ['reject', 'terminate'].includes(action) })
   if (!confirmed) return
 
   actionLoading.value = true
@@ -676,11 +687,12 @@ async function submitAction(action) {
     else signature.value = resolvedSignature
     const payload = buildActionPayload(action, actionComment, resolvedSignature)
     Object.assign(payload, await createFlowActionCredentials(action, payload.taskId, buildIdempotencyDigestPayload(payload)))
-    if (isConfiguredBusinessTaskForm(businessContext.value) && ['approve', 'reject', 'return'].includes(action)) {
+    if (isConfiguredBusinessTaskForm(businessContext.value) && ['approve', 'reject', 'rejectToStart', 'return'].includes(action)) {
       await api.completeBusinessTaskAction(payload)
     }
     else if (action === 'approve') await api.approveFlowTask(payload)
     else if (action === 'reject') await api.rejectFlowTask(payload)
+    else if (action === 'rejectToStart') await api.rejectToStartFlowTask(payload)
     else if (action === 'return') await api.returnFlowTask({ ...payload, targetActivityId: selectedReturnTarget.value || undefined })
     else if (action === 'terminate') await api.terminateFlowTask(payload)
     else await api.delegateFlowTask(payload)

@@ -15,10 +15,11 @@
 }
 
 .login-masthead {
-  min-height: 300rpx;
-  padding: 24rpx 32rpx 48rpx;
-  color: #ffffff;
-  background: var(--primary-color);
+  min-height: 112rpx;
+  padding: 24rpx 30rpx;
+  color: var(--text-strong);
+  border-bottom: 0;
+  background: transparent;
   box-sizing: border-box;
 }
 
@@ -51,8 +52,8 @@
   flex: 0 0 56rpx;
   align-items: center;
   justify-content: center;
-  border: 1rpx solid rgba(255, 255, 255, 0.34);
-  border-radius: 8rpx;
+  border: 1rpx solid #dbeafe;
+  border-radius: 14px;
   background: #ffffff;
 }
 
@@ -78,22 +79,22 @@
 }
 
 .brand-title {
-  color: #ffffff;
+  color: var(--text-strong);
   font-size: 26rpx;
   font-weight: 500;
 }
 
 .brand-subtitle {
   margin-top: 3rpx;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--text-muted);
   font-size: 19rpx;
 }
 
 .client-badge {
   padding: 6rpx 12rpx;
-  border: 1rpx solid rgba(255, 255, 255, 0.42);
-  border-radius: 4rpx;
-  color: #ffffff;
+  border: 1rpx solid var(--border-light);
+  border-radius: 8rpx;
+  color: var(--text-secondary);
   font-size: 17rpx;
   font-weight: 500;
 }
@@ -101,26 +102,26 @@
 .masthead-copy {
   width: 100%;
   max-width: 680rpx;
-  margin: 48rpx auto 0;
+  margin: 24rpx auto 20rpx;
 }
 
 .masthead-kicker {
-  color: rgba(255, 255, 255, 0.76);
+  color: var(--primary-color);
   font-size: 20rpx;
   font-weight: 500;
 }
 
 .masthead-title {
   margin-top: 8rpx;
-  color: #ffffff;
+  color: var(--text-strong);
   font-size: 36rpx;
-  font-weight: 500;
+  font-weight: 700;
   line-height: 1.25;
 }
 
 .masthead-desc {
   margin-top: 10rpx;
-  color: rgba(255, 255, 255, 0.76);
+  color: var(--text-muted);
   font-size: 22rpx;
   line-height: 1.5;
 }
@@ -133,16 +134,17 @@
   flex-direction: column;
   align-self: center;
   margin-top: 0;
-  padding: 32rpx 32rpx calc(32rpx + env(safe-area-inset-bottom));
+  padding: 24rpx 30rpx calc(32rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
 
 .login-panel {
   width: 100%;
-  padding: 32rpx;
-  border: 1rpx solid var(--border-color);
+  padding: 20px;
+  border: 1px solid var(--border-light);
   border-radius: var(--radius-card);
   background: #ffffff;
+  box-shadow: var(--shadow-soft);
   box-sizing: border-box;
 }
 
@@ -153,21 +155,21 @@
 
 .panel-title {
   color: var(--text-strong);
-  font-size: 32rpx;
-  font-weight: 500;
+  font-size: 17px;
+  font-weight: 700;
 }
 
 .panel-subtitle {
   margin-top: 6rpx;
   color: var(--text-muted);
-  font-size: 26rpx;
+  font-size: 12px;
 }
 
 .form-stack {
   display: flex;
   flex-direction: column;
-  gap: 32rpx;
-  margin: 32rpx 0;
+  gap: 14px;
+  margin: 20px 0;
 }
 
 .captcha-row {
@@ -182,7 +184,7 @@
 .captcha-image {
   display: flex;
   width: 210rpx;
-  height: 88rpx;
+  height: 44px;
   flex: 0 0 210rpx;
   align-items: center;
   justify-content: center;
@@ -316,29 +318,22 @@
 @media (min-width: 1024px) {
   .page-shell {
     min-height: 100vh;
-    flex-direction: row;
-    background: #fff;
+    flex-direction: column;
+    background: var(--page-bg);
   }
 
   .login-masthead {
-    display: flex;
-    width: 58%;
-    min-height: 100vh;
-    flex-direction: column;
-    padding: 48px max(48px, calc((100vw - 1280px) / 2 + 24px));
+    width: 100%;
+    min-height: 80px;
+    padding: 20px max(30px, calc((100vw - 1280px) / 2 + 24px));
   }
 
-  .brand-bar,
-  .masthead-copy {
-    max-width: 640px;
-    margin-right: 0;
-    margin-left: auto;
-  }
+  .brand-bar { max-width: 1280px; margin: 0 auto; }
 
   .masthead-copy {
-    margin-top: auto;
-    margin-bottom: auto;
-    padding-bottom: 64px;
+    max-width: 440px;
+    margin: 0 auto 20px;
+    padding: 0;
   }
 
   .masthead-title {
@@ -353,15 +348,15 @@
   }
 
   .login-main {
-    width: 42%;
-    max-width: none;
-    min-height: 100vh;
-    align-self: stretch;
-    align-items: center;
+    width: 100%;
+    max-width: 520px;
+    min-height: 0;
+    align-self: center;
+    align-items: stretch;
     justify-content: center;
-    margin: 0;
-    padding: 48px;
-    background: var(--surface-muted);
+    margin: 0 auto;
+    padding: 64px 24px;
+    background: transparent;
   }
 
   .login-panel {

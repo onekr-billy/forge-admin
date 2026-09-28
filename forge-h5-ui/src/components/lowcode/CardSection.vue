@@ -1,5 +1,14 @@
 <template>
-  <view v-if="visible" class="card-section">
+  <view
+    v-if="visible"
+    class="card-section"
+    :class="{
+      'is-borderless': !bordered,
+      'is-embedded': embedded,
+      'is-small': size === 'small',
+      'is-segmented': segmented,
+    }"
+  >
     <view
       v-if="title || collapsible"
       class="card-section__head"
@@ -25,6 +34,10 @@ const props = defineProps({
   collapsible: { type: Boolean, default: false },
   collapsedByDefault: { type: Boolean, default: false },
   visible: { type: Boolean, default: true },
+  bordered: { type: Boolean, default: true },
+  embedded: { type: Boolean, default: false },
+  segmented: { type: Boolean, default: false },
+  size: { type: String, default: 'medium' },
 })
 
 const collapsed = ref(props.collapsible && props.collapsedByDefault)
@@ -47,6 +60,10 @@ function toggle() {
   border-radius: var(--radius-card);
   background: #fff;
 }
+.card-section.is-borderless { border-color: transparent; }
+.card-section.is-embedded { background: var(--forge-color-surface-subtle, #f8fafc); }
+.card-section.is-small { padding: 24rpx; }
+.card-section.is-segmented .card-section__head { border-bottom: 1rpx solid var(--forge-color-border, #e2e8f0); }
 
 .card-section__head {
   display: flex;
@@ -65,7 +82,7 @@ function toggle() {
 .card-section__title {
   min-width: 0;
   overflow: hidden;
-  color: var(--text-strong, #1d2129);
+  color: var(--text-strong, #1e293b);
   font-size: 32rpx;
   font-weight: 500;
   line-height: 1.3;
