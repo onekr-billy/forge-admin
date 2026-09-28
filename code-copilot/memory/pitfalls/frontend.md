@@ -737,3 +737,16 @@ Naive UI 的 `--n-height` 可保证同尺寸输入和按钮对齐，但 Teleport
 1. `openLocalPreview` 先 `await saveLayout()`；应用壳 `openDraftPreview` 在 list/form 设计态始终 `saveCurrentDesignerSection`。
 2. 本地预览若 `isRichListGridLayout`，改渲 `RuntimeListGridFlow`；并补齐 `.is-crud` → `.ai-crud-preview` → `.ai-crud-page` 的 `height:100%` flex 链。
 3. `AiTable` 卡片：`.ai-card-scroll` 中间滚动，`.ai-card-pagination` 底部固定。
+
+## SFC 拆 composable 时丢 state / 未 `__impl` 转发会直接炸 setup
+
+**发现日期**: 2026-09-28
+
+**问题描述**:
+`/flow/todo` 生产包报 `ReferenceError: clearRouteTaskId is not defined`，随后模板读 `queryParams.title` 再炸。根因是巨型 SFC 拆到 `useFlowTodo.part*` 时：1）顶部 `useRoute`/`ref`/`reactive`/`useDict` 状态块未写入 part1；2）part2 才定义的函数被 part1 `return { clearRouteTaskId, loadData, ... }` 裸 shorthand，求值即 ReferenceError。`useFlowModel` 同类缺 `router` / `FlowDesignAsyncLoader` / part2 action 转发。
+
+**解决方案**:
+1. part1 必须先落地原 SFC 全部 state/computed/`defineAsyncComponent` 注册，再写业务函数。
+2. 仅后续 part 实现的符号：part1 写 `const fn = (...args) => __impl.fn(...args)`，part2 定义后立刻 `__impl.fn = fn`；part2 解构 deps 时不要再解构同名本地函数，避免重复绑定。
+3. 模板用到的 `getLabel`/`dict`/工具 import 必须出现在 composable return。
+4. 门禁：扫描 part1 return shorthand，凡本文件未声明则必须有 `__impl` 转发或从拆分前 SFC 补回声明。

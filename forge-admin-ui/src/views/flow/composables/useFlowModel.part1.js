@@ -15,6 +15,25 @@ import { buildFlowCategoryTreeOptions, resolveFlowCategoryLabel, resolveFlowCate
 export function applyFlowModelPart1() {
   const __impl = {}
   const mut = {}
+  const handleActivate = (...args) => __impl.handleActivate(...args)
+  const handleDelete = (...args) => __impl.handleDelete(...args)
+  const handleSuspend = (...args) => __impl.handleSuspend(...args)
+  const handleVersionHistory = (...args) => __impl.handleVersionHistory(...args)
+
+  const router = useRouter()
+  const DEFAULT_TODO_DETAIL_URL_TEMPLATE = '/#/pages/todo-detail?taskId={taskId}'
+  const { dict, getLabel } = useDict('flow_model_status', 'flow_process_form_type', 'flow_designer_type')
+
+  const FlowDesignAsyncLoader = {
+    name: 'FlowDesignAsyncLoader',
+    setup() {
+      return () => h(DesignerAsyncLoader, {
+        title: '正在打开流程设计器',
+        description: '首次加载需要准备流程画布与属性面板资源',
+        overlay: true,
+      })
+    },
+  }
 
   const FlowFormRendererAsyncLoader = {
     name: 'FlowFormRendererAsyncLoader',
@@ -1165,5 +1184,6 @@ export function applyFlowModelPart1() {
     startTestBusinessFormAssets, startTestBusinessFormLayout, startTestApproverNodes, startTestApproverSelections, startTestApproverLabels, startTestPreflightDiagnostics, currentStartModel, startTestTitle,
     startTestAlert, totalCount, designingCount, deployedCount, suspendedCount, disabledCount, showModal, modalTitle,
     isEdit, submitLoading, formRef, formData, rules,
+    dict, getLabel,
   }
 }

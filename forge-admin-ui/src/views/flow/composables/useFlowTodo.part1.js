@@ -31,6 +31,237 @@ import { loadTaskFormBundle } from '../utils/task-form-bundle'
 export function applyFlowTodoPart1() {
   const __impl = {}
   const mut = {}
+  const clearRouteTaskId = (...args) => __impl.clearRouteTaskId(...args)
+  const collectDynamicFormVariables = (...args) => __impl.collectDynamicFormVariables(...args)
+  const executeQuickAction = (...args) => __impl.executeQuickAction(...args)
+  const getRouteTaskId = (...args) => __impl.getRouteTaskId(...args)
+  const handleClaim = (...args) => __impl.handleClaim(...args)
+  const handleDelegate = (...args) => __impl.handleDelegate(...args)
+  const handleReset = (...args) => __impl.handleReset(...args)
+  const handleSearch = (...args) => __impl.handleSearch(...args)
+  const handleUserSelected = (...args) => __impl.handleUserSelected(...args)
+  const isClaimingTask = (...args) => __impl.isClaimingTask(...args)
+  const loadCategories = (...args) => __impl.loadCategories(...args)
+  const loadData = (...args) => __impl.loadData(...args)
+  const openTaskFromRoute = (...args) => __impl.openTaskFromRoute(...args)
+  const submitDelegate = (...args) => __impl.submitDelegate(...args)
+  const submitQuickAction = (...args) => __impl.submitQuickAction(...args)
+
+  const userStore = useUserStore()
+  const route = useRoute()
+  const router = useRouter()
+  const { dict, getLabel } = useDict('flow_todo_status', 'flow_priority')
+  const loading = ref(false)
+  const loadError = ref(false)
+  const dataSource = ref([])
+  const pagination = reactive({
+    page: 1,
+    pageSize: 10,
+    itemCount: 0,
+    showSizePicker: true,
+    pageSizes: [10, 20, 50],
+    onChange: (page) => {
+      pagination.page = page
+      loadData()
+    },
+    onUpdatePageSize: (size) => {
+      pagination.pageSize = size
+      pagination.page = 1
+      loadData()
+    },
+  })
+
+  const queryParams = reactive({ title: '', category: '', status: null })
+  const categoryTreeOptions = ref([])
+
+  const urgentCount = ref(0)
+  const selectedTaskKeys = ref([])
+
+  // 抽屉状态
+  const showDrawer = ref(false)
+  const currentTask = ref(null)
+  const approvalHistory = ref([])
+
+  // 业务自定义表单
+  const taskFormInfo = ref(null)
+  const approvalPointChecks = ref({})
+  const formInfoLoading = ref(false)
+  const dynamicFormRef = ref(null)
+  const dynamicFormData = ref({})
+  const dynamicFormSchema = computed(() => formCreateToAiSchema(taskFormInfo.value?.formJson || []))
+  const businessFormContext = ref(null)
+  const businessFormData = ref({})
+  const businessChildFormData = ref({})
+  const businessFormSavedSnapshot = ref('')
+  const businessFormRef = ref(null)
+  const businessChildFormRef = ref(null)
+  const businessFormLoading = ref(false)
+  // 统一的表单加载态：表单信息与业务上下文并行加载，模板只展示这一个 loading，避免先后两次转圈
+  const taskFormLoading = computed(() => formInfoLoading.value || businessFormLoading.value)
+  const businessFormSaving = ref(false)
+  const useBusinessObjectForm = computed(() => businessFormContext.value?.configured === true && businessFormContext.value?.formType === 'business-object')
+  const useBusinessCodeForm = computed(() => businessFormContext.value?.configured === true && businessFormContext.value?.formType === 'business-code')
+  const useBusinessManagedForm = computed(() => useBusinessObjectForm.value || useBusinessCodeForm.value)
+  const useDynamicForm = computed(() => {
+    if (useBusinessManagedForm.value && Array.isArray(businessFormContext.value?.fields) && businessFormContext.value.fields.length > 0)
+      return false
+    return dynamicFormSchema.value.length > 0
+  })
+  const useExternalForm = computed(() => !useBusinessManagedForm.value && taskFormInfo.value?.formType === 'external' && taskFormInfo.value?.formUrl)
+  const businessFormTitle = computed(() => getBusinessFormDisplayTitle(businessFormContext.value, '业务表单'))
+  const businessFormWarnings = computed(() => Array.isArray(businessFormContext.value?.warnings) ? businessFormContext.value.warnings : [])
+  const businessFormFieldPermissions = computed(() => pickFirstNonEmptyFieldPermissions([
+    businessFormContext.value?.fieldPermissions,
+    taskFormInfo.value?.fieldPermissions,
+    taskFormInfo.value?.formFieldPermissions,
+  ]))
+  const businessFormChildrenConfig = computed(() => {
+    const children = Array.isArray(businessFormContext.value?.childrenConfig) ? businessFormContext.value.childrenConfig : []
+    return applyChildTableFieldPermissions(
+      children.filter(child => child?.showInDetail !== false && Array.isArray(child.fields) && child.fields.length),
+      [
+        taskFormInfo.value?.formFieldPermissions,
+        businessFormContext.value?.taskFormInfo?.formFieldPermissions,
+        businessFormFieldPermissions.value,
+      ],
+    )
+  })
+  const businessFormHasWritableFields = computed(() => hasWritableBusinessFormFields(businessFormContext.value))
+  const flowPrintHasUnsavedChanges = computed(() => {
+    const businessDirty = Boolean(businessFormSavedSnapshot.value)
+      && businessFormSavedSnapshot.value !== createBusinessFormSnapshot()
+    const dynamicDirty = Boolean(taskFormInfo.value)
+      && JSON.stringify(dynamicFormData.value) !== JSON.stringify(taskFormInfo.value?.variables || {})
+    return businessDirty || dynamicDirty
+  })
+  const businessCodeFormUrl = computed(() => businessFormContext.value?.formUrl || businessFormContext.value?.formRef?.formUrl || '')
+  const businessFormGridCols = computed(() => Math.max(1, Number(businessFormContext.value?.gridCols || 1)))
+  const businessFormLabelPlacement = computed(() => ['left', 'top'].includes(businessFormContext.value?.labelPlacement)
+    ? businessFormContext.value.labelPlacement
+    : 'left')
+  const businessFormLabelWidth = computed(() => businessFormContext.value?.labelWidth || '100')
+  const businessFormSize = computed(() => ['small', 'medium', 'large'].includes(businessFormContext.value?.size)
+    ? businessFormContext.value.size
+    : 'medium')
+  /** PC Phase A：有 uiDocument 时按分区序排 fields，无文档则原样 */
+  const businessFormAiSchema = computed(() => resolveBusinessTaskAiFormSchema(businessFormContext.value))
+  const useBusinessCodeComponentForm = computed(() => useBusinessCodeForm.value && Boolean(businessCodeFormUrl.value))
+  const useComponentTaskForm = computed(() => useExternalForm.value || useBusinessCodeComponentForm.value)
+  const businessFormMissingText = computed(() => {
+    const warnings = Array.isArray(businessFormContext.value?.warnings)
+      ? businessFormContext.value.warnings.filter(Boolean)
+      : []
+    if (warnings.length)
+      return warnings[0]
+    return '当前节点未加载到可渲染的业务应用表单。请确认流程已部署，且待办能关联到业务单据。'
+  })
+  const componentTaskFormUrl = computed(() => useBusinessCodeComponentForm.value ? businessCodeFormUrl.value : taskFormInfo.value?.formUrl)
+  const componentTaskFormInfo = computed(() => ({
+    taskId: businessFormContext.value?.taskId || taskFormInfo.value?.taskId,
+    businessKey: businessFormContext.value?.businessKey || taskFormInfo.value?.businessKey,
+    processInstanceId: businessFormContext.value?.processInstanceId || taskFormInfo.value?.processInstanceId,
+    taskDefKey: businessFormContext.value?.taskDefKey || taskFormInfo.value?.taskDefKey,
+    processDefKey: businessFormContext.value?.processDefKey || taskFormInfo.value?.processDefKey,
+  }))
+  const dynamicFormFieldPermissions = computed(() => pickFirstNonEmptyPermissionSource([
+    taskFormInfo.value?.fieldPermissions,
+    taskFormInfo.value?.formFieldPermissions,
+  ]))
+  const businessFormRenderContext = computed(() => ({
+    task: currentTask.value,
+    taskFormInfo: taskFormInfo.value,
+    businessFormContext: businessFormContext.value,
+    formAssets: businessFormContext.value?.formAssets || [],
+    protocolVersion: businessFormContext.value?.protocolVersion || null,
+    uiDocument: businessFormContext.value?.uiDocument || null,
+  }))
+  const taskPolicySource = computed(() => taskFormInfo.value || businessFormContext.value || {})
+  const canApprove = computed(() => taskPolicySource.value?.allowApprove !== false)
+  const canReject = computed(() => taskPolicySource.value?.allowReject !== false)
+  const canRejectToStart = computed(() => taskPolicySource.value?.allowRejectToStart === true)
+  const canDelegate = computed(() => taskPolicySource.value?.allowDelegate !== false)
+  const canReturn = computed(() => taskPolicySource.value?.allowReturn === true)
+  const returnTargetOptions = computed(() => (Array.isArray(taskPolicySource.value?.returnTargets)
+    ? taskPolicySource.value.returnTargets
+    : []).map(item => ({
+    label: item.activityName || item.activityId,
+    value: item.activityId,
+  })))
+  const canChooseReturnTarget = computed(() => {
+    return taskPolicySource.value?.allowMultiReturn === true && returnTargetOptions.value.length > 0
+  })
+  const canDirectSend = computed(() => taskPolicySource.value?.allowDirectSend === true)
+  const canTerminate = computed(() => taskPolicySource.value?.allowTerminate === true)
+  const requireComment = computed(() => taskPolicySource.value?.requireComment !== false)
+  const requireSignature = computed(() => taskPolicySource.value?.requireSignature === true)
+  const approvalPolicy = computed(() => ({
+    allowApprove: canApprove.value,
+    allowReject: canReject.value,
+    allowDelegate: canDelegate.value,
+    allowReturn: canReturn.value,
+    allowTerminate: canTerminate.value,
+    requireComment: requireComment.value,
+    requireSignature: requireSignature.value,
+    allowDirectSend: canDirectSend.value,
+    returnSourceActivityId: taskPolicySource.value?.returnSourceActivityId,
+    returnSourceActivityName: taskPolicySource.value?.returnSourceActivityName,
+  }))
+
+  // 审批表单
+  const approveLoading = ref(false)
+  const approveForm = reactive({ action: '', comment: '', signature: '' })
+  const selectedReturnTarget = ref(null)
+  const rejectTargetVisible = ref(false)
+  const pendingRejectSubmit = ref(null)
+  const directSendAfterReturn = ref(false)
+  const approveSignatureRef = ref(null)
+  const approveSignatureKey = ref(0)
+  const claimLoadingTaskId = ref('')
+  const quickActionVisible = ref(false)
+  const quickActionLoading = ref(false)
+  const quickActionType = ref('approve')
+  const quickActionTargets = ref([])
+  const quickActionFailedTargets = ref([])
+  const quickActionForm = reactive({ comment: '' })
+  const quickActionInputRef = ref(null)
+  const quickActionIsApprove = computed(() => quickActionType.value === 'approve')
+  const quickActionTitle = computed(() => quickActionIsApprove.value ? '同意' : '驳回')
+  const quickActionTitleId = 'flow-todo-quick-action-title'
+  const quickActionSubject = computed(() => {
+    if (quickActionTargets.value.length === 1)
+      return getRowDisplayTitle(quickActionTargets.value[0])
+    return `处理 ${quickActionTargets.value.length} 条待办`
+  })
+  const quickActionMeta = computed(() => {
+    const rows = quickActionTargets.value
+    if (rows.length === 1) {
+      const row = rows[0]
+      const node = getTaskDisplayName(row, '')
+      const applicant = row?.startUserName
+      return [node, applicant ? `申请人 ${applicant}` : ''].filter(Boolean).join(' · ')
+    }
+    if (!rows.length)
+      return ''
+    const names = rows.slice(0, 2).map(row => getRowDisplayTitle(row)).filter(Boolean)
+    return names.join('、') + (rows.length > 2 ? ` 等${rows.length}条` : '')
+  })
+
+  // 转办
+  const showDelegateModal = ref(false)
+  const showUserSelectModal = ref(false)
+  const delegateLoading = ref(false)
+  const delegateTargetUser = ref(null)
+  const delegateForm = reactive({ comment: '', signature: '' })
+  const delegateSignatureRef = ref(null)
+  const delegateSignatureKey = ref(0)
+  const routeTaskOpening = ref(false)
+
+  const statusOptions = computed(() => toNumberOptions(dict.value.flow_todo_status))
+  const isApprovalBusy = computed(() => approveLoading.value || delegateLoading.value || businessFormSaving.value || Boolean(claimLoadingTaskId.value))
+
+  function getPriorityClass(p) {
+    return getFlowPriorityClass(p)
+  }
   function getPriorityText(p) {
     if (!shouldShowFlowPriority(p))
       return ''
@@ -893,6 +1124,7 @@ export function applyFlowTodoPart1() {
       throw new Error('需要勾选审批要点，请进入详情处理')
   }
 
+  __impl.getPriorityClass = getPriorityClass
   __impl.getPriorityText = getPriorityText
   __impl.getCategoryDisplayName = getCategoryDisplayName
   __impl.toNumberOptions = toNumberOptions
@@ -969,5 +1201,6 @@ export function applyFlowTodoPart1() {
     approveSignatureKey, claimLoadingTaskId, quickActionVisible, quickActionLoading, quickActionType, quickActionTargets, quickActionFailedTargets, quickActionForm,
     quickActionInputRef, quickActionIsApprove, quickActionTitle, quickActionTitleId, quickActionSubject, quickActionMeta, showDelegateModal, showUserSelectModal,
     delegateLoading, delegateTargetUser, delegateForm, delegateSignatureRef, delegateSignatureKey, routeTaskOpening, statusOptions, isApprovalBusy,
+    dict, getLabel, getRowDisplayTitle, getTaskDisplayName, getProcessDisplayName, getTaskHandlerName, isUrgentFlowPriority,
   }
 }
