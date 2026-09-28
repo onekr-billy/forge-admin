@@ -14,7 +14,7 @@ import com.mdframe.forge.plugin.generator.constant.BusinessApplicationPublishSta
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeFieldSchema;
 import com.mdframe.forge.plugin.generator.dto.lowcode.LowcodeModelSchema;
 import com.mdframe.forge.plugin.generator.service.AiCrudConfigService;
-import com.mdframe.forge.plugin.generator.manager.DynamicCrudCreateManager;
+import com.mdframe.forge.plugin.generator.manager.DynamicCrudMutationManager;
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceResolver;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessObjectActionService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessObjectService;
@@ -39,7 +39,7 @@ public class LowcodeFormSystemService implements SystemServiceCapabilityDefiniti
     private final BusinessObjectService objects;
     private final BusinessObjectActionService actions;
     private final AiCrudConfigService configs;
-    private final DynamicCrudCreateManager formCreate;
+    private final DynamicCrudMutationManager formCreate;
     private final LowcodeFormInvocationGuard invocations;
     private final LowcodeRuntimeDataSourceResolver datasourceResolver;
     private final ObjectMapper mapper;
@@ -47,7 +47,7 @@ public class LowcodeFormSystemService implements SystemServiceCapabilityDefiniti
     private final BusinessDocumentConfigMapper documents;
 
     public LowcodeFormSystemService(BusinessObjectService objects, BusinessObjectActionService actions,
-            AiCrudConfigService configs, DynamicCrudCreateManager formCreate, LowcodeFormInvocationGuard invocations,
+            AiCrudConfigService configs, DynamicCrudMutationManager formCreate, LowcodeFormInvocationGuard invocations,
             LowcodeRuntimeDataSourceResolver datasourceResolver, ObjectMapper mapper, CapabilitySchemaValidator validator,
             BusinessDocumentConfigMapper documents) {
         this.objects = objects; this.actions = actions; this.configs = configs; this.formCreate = formCreate;

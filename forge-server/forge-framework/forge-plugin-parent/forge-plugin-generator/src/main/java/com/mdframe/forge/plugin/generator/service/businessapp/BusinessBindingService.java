@@ -40,7 +40,8 @@ public class BusinessBindingService extends ServiceImpl<BusinessBindingMapper, A
     private final BusinessAppService appService;
 
     public List<BusinessBindingVO> list(BusinessBindingQueryDTO query) {
-        List<BusinessBindingVO> bindings = baseMapper.selectBindingList(resolveTenantId(), normalizeQuery(query));
+        Long tenantId = requireTenantId();
+        List<BusinessBindingVO> bindings = baseMapper.selectBindingList(tenantId, normalizeQuery(query));
         bindings.forEach(this::decorateBindingOpenInfo);
         return bindings;
     }
@@ -50,8 +51,9 @@ public class BusinessBindingService extends ServiceImpl<BusinessBindingMapper, A
         if (dto == null) {
             throw new BusinessException("能力挂接不能为空");
         }
+        Long tenantId = requireTenantId();
         AiBusinessBinding binding = new AiBusinessBinding();
-        copyDtoToEntity(dto, binding, true);
+        copyDtoToEntity(dto, binding, true, tenantId);
         save(binding);
         markApplicationChanged(binding);
         return binding.getId();
@@ -62,9 +64,10 @@ public class BusinessBindingService extends ServiceImpl<BusinessBindingMapper, A
         if (dto == null || dto.getId() == null) {
             throw new BusinessException("能力挂接ID不能为空");
         }
-        AiBusinessBinding binding = requireBinding(dto.getId());
+        Long tenantId = requireTenantId();
+        AiBusinessBinding binding = requireBinding(tenantId, dto.getId());
         Long previousApplicationId = applicationTargetId(binding);
-        copyDtoToEntity(dto, binding, false);
+        copyDtoToEntity(dto, binding, false, tenantId);
         updateById(binding);
         markApplicationChanged(previousApplicationId);
         markApplicationChanged(binding);
@@ -72,7 +75,8 @@ public class BusinessBindingService extends ServiceImpl<BusinessBindingMapper, A
 
     @Transactional(rollbackFor = Exception.class)
     public void delete(Long id) {
-        AiBusinessBinding binding = requireBinding(id);
+        Long tenantId = requireTenantId();
+        AiBusinessBinding binding = requireBinding(tenantId, id);
         Long applicationId = applicationTargetId(binding);
         removeById(binding.getId());
         markApplicationChanged(applicationId);
@@ -83,6 +87,7 @@ public class BusinessBindingService extends ServiceImpl<BusinessBindingMapper, A
         if (dto == null) {
             throw new BusinessException("批量挂接参数不能为空");
         }
+        Long tenantId = requireTenantId();
         String targetType = normalizeTargetType(dto.getTargetType());
         String targetCode = StringUtils.trimToNull(dto.getTargetCode());
         if (StringUtils.isBlank(targetCode)) {
@@ -100,7 +105,7 @@ public class BusinessBindingService extends ServiceImpl<BusinessBindingMapper, A
         if (bindingTypes.isEmpty()) {
             throw new BusinessException("批量挂接能力类型不能为空");
         }
-        baseMapper.deleteByBatchScope(resolveTenantId(), targetType, targetCode, bindingTypes);
+        baseMapper.deleteByBatchScope(tenantId, targetType, targetCode, bindingTypes);
         for (BusinessBindingDTO item : dto.getBindings()) {
             if (item == null) {
                 continue;
@@ -109,7 +114,7 @@ public class BusinessBindingService extends ServiceImpl<BusinessBindingMapper, A
             item.setTargetId(dto.getTargetId());
             item.setTargetCode(targetCode);
             AiBusinessBinding binding = new AiBusinessBinding();
-            copyDtoToEntity(item, binding, true);
+            copyDtoToEntity(item, binding, true, tenantId);
             save(binding);
         }
         if ("APPLICATION".equals(targetType)) {
@@ -132,7 +137,8 @@ public class BusinessBindingService extends ServiceImpl<BusinessBindingMapper, A
                 ? binding.getTargetId() : null;
     }
 
-    private void copyDtoToEntity(BusinessBindingDTO dto, AiBusinessBinding binding, boolean create) {
+    private void copyDtoToEntity(
+            BusinessBindingDTO dto, AiBusinessBinding binding, boolean create, Long tenantId) {
         String targetType = normalizeTargetType(dto.getTargetType());
         String targetCode = StringUtils.trimToNull(dto.getTargetCode());
         String bindingType = normalizeBindingType(dto.getBindingType());
@@ -149,10 +155,10 @@ public class BusinessBindingService extends ServiceImpl<BusinessBindingMapper, A
         }
         validateTarget(targetType, dto.getTargetId(), targetCode);
         Long excludeId = create ? null : binding.getId();
-        if (baseMapper.countByScope(resolveTenantId(), targetType, targetCode, bindingType, bindingKey, excludeId) > 0) {
+        if (baseMapper.countByScope(tenantId, targetType, targetCode, bindingType, bindingKey, excludeId) > 0) {
             throw new BusinessException("能力挂接已存在: " + bindingName);
         }
-        binding.setTenantId(resolveTenantId());
+        binding.setTenantId(tenantId);
         binding.setTargetType(targetType);
         binding.setTargetId(dto.getTargetId());
         binding.setTargetCode(targetCode);
@@ -268,11 +274,11 @@ public class BusinessBindingService extends ServiceImpl<BusinessBindingMapper, A
         }
     }
 
-    private AiBusinessBinding requireBinding(Long id) {
+    private AiBusinessBinding requireBinding(Long tenantId, Long id) {
         if (id == null) {
             throw new BusinessException("能力挂接ID不能为空");
         }
-        AiBusinessBinding binding = baseMapper.selectBindingById(resolveTenantId(), id);
+        AiBusinessBinding binding = baseMapper.selectBindingById(tenantId, id);
         if (binding == null) {
             throw new BusinessException("能力挂接不存在");
         }
@@ -311,14 +317,17 @@ public class BusinessBindingService extends ServiceImpl<BusinessBindingMapper, A
         return value;
     }
 
-    private Long resolveTenantId() {
+    private Long requireTenantId() {
         Long tenantId;
         try {
             tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
             tenantId = null;
         }
-        return tenantId != null ? tenantId : 1L;
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("能力挂接操作缺少可信租户上下文");
+        }
+        return tenantId;
     }
 
     private record BindingOpenDefaults(String openType, String entryUrl, String actionLabel) {

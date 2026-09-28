@@ -13,9 +13,12 @@ import java.util.List;
 @Mapper
 public interface FlowFormVersionMapper extends BaseMapper<FlowFormVersion> {
 
-    FlowFormVersion selectLatestByFormId(@Param("formId") Long formId);
+    FlowFormVersion selectLatestByFormId(@Param("tenantId") Long tenantId,
+                                         @Param("formId") Long formId);
 
-    FlowFormVersion selectByIdForRuntime(@Param("id") Long id);
+    FlowFormVersion selectByIdForRuntimeAndTenant(@Param("id") Long id,
+                                                  @Param("tenantId") Long tenantId);
 
-    List<FlowFormVersion> selectVersionsByFormId(@Param("formId") Long formId);
+    List<FlowFormVersion> selectVersionsByFormId(@Param("tenantId") Long tenantId,
+                                                 @Param("formId") Long formId);
 }

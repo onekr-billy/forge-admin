@@ -26,14 +26,18 @@ import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessNode
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessRunDetailVO;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessRunVO;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessEvent;
+import com.mdframe.forge.plugin.generator.service.businessapp.BusinessEventEnvelope;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -41,6 +45,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
@@ -48,6 +53,7 @@ import com.mdframe.forge.starter.core.enums.EnableStatus;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class BusinessProcessOrchestrator {
 
     private static final int MAX_HOPS = 32;
@@ -64,6 +70,7 @@ public class BusinessProcessOrchestrator {
     private final BusinessProcessSchemaValidator schemaValidator;
     private final BusinessFlowService flowService;
     private final BusinessProcessActionExecutor actionExecutor;
+    private final BusinessProcessRunLeaseCoordinator leaseCoordinator;
 
     public Page<BusinessProcessRunVO> page(Integer pageNum, Integer pageSize, BusinessProcessRunQueryDTO query) {
         Long tenantId = requireTenantId();
@@ -264,7 +271,10 @@ public class BusinessProcessOrchestrator {
         if (event == null || StringUtils.isAnyBlank(event.getEventType(), event.getObjectCode())) {
             return;
         }
-        Long tenantId = event.getTenantId() == null ? 1L : event.getTenantId();
+        Long tenantId = event.getTenantId();
+        if (tenantId == null || tenantId <= 0 || !BusinessEventEnvelope.isTrusted(event)) {
+            throw new BusinessException("业务事件缺少可信事件信封");
+        }
         List<AiBusinessProcessVersion> versions = versionMapper.selectCurrentPublishedBySubjectObjectCode(
                 tenantId, event.getObjectCode());
         if (versions == null || versions.isEmpty()) {
@@ -287,8 +297,7 @@ public class BusinessProcessOrchestrator {
                 continue;
             }
             String recordId = StringUtils.defaultIfBlank(event.getRecordId(), "-");
-            String idempotencyKey = "EVENT:" + event.getEventType() + ":"
-                    + schema.getSubject().getObjectCode() + ":" + recordId;
+            String idempotencyKey = BusinessEventEnvelope.processIdempotencyKey(event);
             AiBusinessProcessRun existing = runMapper.selectByIdempotencyKey(tenantId, version.getId(), idempotencyKey);
             if (existing != null) {
                 if (BusinessProcessRunStatus.PENDING.matches(existing.getStatus())) {
@@ -307,6 +316,7 @@ public class BusinessProcessOrchestrator {
             run.setSubjectRecordId(recordId);
             run.setBusinessKey(schema.getSubject().getObjectCode() + ":" + recordId);
             run.setTriggerType("EVENT");
+            run.setSourceEventId(event.getEventId());
             run.setIdempotencyKey(idempotencyKey);
             run.setActorType("USER");
             run.setActorUserId(event.getOperatorId());
@@ -329,23 +339,64 @@ public class BusinessProcessOrchestrator {
     }
 
     private void execute(Long tenantId, Long runId) {
+        if (TransactionSynchronizationManager.isActualTransactionActive()
+                && TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    try {
+                        leaseCoordinator.dispatchAfterCommit(tenantId, () -> {
+                            try {
+                                executeClaimableRun(tenantId, runId);
+                            } catch (RuntimeException exception) {
+                                log.error("[BusinessProcess] 提交后执行失败: tenantId={}, runId={}",
+                                        tenantId, runId, exception);
+                            }
+                        });
+                    } catch (RuntimeException exception) {
+                        // run 保持 PENDING，可由显式重试或恢复扫描重新认领。
+                        log.error("[BusinessProcess] 提交后执行派发失败: tenantId={}, runId={}",
+                                tenantId, runId, exception);
+                    }
+                }
+            });
+            return;
+        }
+        executeClaimableRun(tenantId, runId);
+    }
+
+    private void executeClaimableRun(Long tenantId, Long runId) {
         AiBusinessProcessRun run = requireRun(tenantId, runId);
         if (!BusinessProcessRunStatus.PENDING.matches(run.getStatus()) && !BusinessProcessRunStatus.RUNNING.matches(run.getStatus())) {
             return;
         }
-        if (BusinessProcessRunStatus.PENDING.matches(run.getStatus())) {
-            int claimed = runMapper.compareAndSetStatus(
-                    run.getTenantId(), run.getId(), BusinessProcessRunStatus.PENDING.getCode(), null, null,
-                    "RUNNING", null, null, null, null, null);
-            if (claimed != 1) {
-                return;
-            }
-            run = requireRun(tenantId, runId);
+        String leaseOwner = UUID.randomUUID().toString();
+        int claimed = runMapper.claimExecution(
+                run.getTenantId(), run.getId(), leaseOwner,
+                BusinessProcessRunLeaseCoordinator.LEASE_SECONDS);
+        if (claimed != 1) {
+            return;
         }
+        run = requireRun(tenantId, runId);
+        if (!BusinessProcessRunStatus.RUNNING.matches(run.getStatus())
+                || run.getExecutionToken() == null
+                || !leaseOwner.equals(run.getLeaseOwner())) {
+            throw new BusinessException(409, "业务流程执行租约认领结果不一致");
+        }
+        try (BusinessProcessRunLeaseCoordinator.LeaseHandle lease = leaseCoordinator.monitor(
+                run.getTenantId(), run.getId(), run.getExecutionToken(), leaseOwner)) {
+            executeClaimedRun(run, lease);
+        }
+    }
+
+    private void executeClaimedRun(
+            AiBusinessProcessRun initialRun,
+            BusinessProcessRunLeaseCoordinator.LeaseHandle lease) {
+        AiBusinessProcessRun run = initialRun;
         AiBusinessProcessVersion version = versionMapper.selectPublishedVersionById(
                 run.getTenantId(), run.getProcessVersionId());
         if (version == null) {
-            failRun(run, "PROCESS_VERSION_MISSING", "业务流程版本不存在");
+            failRun(run, lease, "PROCESS_VERSION_MISSING", "业务流程版本不存在");
             return;
         }
         BusinessProcessSchema schema = normalizeSchema(version.getSchemaJson());
@@ -353,40 +404,40 @@ public class BusinessProcessOrchestrator {
         if (currentNodeId == null) {
             BusinessProcessNode startNode = requireStart(schema);
             currentNodeId = startNode.getId();
-            if (!advanceCheckpoint(run, "RUNNING", currentNodeId, null)) {
-                return;
-            }
-            run = requireRun(tenantId, runId);
+            advanceCheckpoint(run, lease, BusinessProcessRunStatus.RUNNING.getCode(), currentNodeId, null);
+            run = requireRun(run.getTenantId(), run.getId());
         }
         int hops = 0;
         while (hops++ < MAX_HOPS) {
+            lease.renewNow();
             BusinessProcessNode node = requireNode(schema, currentNodeId);
-            BusinessProcessNodeResult result = executeNode(run, schema, node);
-            completeNodeAttempt(run, node, result);
+            NodeExecution execution = executeNode(run, schema, node, lease);
+            BusinessProcessNodeResult result = execution.result();
+            lease.renewNow();
+            completeNodeAttempt(run, lease, execution.attemptId(), result);
             if (result.isFailed()) {
-                failRun(run, result.getErrorCode(), result.getErrorSummary());
+                failRun(run, lease, result.getErrorCode(), result.getErrorSummary());
                 return;
             }
             if (result.isWaiting()) {
-                waitRun(run, node.getId(), result.getCorrelationId());
+                waitRun(run, lease, node.getId(), result.getCorrelationId());
                 return;
             }
             if ("END".equals(upper(node.getType()))) {
-                succeedRun(run, node.getId());
+                succeedRun(run, lease, node.getId());
                 return;
             }
             String nextId = nextNodeId(schema, node.getId(), result.getOutputPort());
             if (StringUtils.isBlank(nextId)) {
-                failRun(run, "GRAPH_DEAD_END", "节点没有可继续的出口: " + node.getId());
+                failRun(run, lease, "GRAPH_DEAD_END", "节点没有可继续的出口: " + node.getId());
                 return;
             }
-            if (!advanceCheckpoint(run, "RUNNING", nextId, run.getFlowProcessInstanceId())) {
-                return;
-            }
-            run = requireRun(tenantId, run.getId());
+            advanceCheckpoint(run, lease, BusinessProcessRunStatus.RUNNING.getCode(),
+                    nextId, run.getFlowProcessInstanceId());
+            run = requireRun(run.getTenantId(), run.getId());
             currentNodeId = nextId;
         }
-        failRun(run, "MAX_HOPS_EXCEEDED", "业务流程节点跳转超过上限");
+        failRun(run, lease, "MAX_HOPS_EXCEEDED", "业务流程节点跳转超过上限");
     }
 
     /**
@@ -405,13 +456,13 @@ public class BusinessProcessOrchestrator {
         AiBusinessProcessVersion version = versionMapper.selectPublishedVersionById(
                 tenantId, run.getProcessVersionId());
         if (version == null) {
-            failRun(run, "PROCESS_VERSION_MISSING", "业务流程版本不存在");
+            failRunWithoutLease(run, "PROCESS_VERSION_MISSING", "业务流程版本不存在");
             return;
         }
         BusinessProcessSchema schema = normalizeSchema(version.getSchemaJson());
         BusinessProcessNode approvalNode = requireNode(schema, run.getCurrentNodeId());
         if (!"APPROVAL".equals(upper(approvalNode.getType()))) {
-            failRun(run, "WAITING_NODE_INVALID", "等待中的节点不是审批节点");
+            failRunWithoutLease(run, "WAITING_NODE_INVALID", "等待中的节点不是审批节点");
             return;
         }
         String outputPort = normalizeApprovalOutputPort(result);
@@ -422,16 +473,16 @@ public class BusinessProcessOrchestrator {
         }
         String nextId = nextNodeId(schema, approvalNode.getId(), outputPort);
         if (StringUtils.isBlank(nextId)) {
-            failRun(run, "GRAPH_DEAD_END", "审批结果没有可继续的出口: " + outputPort);
+            failRunWithoutLease(run, "GRAPH_DEAD_END", "审批结果没有可继续的出口: " + outputPort);
             return;
         }
         int claimed = runMapper.compareAndSetStatus(
                 tenantId,
                 run.getId(),
-                "WAITING",
+                BusinessProcessRunStatus.WAITING.getCode(),
                 approvalNode.getId(),
                 processInstanceId,
-                "RUNNING",
+                BusinessProcessRunStatus.PENDING.getCode(),
                 nextId,
                 processInstanceId,
                 null,
@@ -446,7 +497,7 @@ public class BusinessProcessOrchestrator {
         int attemptUpdated = nodeRunMapper.completeAttempt(
                 tenantId,
                 waitingAttempt.getId(),
-                "WAITING",
+                BusinessProcessRunStatus.WAITING.getCode(),
                 processInstanceId,
                 attemptStatus,
                 processInstanceId,
@@ -488,7 +539,7 @@ public class BusinessProcessOrchestrator {
                 run.getStatus(),
                 run.getCurrentNodeId(),
                 run.getFlowProcessInstanceId(),
-                "CANCELED",
+                BusinessProcessRunStatus.CANCELED.getCode(),
                 run.getCurrentNodeId(),
                 run.getFlowProcessInstanceId(),
                 null,
@@ -500,11 +551,19 @@ public class BusinessProcessOrchestrator {
         return BusinessProcessRunViewAssembler.toVo(requireRun(runId), null);
     }
 
-    private BusinessProcessNodeResult executeNode(
+    private NodeExecution executeNode(
+            AiBusinessProcessRun run,
+            BusinessProcessSchema schema,
+            BusinessProcessNode node,
+            BusinessProcessRunLeaseCoordinator.LeaseHandle lease) {
+        Long attemptId = startNodeAttempt(run, node, lease);
+        return new NodeExecution(attemptId, executeNodeBody(run, schema, node));
+    }
+
+    private BusinessProcessNodeResult executeNodeBody(
             AiBusinessProcessRun run,
             BusinessProcessSchema schema,
             BusinessProcessNode node) {
-        startNodeAttempt(run, node);
         String type = upper(node.getType());
         try {
             if (START_TYPES.contains(type)) {
@@ -595,7 +654,10 @@ public class BusinessProcessOrchestrator {
         return BusinessProcessNodeResult.waiting(processInstanceId, "已发起审批并等待结果");
     }
 
-    private void startNodeAttempt(AiBusinessProcessRun run, BusinessProcessNode node) {
+    private Long startNodeAttempt(
+            AiBusinessProcessRun run,
+            BusinessProcessNode node,
+            BusinessProcessRunLeaseCoordinator.LeaseHandle lease) {
         int attemptNo = value(nodeRunMapper.selectMaxAttemptNo(run.getTenantId(), run.getId(), node.getId())) + 1;
         AiBusinessProcessNodeRun attempt = new AiBusinessProcessNodeRun();
         attempt.setId(IdWorker.getId());
@@ -604,46 +666,57 @@ public class BusinessProcessOrchestrator {
         attempt.setNodeId(node.getId());
         attempt.setNodeType(node.getType());
         attempt.setAttemptNo(attemptNo);
-        attempt.setIdempotencyKey(run.getId() + ":" + node.getId() + ":" + attemptNo);
+        attempt.setIdempotencyKey(run.getId() + ":" + node.getId());
         attempt.setCreateBy(run.getActorUserId());
         attempt.setUpdateBy(run.getActorUserId());
-        nodeRunMapper.insertAttempt(attempt);
-        nodeRunMapper.claimAttempt(run.getTenantId(), attempt.getId());
+        if (nodeRunMapper.insertAttempt(attempt) != 1
+                || nodeRunMapper.claimAttemptWithLease(
+                        run.getTenantId(), attempt.getId(), run.getId(),
+                        lease.executionToken(), lease.leaseOwner()) != 1) {
+            throw new BusinessException("节点执行权认领失败，请稍后重试");
+        }
+        return attempt.getId();
     }
 
     private void completeNodeAttempt(
             AiBusinessProcessRun run,
-            BusinessProcessNode node,
+            BusinessProcessRunLeaseCoordinator.LeaseHandle lease,
+            Long attemptId,
             BusinessProcessNodeResult result) {
-        AiBusinessProcessNodeRun latest = nodeRunMapper.selectLatestAttempt(
-                run.getTenantId(), run.getId(), node.getId());
-        if (latest == null) {
-            return;
-        }
         String nextStatus = result.isFailed()
                 ? BusinessProcessRunStatus.FAILED.getCode()
                 : (result.isWaiting() ? BusinessProcessRunStatus.WAITING.getCode() : BusinessProcessRunStatus.SUCCESS.getCode());
-        nodeRunMapper.completeAttempt(
+        int updated = nodeRunMapper.completeAttemptWithLease(
                 run.getTenantId(),
-                latest.getId(),
-                "RUNNING",
-                latest.getCorrelationId(),
+                attemptId,
+                run.getId(),
+                lease.executionToken(),
+                lease.leaseOwner(),
+                BusinessProcessRunStatus.RUNNING.getCode(),
+                null,
                 nextStatus,
                 result.getCorrelationId(),
                 truncate(result.getOutputSummary()),
                 result.getErrorCode(),
                 truncate(result.getErrorSummary()),
                 null);
+        if (updated != 1) {
+            throw new BusinessException("节点执行结果已被其他执行器处理，请稍后重试");
+        }
     }
 
     private boolean advanceCheckpoint(
             AiBusinessProcessRun run,
+            BusinessProcessRunLeaseCoordinator.LeaseHandle lease,
             String nextStatus,
             String currentNodeId,
             String processInstanceId) {
-        return runMapper.compareAndSetStatus(
+        int updated = runMapper.transitionWithLease(
                 run.getTenantId(),
                 run.getId(),
+                lease.executionToken(),
+                lease.leaseOwner(),
+                BusinessProcessRunLeaseCoordinator.LEASE_SECONDS,
                 run.getStatus(),
                 run.getCurrentNodeId(),
                 run.getFlowProcessInstanceId(),
@@ -652,22 +725,46 @@ public class BusinessProcessOrchestrator {
                 processInstanceId,
                 null,
                 null,
-                null) == 1;
+                null);
+        if (updated != 1) {
+            throw new BusinessException(409, "业务流程执行租约已失效，状态推进被拒绝");
+        }
+        return true;
     }
 
-    private void succeedRun(AiBusinessProcessRun run, String nodeId) {
-        runMapper.compareAndSetStatus(
-                run.getTenantId(), run.getId(), BusinessProcessRunStatus.RUNNING.getCode(), run.getCurrentNodeId(), run.getFlowProcessInstanceId(),
-                BusinessProcessRunStatus.SUCCESS.getCode(), nodeId, run.getFlowProcessInstanceId(), null, null, null);
+    private void succeedRun(
+            AiBusinessProcessRun run,
+            BusinessProcessRunLeaseCoordinator.LeaseHandle lease,
+            String nodeId) {
+        advanceCheckpoint(run, lease, BusinessProcessRunStatus.SUCCESS.getCode(),
+                nodeId, run.getFlowProcessInstanceId());
     }
 
-    private void waitRun(AiBusinessProcessRun run, String nodeId, String processInstanceId) {
-        runMapper.compareAndSetStatus(
-                run.getTenantId(), run.getId(), BusinessProcessRunStatus.RUNNING.getCode(), run.getCurrentNodeId(), run.getFlowProcessInstanceId(),
-                BusinessProcessRunStatus.WAITING.getCode(), nodeId, processInstanceId, null, null, null);
+    private void waitRun(
+            AiBusinessProcessRun run,
+            BusinessProcessRunLeaseCoordinator.LeaseHandle lease,
+            String nodeId,
+            String processInstanceId) {
+        advanceCheckpoint(run, lease, BusinessProcessRunStatus.WAITING.getCode(), nodeId, processInstanceId);
     }
 
-    private void failRun(AiBusinessProcessRun run, String errorCode, String errorSummary) {
+    private void failRun(
+            AiBusinessProcessRun run,
+            BusinessProcessRunLeaseCoordinator.LeaseHandle lease,
+            String errorCode,
+            String errorSummary) {
+        int updated = runMapper.transitionWithLease(
+                run.getTenantId(), run.getId(), lease.executionToken(), lease.leaseOwner(),
+                BusinessProcessRunLeaseCoordinator.LEASE_SECONDS,
+                run.getStatus(), run.getCurrentNodeId(), run.getFlowProcessInstanceId(),
+                BusinessProcessRunStatus.FAILED.getCode(), run.getCurrentNodeId(), run.getFlowProcessInstanceId(), null,
+                errorCode, truncate(errorSummary));
+        if (updated != 1) {
+            throw new BusinessException(409, "业务流程执行租约已失效，失败状态写入被拒绝");
+        }
+    }
+
+    private void failRunWithoutLease(AiBusinessProcessRun run, String errorCode, String errorSummary) {
         runMapper.compareAndSetStatus(
                 run.getTenantId(), run.getId(), run.getStatus(), run.getCurrentNodeId(), run.getFlowProcessInstanceId(),
                 BusinessProcessRunStatus.FAILED.getCode(), run.getCurrentNodeId(), run.getFlowProcessInstanceId(), null,
@@ -713,14 +810,25 @@ public class BusinessProcessOrchestrator {
         if (!(rules instanceof List<?> list) || list.isEmpty()) {
             return true;
         }
-        boolean any = "OR".equalsIgnoreCase(String.valueOf(condition.get("operator")))
-                || "OR".equalsIgnoreCase(String.valueOf(condition.get("logic")));
+        Object conditionOperator = condition.get("operator");
+        Object conditionLogic = condition.get("logic");
+        String logic = StringUtils.firstNonBlank(
+                conditionOperator == null ? null : StringUtils.trimToNull(String.valueOf(conditionOperator)),
+                conditionLogic == null ? null : StringUtils.trimToNull(String.valueOf(conditionLogic)), "AND");
+        if (!"AND".equalsIgnoreCase(logic) && !"OR".equalsIgnoreCase(logic)) {
+            return false;
+        }
+        boolean any = "OR".equalsIgnoreCase(logic);
         boolean result = any ? false : true;
         for (Object rawRule : list) {
             if (!(rawRule instanceof Map<?, ?> rule)) {
-                continue;
+                return false;
             }
-            String field = StringUtils.trimToEmpty(String.valueOf(rule.get("field")));
+            Object fieldValue = rule.get("field");
+            String field = fieldValue == null ? "" : StringUtils.trimToEmpty(String.valueOf(fieldValue));
+            if (field.isEmpty()) {
+                return false;
+            }
             Object operatorValue = rule.containsKey("operator") ? rule.get("operator") : rule.get("op");
             String operator = upper(String.valueOf(operatorValue));
             Object actual = event.readRecordValue(field);
@@ -730,7 +838,7 @@ public class BusinessProcessOrchestrator {
                 case "NE", "NEQ", "NOT_EQUALS" -> !StringUtils.equals(String.valueOf(actual), String.valueOf(expected));
                 case "IS_NULL" -> actual == null;
                 case "NOT_NULL" -> actual != null;
-                default -> true;
+                default -> false;
             };
             if (any) {
                 result |= matched;
@@ -912,6 +1020,9 @@ public class BusinessProcessOrchestrator {
 
     private List<AiBusinessProcessNodeRun> safeList(List<AiBusinessProcessNodeRun> list) {
         return list == null ? List.of() : list;
+    }
+
+    private record NodeExecution(Long attemptId, BusinessProcessNodeResult result) {
     }
 
     private int normalizePageNum(Integer pageNum) {

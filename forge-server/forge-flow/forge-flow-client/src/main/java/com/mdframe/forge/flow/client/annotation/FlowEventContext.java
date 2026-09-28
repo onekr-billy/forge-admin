@@ -13,7 +13,7 @@ import java.util.Map;
 /**
  * 流程事件上下文（业务方回调的入参）
  * <p>
- * 由 flow-server 通过 Redis Pub/Sub 或 Webhook 推送，
+ * 由 flow-server 通过 Redis Stream（兼容 Pub/Sub）或 Webhook 推送，
  * {@link com.mdframe.forge.flow.client.helper.FlowEventSubscriber} 反序列化后
  * 传递给 {@link FlowCallback} 标注的方法。
  *
@@ -25,6 +25,15 @@ import java.util.Map;
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class FlowEventContext {
+
+    /** Flow 通知 Outbox 生成的稳定事件 ID。 */
+    private String eventId;
+
+    /** 事件协议版本。 */
+    private Integer eventVersion;
+
+    /** Flow 通知 Outbox 的数据库顺序号。 */
+    private Long eventSequence;
 
     /** 事件类型：PROCESS_COMPLETED / PROCESS_REJECTED / PROCESS_CANCELED
      *  兼容 FlowEventMessage.eventType 字段名 */

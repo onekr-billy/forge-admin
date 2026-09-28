@@ -1,5 +1,7 @@
 package com.mdframe.forge.plugin.generator.service.businessapp;
 
+import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.session.SessionHelper;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.ArrayList;
@@ -15,6 +17,63 @@ import java.util.Map;
 final class BusinessActionStepConfigHelper {
 
     private BusinessActionStepConfigHelper() {
+    }
+
+    static Long requireTenantId(BusinessActionExecutionContext context) {
+        Long tenantId = context == null ? null : context.getTenantId();
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("业务动作缺少可信租户上下文");
+        }
+        return tenantId;
+    }
+
+    static Long requireActorUserId(BusinessActionExecutionContext context) {
+        Map<String, Object> systemContext = context == null || context.getSystemContext() == null
+                ? Map.of() : context.getSystemContext();
+        Long userId = positiveLong(systemContext.get("userId"));
+        if (userId == null && context != null) {
+            userId = positiveLong(context.getCapabilityServiceUserId());
+        }
+        if (userId == null) {
+            try {
+                userId = positiveLong(SessionHelper.getUserId());
+            } catch (Exception ignored) {
+                userId = null;
+            }
+        }
+        if (userId == null) {
+            throw new BusinessException("业务动作缺少可信执行用户");
+        }
+        return userId;
+    }
+
+    static String resolveActorUsername(BusinessActionExecutionContext context, Long userId) {
+        Map<String, Object> systemContext = context == null || context.getSystemContext() == null
+                ? Map.of() : context.getSystemContext();
+        String username = StringUtils.trimToNull(String.valueOf(systemContext.get("username")));
+        if ("null".equalsIgnoreCase(username)) {
+            username = null;
+        }
+        if (username == null) {
+            try {
+                username = StringUtils.trimToNull(SessionHelper.getUsername());
+            } catch (Exception ignored) {
+                username = null;
+            }
+        }
+        return username == null ? "user-" + userId : username;
+    }
+
+    private static Long positiveLong(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            long parsed = Long.parseLong(String.valueOf(value));
+            return parsed > 0 ? parsed : null;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     static Map<String, Object> buildData(Map<String, Object> config, BusinessActionExecutionContext context) {

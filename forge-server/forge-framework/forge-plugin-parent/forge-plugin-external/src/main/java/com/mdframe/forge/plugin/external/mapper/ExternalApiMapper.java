@@ -14,10 +14,17 @@ import java.util.List;
 public interface ExternalApiMapper extends BaseMapper<ExternalApi> {
 
     IPage<ExternalApi> selectApiPage(Page<ExternalApi> page, @Param("query") ExternalApiQuery query);
-    
-    List<ExternalApi> selectApisBySystemId(@Param("systemId") Long systemId);
-    
-    ExternalApi selectApiByCode(@Param("apiCode") String apiCode, @Param("systemId") Long systemId);
+
+    ExternalApi selectApiById(@Param("id") Long id, @Param("tenantId") Long tenantId);
+
+    List<ExternalApi> selectApisBySystemId(@Param("systemId") Long systemId,
+                                           @Param("tenantId") Long tenantId);
+
+    ExternalApi selectApiByCode(@Param("apiCode") String apiCode,
+                                @Param("systemId") Long systemId,
+                                @Param("tenantId") Long tenantId);
+
+    int deleteApiById(@Param("id") Long id, @Param("tenantId") Long tenantId);
 
     List<ExternalApi> selectApiListWithSystem(@Param("tenantId") Long tenantId);
 

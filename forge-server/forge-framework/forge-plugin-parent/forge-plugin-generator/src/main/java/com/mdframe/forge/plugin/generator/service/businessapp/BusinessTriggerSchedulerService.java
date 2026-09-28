@@ -180,7 +180,7 @@ public class BusinessTriggerSchedulerService {
             if (!config.tierRules().isEmpty() && tierRule == null) {
                 continue;
             }
-            BusinessEvent event = buildScheduledEvent(trigger, configKey, recordId, row, tierRule);
+            BusinessEvent event = buildScheduledEvent(trigger, configKey, recordId, row, tierRule, today);
             if (!triggerExecutor.matchesCondition(trigger, event)) {
                 continue;
             }
@@ -299,10 +299,11 @@ public class BusinessTriggerSchedulerService {
 
     private BusinessEvent buildScheduledEvent(AiBusinessTrigger trigger, String configKey,
                                               String recordId, Map<String, Object> row,
-                                              ReminderTierRule tierRule) {
+                                              ReminderTierRule tierRule, LocalDate scheduledDate) {
         Map<String, Object> eventData = new LinkedHashMap<>(row);
         eventData.put("scheduledTriggerId", trigger.getId());
         eventData.put("scheduledTriggerName", trigger.getTriggerName());
+        eventData.put("scheduledDate", scheduledDate.toString());
         if (tierRule != null) {
             eventData.put("reminderRuleCode", tierRule.ruleCode());
             eventData.put("reminderRuleName", tierRule.ruleName());
@@ -311,7 +312,7 @@ public class BusinessTriggerSchedulerService {
             eventData.put("reminderMetricField", tierRule.metricField());
             eventData.put("reminderMetricValue", tierRule.metricValue());
         }
-        return BusinessEvent.builder()
+        BusinessEvent event = BusinessEvent.builder()
                 .eventType(BusinessEvent.SCHEDULED_DUE)
                 .suiteCode(trigger.getSuiteCode())
                 .objectCode(trigger.getObjectCode())
@@ -320,6 +321,10 @@ public class BusinessTriggerSchedulerService {
                 .recordData(eventData)
                 .tenantId(trigger.getTenantId())
                 .build();
+        String tierCode = tierRule == null ? "DEFAULT" : tierRule.ruleCode();
+        String stableSourceKey = trigger.getTenantId() + ":" + trigger.getId() + ":"
+                + recordId + ":" + scheduledDate + ":" + tierCode;
+        return BusinessEventEnvelope.stamp(event, BusinessEventEnvelope.SOURCE_SCHEDULER, stableSourceKey);
     }
 
     private String readRecordId(String configKey, Map<String, Object> row) {

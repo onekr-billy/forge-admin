@@ -14,6 +14,7 @@ import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntime
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessPublishCheckItemVO;
 import com.mdframe.forge.plugin.generator.vo.lowcode.LowcodeDdlPreviewVO;
 import com.mdframe.forge.starter.core.enums.EnableStatus;
+import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import org.apache.commons.lang3.StringUtils;
 
@@ -47,17 +48,19 @@ final class BusinessObjectDeploymentPublishValidator {
 
     void validateEntry(BusinessObjectDesignerService.DesignerContext context,
                        List<BusinessPublishCheckItemVO> items) {
-        checkAppEntry(context, items);
+        Long tenantId = requireTenantId(context);
+        checkAppEntry(context, items, tenantId);
     }
 
     void validateStorage(LowcodeModelSchema modelSchema, List<BusinessPublishCheckItemVO> items) {
+        requireTenantId();
         checkRuntimeDataSource(modelSchema, items);
         checkTable(modelSchema, items);
     }
 
     private void checkAppEntry(BusinessObjectDesignerService.DesignerContext context,
-                               List<BusinessPublishCheckItemVO> items) {
-        Long tenantId = resolveTenantId(context);
+                               List<BusinessPublishCheckItemVO> items,
+                               Long tenantId) {
         AiBusinessObject object = context.getObject();
         AiBusinessApp app = businessAppMapper.selectRuntimeAppByObject(
                 tenantId, object.getSuiteCode(), object.getObjectCode());
@@ -413,17 +416,26 @@ final class BusinessObjectDeploymentPublishValidator {
         return value == null ? null : String.valueOf(value);
     }
 
-    private Long resolveTenantId(BusinessObjectDesignerService.DesignerContext context) {
-        if (context != null && context.getObject() != null && context.getObject().getTenantId() != null) {
-            return context.getObject().getTenantId();
-        }
+    private Long requireTenantId() {
         Long tenantId;
         try {
             tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
             tenantId = null;
         }
-        return tenantId != null ? tenantId : 1L;
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("业务对象部署发布校验缺少可信租户上下文");
+        }
+        return tenantId;
+    }
+
+    private Long requireTenantId(BusinessObjectDesignerService.DesignerContext context) {
+        Long tenantId = requireTenantId();
+        AiBusinessObject object = context == null ? null : context.getObject();
+        if (object == null || object.getTenantId() == null || !object.getTenantId().equals(tenantId)) {
+            throw new BusinessException("业务对象部署发布上下文不属于当前租户");
+        }
+        return tenantId;
     }
 
     private void add(List<BusinessPublishCheckItemVO> items, String code, String category, String level,

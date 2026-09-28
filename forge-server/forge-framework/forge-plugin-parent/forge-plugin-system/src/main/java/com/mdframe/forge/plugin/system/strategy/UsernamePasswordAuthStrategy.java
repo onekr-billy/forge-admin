@@ -32,7 +32,7 @@ public class UsernamePasswordAuthStrategy extends AbstractAuthStrategy {
         if (loginUser == null) {
             recordLoginFailure(null, "用户名或密码错误");
         }
-        return loginUser;
+        return applyPasswordExpiration(loginUser);
     }
 
     @Override

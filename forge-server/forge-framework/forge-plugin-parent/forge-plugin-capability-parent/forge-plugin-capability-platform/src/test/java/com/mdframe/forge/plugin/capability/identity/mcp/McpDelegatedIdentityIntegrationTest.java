@@ -19,6 +19,8 @@ import com.mdframe.forge.plugin.capability.spi.CapabilityInvocationObserver;
 import com.mdframe.forge.plugin.mcp.config.ForgeMcpServerAutoConfiguration;
 import com.mdframe.forge.starter.auth.config.SaTokenConfig;
 import com.mdframe.forge.starter.auth.interceptor.ApiPermissionInterceptor;
+import com.mdframe.forge.starter.auth.interceptor.ApiRateLimitInterceptor;
+import com.mdframe.forge.starter.auth.session.LoginSessionValidationService;
 import com.mdframe.forge.starter.core.context.AuthProperties;
 import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.session.LoginUser;
@@ -311,6 +313,18 @@ class McpDelegatedIdentityIntegrationTest {
         @Bean
         ApiPermissionInterceptor apiPermissionInterceptor() {
             return mock(ApiPermissionInterceptor.class);
+        }
+
+        @Bean
+        ApiRateLimitInterceptor apiRateLimitInterceptor() throws Exception {
+            ApiRateLimitInterceptor interceptor = mock(ApiRateLimitInterceptor.class);
+            when(interceptor.preHandle(any(), any(), any())).thenReturn(true);
+            return interceptor;
+        }
+
+        @Bean
+        LoginSessionValidationService loginSessionValidationService() {
+            return mock(LoginSessionValidationService.class);
         }
 
         @Bean

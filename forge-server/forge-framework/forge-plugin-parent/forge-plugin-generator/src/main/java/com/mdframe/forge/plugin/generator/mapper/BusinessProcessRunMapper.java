@@ -71,6 +71,32 @@ public interface BusinessProcessRunMapper extends BaseMapper<AiBusinessProcessRu
                             @Param("errorCode") String errorCode,
                             @Param("errorSummary") String errorSummary);
 
+    int claimExecution(@Param("tenantId") Long tenantId,
+                       @Param("runId") Long runId,
+                       @Param("leaseOwner") String leaseOwner,
+                       @Param("leaseSeconds") Integer leaseSeconds);
+
+    int renewLease(@Param("tenantId") Long tenantId,
+                   @Param("runId") Long runId,
+                   @Param("executionToken") Long executionToken,
+                   @Param("leaseOwner") String leaseOwner,
+                   @Param("leaseSeconds") Integer leaseSeconds);
+
+    int transitionWithLease(@Param("tenantId") Long tenantId,
+                            @Param("runId") Long runId,
+                            @Param("executionToken") Long executionToken,
+                            @Param("leaseOwner") String leaseOwner,
+                            @Param("leaseSeconds") Integer leaseSeconds,
+                            @Param("expectedStatus") String expectedStatus,
+                            @Param("expectedCurrentNodeId") String expectedCurrentNodeId,
+                            @Param("expectedProcessInstanceId") String expectedProcessInstanceId,
+                            @Param("nextStatus") String nextStatus,
+                            @Param("currentNodeId") String currentNodeId,
+                            @Param("processInstanceId") String processInstanceId,
+                            @Param("nextRetryTime") LocalDateTime nextRetryTime,
+                            @Param("errorCode") String errorCode,
+                            @Param("errorSummary") String errorSummary);
+
     int retryFailed(@Param("tenantId") Long tenantId,
                     @Param("runId") Long runId,
                     @Param("maxRetryCount") Integer maxRetryCount,

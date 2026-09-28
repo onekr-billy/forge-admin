@@ -5,6 +5,7 @@ import com.mdframe.forge.plugin.ai.provider.support.AiSecretCrypto;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.embedding.EmbeddingModel;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -108,6 +109,11 @@ class AiProviderAdapterRegistryTest {
         public ChatModel createChatModel(AiProvider provider, AiModelRuntimeOptions options) {
             events.add("create");
             return model;
+        }
+
+        @Override
+        public EmbeddingModel createEmbeddingModel(AiProvider provider, String model) {
+            return null;
         }
     }
 }

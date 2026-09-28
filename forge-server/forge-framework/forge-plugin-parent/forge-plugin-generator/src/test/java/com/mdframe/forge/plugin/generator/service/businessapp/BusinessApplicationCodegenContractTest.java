@@ -89,6 +89,8 @@ class BusinessApplicationCodegenContractTest {
         String strategy = readSource("codegen/VelocityCodegenStrategy.java");
         String pageTemplate = readResource("templates/vm/ai-crud/index.vue.vm");
         String runtimeView = readRepositoryFile("forge-admin-ui/src/views/ai/crud-page.vue");
+        String runtimeComposable = readRepositoryFile(
+                "forge-admin-ui/src/views/ai/composables/useCrudPageView.part1.js");
         String runtimeComponent = readRepositoryFile(
                 "forge-admin-ui/src/components/lowcode-runtime/LowcodeRuntimePage.vue");
 
@@ -109,8 +111,8 @@ class BusinessApplicationCodegenContractTest {
         assertTrue(strategy.contains("LowcodeStaticCodegenContributor"));
         assertTrue(strategy.contains("contributeStaticCodegenFiles"));
         assertTrue(runtimeView.contains("runtimeConfig:"));
-        assertTrue(runtimeView.contains("embeddedRuntime"));
-        assertTrue(runtimeView.contains("props.runtimeConfig"));
+        assertTrue(runtimeComposable.contains("embeddedRuntime"));
+        assertTrue(runtimeComposable.contains("props.runtimeConfig"));
         assertTrue(runtimeComponent.contains("@/views/ai/crud-page.vue"));
     }
 

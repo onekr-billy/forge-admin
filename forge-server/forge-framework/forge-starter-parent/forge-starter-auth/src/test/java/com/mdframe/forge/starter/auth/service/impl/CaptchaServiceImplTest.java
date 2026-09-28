@@ -6,6 +6,7 @@ import com.mdframe.forge.starter.auth.domain.EmailCaptchaResult;
 import com.mdframe.forge.starter.auth.domain.SmsCaptchaResult;
 import com.mdframe.forge.starter.auth.domain.SliderCaptchaResult;
 import com.mdframe.forge.starter.auth.email.EmailCaptchaSender;
+import com.mdframe.forge.starter.auth.service.support.CaptchaAttemptGuard;
 import com.mdframe.forge.starter.auth.sms.SmsCaptchaSender;
 import com.mdframe.forge.starter.cache.service.ICacheService;
 import org.junit.jupiter.api.Test;
@@ -16,13 +17,17 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.time.Duration;
+import java.util.Collection;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -139,7 +144,7 @@ class CaptchaServiceImplTest {
         assertThat(result.getCode()).isNull();
         verify(cacheService).set(eq(SMS_CACHE_KEY), codeCaptor.capture(), eq(DURATION));
         verify(sender).sendVerificationCode(PHONE, String.valueOf(codeCaptor.getValue()), DURATION);
-        verify(cacheService).set(eq(SMS_INTERVAL_KEY), anyString(), eq(Duration.ofSeconds(60)));
+        verify(cacheService).setIfAbsent(eq(SMS_INTERVAL_KEY), anyString(), eq(60L), eq(TimeUnit.SECONDS));
     }
 
     @Test
@@ -153,20 +158,123 @@ class CaptchaServiceImplTest {
         assertThat(result.getStatus()).isEqualTo("success");
         assertThat(result.getCode()).matches("\\d{6}");
         verifyNoInteractions(sender);
-        verify(cacheService).set(eq(SMS_INTERVAL_KEY), anyString(), eq(Duration.ofSeconds(60)));
+        verify(cacheService).setIfAbsent(eq(SMS_INTERVAL_KEY), anyString(), eq(60L), eq(TimeUnit.SECONDS));
     }
 
     @Test
-    void shouldDeleteSmsCaptchaOnlyAfterSuccessfulValidation() {
+    void shouldAllowOnlyOneSenderToAcquireSmsInterval() {
+        ICacheService cacheService = mock(ICacheService.class);
+        SmsCaptchaSender sender = mock(SmsCaptchaSender.class);
+        when(sender.sendVerificationCode(eq(PHONE), anyString(), eq(DURATION))).thenReturn(true);
+        CaptchaServiceImpl service = service(cacheService, false, "prod", Optional.of(sender));
+        when(cacheService.setIfAbsent(eq(SMS_INTERVAL_KEY), anyString(), eq(60L), eq(TimeUnit.SECONDS)))
+                .thenReturn(true, false);
+
+        assertThat(service.sendSmsCaptcha(PHONE, DURATION).getStatus()).isEqualTo("success");
+        assertThat(service.sendSmsCaptcha(PHONE, DURATION).getStatus()).isEqualTo("fail");
+        verify(sender).sendVerificationCode(eq(PHONE), anyString(), eq(DURATION));
+    }
+
+    @Test
+    void shouldFailClosedWhenSmsDailyTargetQuotaIsExceeded() {
+        ICacheService cacheService = mock(ICacheService.class);
+        SmsCaptchaSender sender = mock(SmsCaptchaSender.class);
+        CaptchaServiceImpl service = service(cacheService, false, "prod", Optional.of(sender));
+        when(cacheService.incrementWithExpiry(startsWith("captcha:rate:sms:target:"), eq(1L),
+                anyLong(), eq(TimeUnit.SECONDS))).thenReturn(11L);
+
+        SmsCaptchaResult result = service.sendSmsCaptcha(PHONE, DURATION);
+
+        assertThat(result.getStatus()).isEqualTo("fail");
+        verifyNoInteractions(sender);
+        verify(cacheService, never()).set(eq(SMS_CACHE_KEY), any(), any(Duration.class));
+    }
+
+    @Test
+    void shouldLockSmsTargetAfterFailureThresholdAndBlockFurtherSending() {
+        ICacheService cacheService = mock(ICacheService.class);
+        SmsCaptchaSender sender = mock(SmsCaptchaSender.class);
+        CaptchaServiceImpl service = service(cacheService, false, "prod", Optional.of(sender));
+        when(cacheService.hasKey(startsWith("captcha:verify:lock:sms:")))
+                .thenReturn(false, false, true);
+        when(cacheService.get(SMS_CACHE_KEY)).thenReturn("123456", "234567");
+        when(cacheService.incrementWithExpiry(startsWith("captcha:verify:failure:sms:"),
+                eq(1L), eq(600L), eq(TimeUnit.SECONDS))).thenReturn(4L, 5L);
+
+        assertThat(service.validateAndDeleteSmsCaptcha(PHONE, "000000")).isFalse();
+        assertThat(service.validateAndDeleteSmsCaptcha(PHONE, "000000")).isFalse();
+        assertThat(service.sendSmsCaptcha(PHONE, DURATION).getStatus()).isEqualTo("fail");
+
+        verify(cacheService).setIfAbsent(startsWith("captcha:verify:lock:sms:"),
+                eq(Boolean.TRUE), eq(600L), eq(TimeUnit.SECONDS));
+        verify(cacheService, never()).set(eq(SMS_CACHE_KEY), any(), any(Duration.class));
+        verifyNoInteractions(sender);
+    }
+
+    @Test
+    void shouldClearSmsFailureStateAfterSuccessfulValidation() {
         ICacheService cacheService = mock(ICacheService.class);
         when(cacheService.get(SMS_CACHE_KEY)).thenReturn("123456");
         CaptchaServiceImpl service = service(cacheService, false, "prod", Optional.empty());
 
+        assertThat(service.validateAndDeleteSmsCaptcha(PHONE, "123456")).isTrue();
+
+        verify(cacheService).delete(org.mockito.ArgumentMatchers.<Collection<String>>argThat(keys ->
+                keys.stream().anyMatch(key -> key.startsWith("captcha:verify:failure:sms:"))
+                        && keys.stream().anyMatch(key -> key.startsWith("captcha:verify:lock:sms:"))));
+        verify(cacheService).delete(SMS_CACHE_KEY);
+    }
+
+    @Test
+    void shouldFailClosedWithoutCallingSmsProviderWhenRedisIsUnavailable() {
+        ICacheService cacheService = mock(ICacheService.class);
+        SmsCaptchaSender sender = mock(SmsCaptchaSender.class);
+        CaptchaServiceImpl service = service(cacheService, false, "prod", Optional.of(sender));
+        when(cacheService.setIfAbsent(eq(SMS_INTERVAL_KEY), anyString(), eq(60L), eq(TimeUnit.SECONDS)))
+                .thenThrow(new IllegalStateException("redis unavailable"));
+
+        SmsCaptchaResult result = service.sendSmsCaptcha(PHONE, DURATION);
+
+        assertThat(result.getStatus()).isEqualTo("fail");
+        verifyNoInteractions(sender);
+        verify(cacheService, never()).set(eq(SMS_CACHE_KEY), any(), any(Duration.class));
+    }
+
+    @Test
+    void shouldFailClosedWithoutReadingCodeWhenLockLookupFails() {
+        ICacheService cacheService = mock(ICacheService.class);
+        CaptchaServiceImpl service = service(cacheService, false, "prod", Optional.empty());
+        when(cacheService.hasKey(startsWith("captcha:verify:lock:sms:")))
+                .thenThrow(new IllegalStateException("redis unavailable"));
+
+        assertThat(service.validateAndDeleteSmsCaptcha(PHONE, "123456")).isFalse();
+
+        verify(cacheService, never()).get(SMS_CACHE_KEY);
+    }
+
+    @Test
+    void shouldConsumeSmsCaptchaOnFirstValidationAttempt() {
+        ICacheService cacheService = mock(ICacheService.class);
+        when(cacheService.get(SMS_CACHE_KEY)).thenReturn("123456");
+        CaptchaServiceImpl service = service(cacheService, false, "prod", Optional.empty());
+        when(cacheService.setIfAbsent(anyString(), any(), anyLong(), any(TimeUnit.class)))
+                .thenReturn(true, false);
+
         assertThat(service.validateAndDeleteSmsCaptcha(PHONE, "654321")).isFalse();
-        verify(cacheService, never()).delete(SMS_CACHE_KEY);
+        assertThat(service.validateAndDeleteSmsCaptcha(PHONE, "123456")).isFalse();
+        verify(cacheService).delete(SMS_CACHE_KEY);
+    }
+
+    @Test
+    void shouldAllowOnlyOneSuccessfulSmsCaptchaConsumer() {
+        ICacheService cacheService = mock(ICacheService.class);
+        when(cacheService.get(SMS_CACHE_KEY)).thenReturn("123456");
+        CaptchaServiceImpl service = service(cacheService, false, "prod", Optional.empty());
+        when(cacheService.setIfAbsent(anyString(), any(), anyLong(), any(TimeUnit.class)))
+                .thenReturn(true, false);
 
         assertThat(service.validateAndDeleteSmsCaptcha(PHONE, "123456")).isTrue();
-        verify(cacheService).delete(SMS_CACHE_KEY);
+        assertThat(service.validateAndDeleteSmsCaptcha(PHONE, "123456")).isFalse();
     }
 
     @Test
@@ -251,7 +359,7 @@ class CaptchaServiceImplTest {
         properties.setChallengeSecret("too-short");
         MockEnvironment environment = new MockEnvironment().withProperty("spring.profiles.active", "dev");
         CaptchaServiceImpl captchaService = new CaptchaServiceImpl(cacheService, properties, environment,
-                Optional.empty(), Optional.empty());
+                Optional.empty(), Optional.empty(), new CaptchaAttemptGuard(cacheService, properties));
 
         assertThatThrownBy(() -> captchaService.generateSliderCaptcha(DURATION))
                 .isInstanceOf(RuntimeException.class)
@@ -283,7 +391,28 @@ class CaptchaServiceImplTest {
         assertThat(result.getStatus()).isEqualTo("success");
         assertThat(result.getCode()).isNull();
         verify(cacheService).set(eq(EMAIL_CACHE_KEY), anyString(), eq(DURATION));
-        verify(cacheService).set(eq(EMAIL_INTERVAL_KEY), anyString(), eq(Duration.ofSeconds(60)));
+        verify(cacheService).setIfAbsent(eq(EMAIL_INTERVAL_KEY), anyString(), eq(60L), eq(TimeUnit.SECONDS));
+    }
+
+    @Test
+    void shouldLockEmailTargetAfterFailureThresholdAndBlockFurtherSending() {
+        ICacheService cacheService = mock(ICacheService.class);
+        EmailCaptchaSender sender = mock(EmailCaptchaSender.class);
+        CaptchaServiceImpl service = serviceWithEmail(cacheService, false, "prod", Optional.of(sender));
+        when(cacheService.hasKey(startsWith("captcha:verify:lock:email:")))
+                .thenReturn(false, false, true);
+        when(cacheService.get(EMAIL_CACHE_KEY)).thenReturn("123456", "234567");
+        when(cacheService.incrementWithExpiry(startsWith("captcha:verify:failure:email:"),
+                eq(1L), eq(600L), eq(TimeUnit.SECONDS))).thenReturn(4L, 5L);
+
+        assertThat(service.validateAndDeleteEmailCaptcha(EMAIL, "000000")).isFalse();
+        assertThat(service.validateAndDeleteEmailCaptcha(EMAIL, "000000")).isFalse();
+        assertThat(service.sendEmailCaptcha(EMAIL, DURATION).getStatus()).isEqualTo("fail");
+
+        verify(cacheService).setIfAbsent(startsWith("captcha:verify:lock:email:"),
+                eq(Boolean.TRUE), eq(600L), eq(TimeUnit.SECONDS));
+        verify(cacheService, never()).set(eq(EMAIL_CACHE_KEY), any(), any(Duration.class));
+        verifyNoInteractions(sender);
     }
 
     private CaptchaServiceImpl service(ICacheService cacheService, boolean echoEnabled,
@@ -305,7 +434,9 @@ class CaptchaServiceImplTest {
         if (profile != null) {
             environment.setActiveProfiles(profile);
         }
-        return new CaptchaServiceImpl(cacheService, properties, environment, sender, emailSender);
+        when(cacheService.setIfAbsent(anyString(), any(), anyLong(), any(TimeUnit.class))).thenReturn(true);
+        return new CaptchaServiceImpl(cacheService, properties, environment, sender, emailSender,
+                new CaptchaAttemptGuard(cacheService, properties));
     }
 
     private MockHttpServletRequest request(String remoteAddress, String userAgent, String sessionId) {

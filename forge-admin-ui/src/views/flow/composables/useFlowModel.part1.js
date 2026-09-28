@@ -1,25 +1,18 @@
 /** model.vue setup part 1. */
 import { CopyOutline, CreateOutline, PauseCircleOutline, PlayCircleOutline, TimeOutline, TrashOutline } from '@vicons/ionicons5'
-import { NIcon, NModal, NTreeSelect } from 'naive-ui'
-import { computed, defineAsyncComponent, h, onMounted, reactive, ref } from 'vue'
+import { NIcon, NModal } from 'naive-ui'
+import { computed, defineAsyncComponent, h, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { businessFlowFormAssets, businessFlowModelBindings } from '@/api/business-app'
 import flowApi from '@/api/flow'
-import AiForm from '@/components/ai-form/AiForm.vue'
-import UserSelectPicker from '@/components/common/UserSelectPicker.vue'
-import FlowModelStats from '@/components/flow/FlowModelStats.vue'
 import { useDict } from '@/composables/useDict'
 import { collectInitiatorSelectSelections } from '@/utils/initiatorSelect'
 import DesignerAsyncLoader from '@/views/app-center/components/designer/DesignerAsyncLoader.vue'
 import { buildFlowCategoryTreeOptions, resolveFlowCategoryLabel, resolveFlowCategoryValue } from '../utils/categoryOptions'
+
 export function applyFlowModelPart1() {
   const __impl = {}
   const mut = {}
-  const handleActivate = (...args) => __impl.handleActivate(...args)
-  const handleDelete = (...args) => __impl.handleDelete(...args)
-  const handleSuspend = (...args) => __impl.handleSuspend(...args)
-  const handleVersionHistory = (...args) => __impl.handleVersionHistory(...args)
-
   const router = useRouter()
   const DEFAULT_TODO_DETAIL_URL_TEMPLATE = '/#/pages/todo-detail?taskId={taskId}'
   const { dict, getLabel } = useDict('flow_model_status', 'flow_process_form_type', 'flow_designer_type')
@@ -196,7 +189,15 @@ export function applyFlowModelPart1() {
   }
 
   function handleActionSelect(key, row) {
-    const map = { edit: handleEdit, startTest: handleStartTest, copy: handleCopy, versionHistory: handleVersionHistory, suspend: handleSuspend, activate: handleActivate, delete: handleDelete }
+    const map = {
+      edit: handleEdit,
+      startTest: handleStartTest,
+      copy: handleCopy,
+      versionHistory: __impl.handleVersionHistory,
+      suspend: __impl.handleSuspend,
+      activate: __impl.handleActivate,
+      delete: __impl.handleDelete,
+    }
     map[key]?.(row)
   }
 
@@ -1170,13 +1171,13 @@ export function applyFlowModelPart1() {
   return {
     __impl, mut, applyModelStatistics, applyStartTestBusinessFormLayout, buildModelFormBinding, cancelModelOrder, collectStartTestFormData, designerTypeClass,
     designerTypeLabel, enrichModelBusinessBindings, extractBusinessBindingRows, fetchCategories, fetchData, fetchModelPage, fetchModelStatistics, flattenStartTestBusinessComponents,
-    formatBusinessBindings, formatDate, generateModelKey, getActionOptions, getCategoryDisplayName, handleActionSelect, handleActivate, handleAdd,
-    handleCopy, handleDelete, handleDeploy, handleDesign, handleDesignModalClose, handleDragStart, handleDrop, handleEdit,
+    formatBusinessBindings, formatDate, generateModelKey, getActionOptions, getCategoryDisplayName, handleActionSelect, handleAdd,
+    handleCopy, handleDeploy, handleDesign, handleDesignModalClose, handleDragStart, handleDrop, handleEdit,
     handleFilter, handlePageSizeChange, handleReset, handleSearch, handleStartTest, handleStatusSelect, handleSubmit, handleSubmitStartTest,
-    handleSuspend, handleVersionHistory, handleViewInstances, handleViewStarted, hasStartTestAssetSchema, isBusinessStartTestForm, isCodeAppBinding, isModelActionBusy,
+    handleViewInstances, handleViewStarted, hasStartTestAssetSchema, isBusinessStartTestForm, isCodeAppBinding, isModelActionBusy,
     isModelActionLocked, loadStartTestBusinessForm, lockModelAction, mergeModelBusinessBindings, modelActionKey, normalizeBusinessFormReference, normalizeDesignerType, normalizeStartTestAssetSchema,
     normalizeStartTestBusinessAssets, normalizeStartTestBusinessFields, normalizeStartTestFieldType, parseBusinessFormReference, parseFormSchema, resetStartTestBusinessFormLayout, resolveApplicationIdFromFormKey, resolveStartTestBusinessFields,
-    saveModelOrder, statusClass, textValue, toCount, toNumberOptions, unlockModelAction, router, DEFAULT_TODO_DETAIL_URL_TEMPLATE,
+    saveModelOrder, statusClass, textValue, toCount, toNumberOptions, unlockModelAction, router, getLabel, DEFAULT_TODO_DETAIL_URL_TEMPLATE,
     FlowDesignAsyncLoader, FlowFormRendererAsyncLoader, FlowModalAsyncLoader, FlowDesignPage, FlowFormCreateRenderer, VersionHistory, statusOptions, categoryTreeOptions,
     designerTypePresentation, designerTypeOptions, modelActionLocks, queryParams, activeStatsStatus, dataSource, loading, sortMode,
     sortSaving, draggingModelId, pagination, showVersionHistory, currentModelId, currentModelVersion, showDesignModal, currentDesignModelId,
@@ -1184,6 +1185,5 @@ export function applyFlowModelPart1() {
     startTestBusinessFormAssets, startTestBusinessFormLayout, startTestApproverNodes, startTestApproverSelections, startTestApproverLabels, startTestPreflightDiagnostics, currentStartModel, startTestTitle,
     startTestAlert, totalCount, designingCount, deployedCount, suspendedCount, disabledCount, showModal, modalTitle,
     isEdit, submitLoading, formRef, formData, rules,
-    dict, getLabel,
   }
 }

@@ -11,6 +11,7 @@ import { WinKeyboard } from '@/enums/editPageEnum'
 import { RequestHttpIntervalEnum, RequestParamsObjType } from '@/enums/httpEnum'
 import { CreateComponentType, CreateComponentGroupType, ChartFrameEnum } from '@/packages/index.d'
 import { excludeParseEventKeyList, excludeParseEventValueList } from '@/enums/eventEnum'
+import { assertRestrictedDataSelector, evaluateRestrictedDataSelector } from './safeExpression'
 
 /**
  * * 判断是否是开发环境
@@ -205,13 +206,8 @@ export const canvasCut = (html: HTMLElement | null, callback?: Function) => {
  * @param successCallBack 成功回调函数
  * @returns
  */
-const FILTER_SCRIPT_BLOCKED = /\b(document|window|globalThis|self|top|parent|frames|eval|Function|fetch|XMLHttpRequest|WebSocket|localStorage|sessionStorage|indexedDB|cookie|importScripts|Worker)\b/
-
 export const assertSafeFilterScript = (funcStr?: string) => {
-  if (!funcStr) return
-  if (FILTER_SCRIPT_BLOCKED.test(funcStr)) {
-    throw new Error('过滤器不允许访问浏览器全局对象或发起网络请求')
-  }
+  assertRestrictedDataSelector(funcStr)
 }
 
 export const newFunctionHandle = (
@@ -224,9 +220,7 @@ export const newFunctionHandle = (
 ) => {
   try {
     if (!funcStr) return data
-    assertSafeFilterScript(funcStr)
-    const fn = new Function('data', 'res', funcStr)
-    const fnRes = fn(cloneDeep(data), cloneDeep(res))
+    const fnRes = evaluateRestrictedDataSelector(funcStr, cloneDeep(data), cloneDeep(res))
     const resHandle = isToString ? toString(fnRes) : fnRes
     // 成功回调
     successCallBack && successCallBack(resHandle)

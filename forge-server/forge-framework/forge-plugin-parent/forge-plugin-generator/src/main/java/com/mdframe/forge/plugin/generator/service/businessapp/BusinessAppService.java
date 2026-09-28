@@ -79,6 +79,7 @@ public class BusinessAppService extends ServiceImpl<BusinessAppMapper, AiBusines
     }
 
     public BusinessAppOpenInfoVO openInfo(Long id) {
+        requireTenantId();
         return openService.openInfo(id);
     }
 
@@ -87,6 +88,7 @@ public class BusinessAppService extends ServiceImpl<BusinessAppMapper, AiBusines
         if (dto == null) {
             throw new BusinessException("访问入口不能为空");
         }
+        requireTenantId();
         AiBusinessApp app = new AiBusinessApp();
         copyDtoToEntity(dto, app, true);
         save(app);
@@ -153,14 +155,16 @@ public class BusinessAppService extends ServiceImpl<BusinessAppMapper, AiBusines
     }
 
     public List<AiBusinessApp> listByApplicationId(Long applicationId) {
+        Long tenantId = requireTenantId();
         applicationService.requireEntity(applicationId);
-        return baseMapper.selectByApplicationId(resolveTenantId(), applicationId);
+        return baseMapper.selectByApplicationId(tenantId, applicationId);
     }
 
     @Transactional(rollbackFor = Exception.class)
     public List<Long> publishEntries(Long applicationId, List<Long> selectedEntryIds) {
+        Long tenantId = requireTenantId();
         applicationService.requireEntity(applicationId);
-        List<AiBusinessApp> entries = baseMapper.selectByApplicationId(resolveTenantId(), applicationId);
+        List<AiBusinessApp> entries = baseMapper.selectByApplicationId(tenantId, applicationId);
         Set<Long> entryIds = entries.stream().map(AiBusinessApp::getId).collect(java.util.stream.Collectors.toSet());
         Set<Long> selected = resolveSelectedEntryIds(entryIds, selectedEntryIds);
         if (!entryIds.containsAll(selected)) {
@@ -202,9 +206,10 @@ public class BusinessAppService extends ServiceImpl<BusinessAppMapper, AiBusines
 
     @Transactional(rollbackFor = Exception.class)
     public void restoreSnapshotEntries(Long applicationId, List<Map<String, Object>> snapshots) {
+        Long tenantId = requireTenantId();
         applicationService.requireEntity(applicationId);
         Map<Long, AiBusinessApp> current = new LinkedHashMap<>();
-        for (AiBusinessApp entry : baseMapper.selectByApplicationId(resolveTenantId(), applicationId)) {
+        for (AiBusinessApp entry : baseMapper.selectByApplicationId(tenantId, applicationId)) {
             current.put(entry.getId(), entry);
         }
         for (Map<String, Object> snapshot : snapshots == null ? List.<Map<String, Object>>of() : snapshots) {
@@ -764,12 +769,19 @@ public class BusinessAppService extends ServiceImpl<BusinessAppMapper, AiBusines
     }
 
     private Long resolveTenantId() {
+        return requireTenantId();
+    }
+
+    private Long requireTenantId() {
         Long tenantId;
         try {
             tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
             tenantId = null;
         }
-        return tenantId != null ? tenantId : 1L;
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("访问入口操作缺少可信租户上下文");
+        }
+        return tenantId;
     }
 }

@@ -37,6 +37,16 @@ public class ExternalApiLogServiceImpl extends ServiceImpl<ExternalApiLogMapper,
     }
 
     @Override
+    public ExternalApiLog getScopedById(Long id) {
+        return logMapper.selectLogById(id, SessionHelper.getTenantId());
+    }
+
+    @Override
+    public boolean removeScopedById(Long id) {
+        return logMapper.deleteLogById(id, SessionHelper.getTenantId()) == 1;
+    }
+
+    @Override
     public int clearLogs(ExternalApiLogQuery query) {
         query.setTenantId(SessionHelper.getTenantId());
         return logMapper.clearLogs(query);

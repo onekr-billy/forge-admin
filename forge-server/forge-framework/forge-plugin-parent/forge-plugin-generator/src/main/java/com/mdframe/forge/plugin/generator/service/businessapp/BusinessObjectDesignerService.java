@@ -89,7 +89,8 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
     private final PlatformTransactionManager transactionManager;
     /** 同对象 designPreview/发布准备串行化，避免并发写 ai_business_object_relation 锁等待。 */
     private final ConcurrentHashMap<Long, DraftPreparationLock> prepareRuntimeDraftLocks = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<Long, CachedPreviewDraft> previewDraftCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<PreviewDraftCacheKey, CachedPreviewDraft> previewDraftCache =
+            new ConcurrentHashMap<>();
     private static final long PREVIEW_DRAFT_CACHE_TTL_MS = 8_000L;
 
     public BusinessObjectDesignerVO getDesigner(Long objectId) {
@@ -174,7 +175,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
             if (dto.getRelations() != null) {
                 saveSourceRelations(object, sourceRelationDTOs(object, dto.getRelations()));
                 context.setRelations(relationMapper.selectRelationsByObject(
-                        resolveTenantId(), object.getSuiteCode(), object.getObjectCode()));
+                        requireContextTenant(context), object.getSuiteCode(), object.getObjectCode()));
                 applyRelationsToModel(context);
             }
             boolean childRelationsCreated = ensureChildTableRelations(context, dto.getFormDesignerSchema());
@@ -186,7 +187,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
                     childRelationsCreated);
             if (childRelationsCreated) {
                 context.setRelations(relationMapper.selectRelationsByObject(
-                        resolveTenantId(), object.getSuiteCode(), object.getObjectCode()));
+                        requireContextTenant(context), object.getSuiteCode(), object.getObjectCode()));
                 applyRelationsToModel(context);
             }
             if (context.getPageSchema() != null && context.getPageSchema().getModelRefs() != null) {
@@ -203,14 +204,16 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
 
     @Override
     public DesignerContext loadContext(Long objectId) {
-        AiBusinessObject object = objectService.requireEntity(objectId);
-        BusinessObjectVO objectVO = objectService.detail(objectId);
+        Long tenantId = requireTenantId();
+        AiBusinessObject object = objectService.requireEntity(tenantId, objectId);
+        assertObjectTenant(tenantId, object);
+        BusinessObjectVO objectVO = objectService.detail(tenantId, objectId);
         AiCrudConfig config = resolveConfig(object);
         AiLowcodeModel model = resolveModel(object, config);
         LowcodeModelSchema modelSchema = resolveModelSchema(object, model, config);
         LowcodePageSchema pageSchema = resolvePageSchema(config, modelSchema);
         List<BusinessObjectRelationVO> relations = relationMapper.selectRelationsByObject(
-                resolveTenantId(), object.getSuiteCode(), object.getObjectCode());
+                tenantId, object.getSuiteCode(), object.getObjectCode());
 
         DesignerContext context = new DesignerContext();
         context.setObject(object);
@@ -261,6 +264,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         if (context == null || context.getObject() == null) {
             throw new BusinessException("业务对象设计上下文不能为空");
         }
+        Long tenantId = requireContextTenant(context);
         AiBusinessObject object = context.getObject();
         LowcodeModelSchema modelSchema = enrichModelSchema(object, context.getModelSchema());
         LowcodePageSchema pageSchema = ensurePageSchema(context.getPageSchema(), modelSchema);
@@ -286,7 +290,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
                 businessObjectMapper.updateById(object);
             }
             if (markApplicationChanged) {
-                applicationChangeTracker.markObjectChanged(object.getId());
+                applicationChangeTracker.markObjectChanged(tenantId, object.getId());
             }
             context.setModelSchema(modelSchema);
             context.setPageSchema(pageSchema);
@@ -309,7 +313,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         businessObjectMapper.updateById(object);
         businessAppService.syncRuntimeAppsForObject(object.getSuiteCode(), object.getObjectCode(), config.getConfigKey());
         if (markApplicationChanged) {
-            applicationChangeTracker.markObjectChanged(object.getId());
+            applicationChangeTracker.markObjectChanged(tenantId, object.getId());
         }
 
         context.setModel(model);
@@ -359,13 +363,14 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         if (objectId == null) {
             throw new BusinessException("业务对象ID不能为空");
         }
+        PreviewDraftCacheKey cacheKey = new PreviewDraftCacheKey(requireTenantId(), objectId);
         long now = System.currentTimeMillis();
-        CachedPreviewDraft hit = previewDraftCache.get(objectId);
+        CachedPreviewDraft hit = previewDraftCache.get(cacheKey);
         if (hit != null && hit.expiresAtMs > now) {
             return hit.config;
         }
         AiCrudConfig prepared = prepareRuntimeDraft(objectId, false);
-        previewDraftCache.put(objectId, new CachedPreviewDraft(prepared, now + PREVIEW_DRAFT_CACHE_TTL_MS));
+        previewDraftCache.put(cacheKey, new CachedPreviewDraft(prepared, now + PREVIEW_DRAFT_CACHE_TTL_MS));
         return prepared;
     }
 
@@ -453,8 +458,11 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
 
     private void invalidatePreviewDraftCache(Long objectId) {
         if (objectId != null) {
-            previewDraftCache.remove(objectId);
+            previewDraftCache.keySet().removeIf(key -> objectId.equals(key.objectId()));
         }
+    }
+
+    private record PreviewDraftCacheKey(Long tenantId, Long objectId) {
     }
 
     private record CachedPreviewDraft(AiCrudConfig config, long expiresAtMs) {
@@ -480,7 +488,8 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         boolean changed = ensureChildTableRelations(context, formSchema);
         if (changed) {
             context.setRelations(relationMapper.selectRelationsByObject(
-                    resolveTenantId(), context.getObject().getSuiteCode(), context.getObject().getObjectCode()));
+                    requireContextTenant(context), context.getObject().getSuiteCode(),
+                    context.getObject().getObjectCode()));
             applyRelationsToModel(context);
         }
         return changed;
@@ -537,8 +546,9 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
     @Transactional(rollbackFor = Exception.class)
     public void rollbackDesignVersion(Long objectId, Long versionId) {
         DesignerContext context = loadContext(objectId);
+        Long tenantId = requireContextTenant(context);
         AiBusinessObjectDesignVersion version = designVersionMapper.selectVersionById(
-                resolveTenantId(), objectId, versionId);
+                tenantId, objectId, versionId);
         if (version == null) {
             throw new BusinessException("设计版本不存在");
         }
@@ -604,7 +614,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
                 datasourceService,
                 runtimeDataSourceResolver,
                 fieldSchemaService,
-                this::resolveTenantId
+                this::requireTenantId
         );
     }
     private void applyObjectFields(AiBusinessObject object, BusinessObjectDesignerDTO dto) {
@@ -668,7 +678,7 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
                 objectMapper,
                 businessObjectMapper,
                 relationMapper,
-                this::resolveTenantId,
+                this::requireTenantId,
                 this::loadContext,
                 this::saveDraft
         );
@@ -885,14 +895,32 @@ public class BusinessObjectDesignerService implements BusinessObjectDesignContex
         return null;
     }
 
-    private Long resolveTenantId() {
+    private Long requireTenantId() {
         Long tenantId;
         try {
             tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
             tenantId = null;
         }
-        return tenantId != null ? tenantId : 1L;
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("业务对象设计操作缺少可信租户上下文");
+        }
+        return tenantId;
+    }
+
+    private Long requireContextTenant(DesignerContext context) {
+        if (context == null || context.getObject() == null) {
+            throw new BusinessException("业务对象设计上下文不能为空");
+        }
+        Long tenantId = requireTenantId();
+        assertObjectTenant(tenantId, context.getObject());
+        return tenantId;
+    }
+
+    private void assertObjectTenant(Long tenantId, AiBusinessObject object) {
+        if (object == null || object.getTenantId() == null || !tenantId.equals(object.getTenantId())) {
+            throw new BusinessException("业务对象设计上下文租户不匹配");
+        }
     }
 
     @Data

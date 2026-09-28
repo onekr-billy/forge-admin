@@ -1,9 +1,12 @@
 package com.mdframe.forge.plugin.generator.service.businessapp.extension;
 
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.session.SessionHelper;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 
 import java.util.List;
 import java.util.Map;
@@ -12,17 +15,27 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mockStatic;
 
 @DisplayName("ServerBindingExecutor")
 class ServerBindingExecutorTest {
 
     private ServerBindingExecutor executor;
+    private MockedStatic<SessionHelper> session;
+
+    @BeforeEach
+    void establishTrustedIdentity() {
+        session = mockStatic(SessionHelper.class);
+        session.when(SessionHelper::getTenantId).thenReturn(1L);
+        session.when(SessionHelper::getUserId).thenReturn(7L);
+    }
 
     @AfterEach
     void closeExecutor() {
         if (executor != null) {
             executor.close();
         }
+        session.close();
     }
 
     @Test
@@ -70,6 +83,45 @@ class ServerBindingExecutorTest {
         assertTrue(!error.getMessage().contains("secret-customer-payload"));
     }
 
+    @Test
+    @DisplayName("missing trusted tenant fails before resolving the handler")
+    void missingTenantFailsClosed() {
+        session.when(SessionHelper::getTenantId).thenReturn(null);
+        executor = executor(handler("safe_handler", 200, false));
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> executor.execute(context("safe_handler", "BEFORE_SUBMIT", Map.of("customerId", 12L))));
+
+        assertEquals("服务端扩展缺少可信租户上下文", error.getMessage());
+    }
+
+    @Test
+    @DisplayName("missing trusted actor no longer falls back to user one")
+    void missingActorFailsClosed() {
+        session.when(SessionHelper::getUserId).thenReturn(null);
+        executor = executor(handler("safe_handler", 200, false));
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> executor.execute(context("safe_handler", "BEFORE_SUBMIT", Map.of("customerId", 12L))));
+
+        assertEquals("服务端扩展缺少可信执行用户", error.getMessage());
+    }
+
+    @Test
+    @DisplayName("explicit context cannot impersonate another tenant or actor")
+    void mismatchedIdentityFailsClosed() {
+        executor = executor(handler("safe_handler", 200, false));
+        ExtensionExecutionContext crossTenant = context(
+                "safe_handler", "BEFORE_SUBMIT", Map.of("customerId", 12L));
+        crossTenant.setTenantId(2L);
+        ExtensionExecutionContext otherActor = context(
+                "safe_handler", "BEFORE_SUBMIT", Map.of("customerId", 12L));
+        otherActor.setActorUserId(8L);
+
+        assertThrows(BusinessException.class, () -> executor.execute(crossTenant));
+        assertThrows(BusinessException.class, () -> executor.execute(otherActor));
+    }
+
     private ServerBindingExecutor executor(LowcodeExtensionHandler handler) {
         return new ServerBindingExecutor(new LowcodeExtensionRegistry(List.of(handler)));
     }
@@ -77,6 +129,7 @@ class ServerBindingExecutorTest {
     private ExtensionExecutionContext context(String handlerCode, String hookCode, Map<String, Object> input) {
         ExtensionExecutionContext context = new ExtensionExecutionContext();
         context.setTenantId(1L);
+        context.setActorUserId(7L);
         context.setApplicationId(10L);
         context.setExtensionId(20L);
         context.setHandlerCode(handlerCode);

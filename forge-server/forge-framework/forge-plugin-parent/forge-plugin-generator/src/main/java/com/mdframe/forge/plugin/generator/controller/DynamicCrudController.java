@@ -10,8 +10,7 @@ import com.mdframe.forge.plugin.generator.dto.DynamicCrudQuery;
 import com.mdframe.forge.plugin.generator.dto.audit.DataAuditRemoveDTO;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudExcelService;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
-import com.mdframe.forge.plugin.generator.manager.DynamicCrudCreateManager;
-import com.mdframe.forge.plugin.generator.service.businessapp.BusinessEventPublisher;
+import com.mdframe.forge.plugin.generator.manager.DynamicCrudMutationManager;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.domain.PageQuery;
@@ -39,8 +38,7 @@ public class DynamicCrudController {
 
     private final DynamicCrudService dynamicCrudService;
     private final DynamicCrudExcelService dynamicCrudExcelService;
-    private final BusinessEventPublisher businessEventPublisher;
-    private final DynamicCrudCreateManager createManager;
+    private final DynamicCrudMutationManager mutationManager;
 
     @ApiEncrypt
     @GetMapping("/page")
@@ -80,7 +78,7 @@ public class DynamicCrudController {
     @PostMapping
     public RespInfo<Map<String, Object>> create(@PathVariable String configKey,
                                                 @RequestBody Map<String, Object> data) {
-        return RespInfo.success(createManager.create(configKey, data));
+        return RespInfo.success(mutationManager.create(configKey, data));
     }
 
     @ApiEncrypt
@@ -88,19 +86,7 @@ public class DynamicCrudController {
     @PutMapping
     public RespInfo<Void> update(@PathVariable String configKey,
                                   @RequestBody Map<String, Object> data) {
-        // 获取更新前的数据用于变更检测
-        Map<String, Object> previousData = null;
-        Object recordId = dynamicCrudService.resolveRecordId(configKey, data);
-        if (recordId != null) {
-            try {
-                previousData = dynamicCrudService.selectById(configKey, recordId);
-            } catch (Exception e) {
-                log.debug("获取更新前数据失败: {}", e.getMessage());
-            }
-        }
-        dynamicCrudService.updateById(configKey, data);
-        // 发布记录更新事件
-        businessEventPublisher.publishRecordUpdated(configKey, data, previousData);
+        mutationManager.update(configKey, data);
         return RespInfo.success();
     }
 
@@ -108,9 +94,7 @@ public class DynamicCrudController {
     @DeleteMapping("/{id}")
     public RespInfo<Void> delete(@PathVariable String configKey,
                                   @PathVariable String id) {
-        dynamicCrudService.deleteById(configKey, id);
-        // 发布记录删除事件
-        businessEventPublisher.publishRecordDeleted(configKey, String.valueOf(id));
+        mutationManager.delete(configKey, id);
         return RespInfo.success();
     }
 
@@ -119,13 +103,7 @@ public class DynamicCrudController {
     @PostMapping("/remove")
     public RespInfo<Integer> remove(@PathVariable String configKey,
                                     @RequestBody DataAuditRemoveDTO dto) {
-        int affected = dynamicCrudService.removeWithAudit(configKey, dto);
-        if (dto != null && dto.getIds() != null) {
-            for (String id : dto.getIds()) {
-                businessEventPublisher.publishRecordDeleted(configKey, id);
-            }
-        }
-        return RespInfo.success(affected);
+        return RespInfo.success(mutationManager.remove(configKey, dto));
     }
 
     @ApiEncrypt
@@ -136,11 +114,7 @@ public class DynamicCrudController {
         if (ids == null || ids.isEmpty()) {
             return RespInfo.error("请选择要删除的数据");
         }
-        int affected = dynamicCrudService.batchDeleteByIds(configKey, ids);
-        for (String id : ids) {
-            businessEventPublisher.publishRecordDeleted(configKey, id);
-        }
-        return RespInfo.success(affected);
+        return RespInfo.success(mutationManager.batchDelete(configKey, ids));
     }
 
     @PostMapping("/import")

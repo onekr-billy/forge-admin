@@ -13,7 +13,9 @@ import java.util.List;
 @Mapper
 public interface FlowEntryFieldMappingMapper extends BaseMapper<FlowEntryFieldMapping> {
 
-    List<FlowEntryFieldMapping> selectByEntryId(@Param("entryId") Long entryId);
+    List<FlowEntryFieldMapping> selectByEntryId(@Param("tenantId") Long tenantId,
+                                                @Param("entryId") Long entryId);
 
-    int deleteByEntryId(@Param("entryId") Long entryId);
+    int deleteByEntryId(@Param("tenantId") Long tenantId,
+                        @Param("entryId") Long entryId);
 }

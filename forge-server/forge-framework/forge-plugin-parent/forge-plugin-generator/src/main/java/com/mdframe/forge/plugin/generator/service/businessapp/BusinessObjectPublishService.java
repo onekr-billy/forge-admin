@@ -109,7 +109,8 @@ public class BusinessObjectPublishService {
         if (ids.isEmpty()) {
             return;
         }
-        businessObjectMapper.markDesignPublished(resolveTenantId(null), ids,
+        IdentitySnapshot identity = requireIdentity(null);
+        businessObjectMapper.markDesignPublished(identity.tenantId(), ids,
                 BusinessObjectDesignStatus.PUBLISHED.getCode());
     }
 
@@ -172,9 +173,11 @@ public class BusinessObjectPublishService {
                         BusinessObjectPublishDTO dto,
                         BusinessPermissionSummaryVO permissionSummary,
                         BusinessObjectDesignerService.DesignerContext preloadedContext) {
+        IdentitySnapshot identity = requireIdentity(preloadedContext);
         BusinessObjectDesignerService.DesignerContext context = preloadedContext != null
                 ? preloadedContext
                 : designerService.loadContext(objectId);
+        assertContextTenant(identity.tenantId(), context);
         if (dto != null && dto.getModelSchema() != null) {
             context.setModelSchema(dto.getModelSchema());
         }
@@ -852,16 +855,35 @@ public class BusinessObjectPublishService {
                 toFormulaObjectRelations(context.getRelations())));
     }
 
-    private Long resolveTenantId(BusinessObjectDesignerService.DesignerContext context) {
-        if (context != null && context.getObject() != null && context.getObject().getTenantId() != null) {
-            return context.getObject().getTenantId();
-        }
+    private IdentitySnapshot requireIdentity(BusinessObjectDesignerService.DesignerContext context) {
         Long tenantId;
+        Long userId;
         try {
             tenantId = SessionHelper.getTenantId();
+            userId = SessionHelper.getUserId();
         } catch (Exception e) {
             tenantId = null;
+            userId = null;
         }
-        return tenantId != null ? tenantId : 1L;
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("业务对象发布缺少可信租户上下文");
+        }
+        if (userId == null || userId <= 0) {
+            throw new BusinessException("业务对象发布缺少可信操作者");
+        }
+        if (context != null) {
+            assertContextTenant(tenantId, context);
+        }
+        return new IdentitySnapshot(tenantId, userId);
+    }
+
+    private void assertContextTenant(Long tenantId, BusinessObjectDesignerService.DesignerContext context) {
+        if (context == null || context.getObject() == null || context.getObject().getTenantId() == null
+                || !tenantId.equals(context.getObject().getTenantId())) {
+            throw new BusinessException("业务对象发布上下文租户不匹配");
+        }
+    }
+
+    private record IdentitySnapshot(Long tenantId, Long userId) {
     }
 }

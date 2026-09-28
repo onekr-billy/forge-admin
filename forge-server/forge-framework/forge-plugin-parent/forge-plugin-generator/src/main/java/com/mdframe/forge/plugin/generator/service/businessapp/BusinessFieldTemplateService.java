@@ -25,7 +25,7 @@ public class BusinessFieldTemplateService extends ServiceImpl<BusinessFieldTempl
     private final BusinessFieldSchemaService fieldSchemaService;
 
     public List<AiBusinessFieldTemplate> listTemplates(String suiteCode) {
-        return baseMapper.selectEnabledTemplates(resolveTenantId(), StringUtils.trimToNull(suiteCode));
+        return baseMapper.selectEnabledTemplates(requireTenantId(), StringUtils.trimToNull(suiteCode));
     }
 
     public List<BusinessFieldVO> listTemplateFields(String suiteCode) {
@@ -39,7 +39,7 @@ public class BusinessFieldTemplateService extends ServiceImpl<BusinessFieldTempl
         if (StringUtils.isBlank(code)) {
             throw new BusinessException("字段模板编码不能为空");
         }
-        AiBusinessFieldTemplate template = baseMapper.selectByTemplateCode(resolveTenantId(), code);
+        AiBusinessFieldTemplate template = baseMapper.selectByTemplateCode(requireTenantId(), code);
         if (template == null) {
             throw new BusinessException("字段模板不存在: " + code);
         }
@@ -64,13 +64,16 @@ public class BusinessFieldTemplateService extends ServiceImpl<BusinessFieldTempl
         return vo;
     }
 
-    private Long resolveTenantId() {
+    private Long requireTenantId() {
         Long tenantId;
         try {
             tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
             tenantId = null;
         }
-        return tenantId != null ? tenantId : 1L;
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("业务字段模板缺少可信租户上下文");
+        }
+        return tenantId;
     }
 }

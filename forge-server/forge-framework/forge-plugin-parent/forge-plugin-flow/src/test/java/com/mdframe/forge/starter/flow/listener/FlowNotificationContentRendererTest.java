@@ -61,8 +61,8 @@ class FlowNotificationContentRendererTest {
     }
 
     @Test
-    void listenerStillHandlesNotificationsAfterCommitOnItsExecutor() throws Exception {
-        var method = FlowTaskNotifyListener.class.getMethod("onNotifyEvent", FlowTaskNotifyEvent.class);
+    void dispatcherHandlesNotificationsAfterCommitWithoutFallbackExecution() throws Exception {
+        var method = FlowNotifyOutboxDispatcher.class.getMethod("onNotifyEvent", FlowTaskNotifyEvent.class);
         Async async = method.getAnnotation(Async.class);
         TransactionalEventListener transactional = method.getAnnotation(TransactionalEventListener.class);
 
@@ -70,6 +70,6 @@ class FlowNotificationContentRendererTest {
         assertEquals("flowEventExecutor", async.value());
         assertNotNull(transactional);
         assertEquals(TransactionPhase.AFTER_COMMIT, transactional.phase());
-        assertTrue(transactional.fallbackExecution());
+        assertFalse(transactional.fallbackExecution());
     }
 }

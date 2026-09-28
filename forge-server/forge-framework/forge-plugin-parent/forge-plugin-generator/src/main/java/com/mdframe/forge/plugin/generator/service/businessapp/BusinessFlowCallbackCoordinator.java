@@ -340,7 +340,7 @@ final class BusinessFlowCallbackCoordinator {
         if (eventType == null) {
             return;
         }
-        applicationEventPublisher.publishEvent(BusinessEvent.builder()
+        BusinessEvent event = BusinessEvent.builder()
                 .eventType(eventType)
                 .suiteCode(config.getSuiteCode())
                 .objectCode(link.getObjectCode())
@@ -351,7 +351,9 @@ final class BusinessFlowCallbackCoordinator {
                 .operatorId(dto.getOperatorId() != null ? dto.getOperatorId() : link.getStartUserId())
                 .operatorName(usernameSupplier.get())
                 .tenantId(link.getTenantId())
-                .build());
+                .build();
+        applicationEventPublisher.publishEvent(BusinessEventEnvelope.stamp(
+                event, BusinessEventEnvelope.SOURCE_FLOW_CALLBACK, flowResultSourceKey(link, result)));
     }
 
     private void publishFlowResultEvent(AiBusinessFlowInstanceLink link,
@@ -364,7 +366,7 @@ final class BusinessFlowCallbackCoordinator {
         if (eventType == null) {
             return;
         }
-        applicationEventPublisher.publishEvent(BusinessEvent.builder()
+        BusinessEvent event = BusinessEvent.builder()
                 .eventType(eventType)
                 .objectCode(link.getObjectCode())
                 .configKey(config.getConfigKey())
@@ -374,7 +376,13 @@ final class BusinessFlowCallbackCoordinator {
                 .operatorId(dto.getOperatorId() != null ? dto.getOperatorId() : link.getStartUserId())
                 .operatorName(usernameSupplier.get())
                 .tenantId(link.getTenantId())
-                .build());
+                .build();
+        applicationEventPublisher.publishEvent(BusinessEventEnvelope.stamp(
+                event, BusinessEventEnvelope.SOURCE_FLOW_CALLBACK, flowResultSourceKey(link, result)));
+    }
+
+    private String flowResultSourceKey(AiBusinessFlowInstanceLink link, String result) {
+        return link.getTenantId() + ":" + link.getProcessInstanceId() + ":" + result;
     }
 
     private String resolveBusinessEventType(String result) {

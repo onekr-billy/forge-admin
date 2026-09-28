@@ -50,6 +50,13 @@
         ORDER BY create_time DESC
     </select>
 
+    <select id="selectLogById" resultMap="BaseResultMap">
+        SELECT *
+        FROM sys_external_api_log
+        WHERE id = #{id}
+          AND tenant_id = #{tenantId}
+    </select>
+
     <select id="selectLogSummary" resultType="com.mdframe.forge.plugin.external.vo.ExternalApiLogSummary">
         SELECT
             COUNT(1) AS totalCount,
@@ -66,5 +73,11 @@
     <delete id="clearLogs">
         DELETE FROM sys_external_api_log
         <include refid="LogWhere"/>
+    </delete>
+
+    <delete id="deleteLogById">
+        DELETE FROM sys_external_api_log
+        WHERE id = #{id}
+          AND tenant_id = #{tenantId}
     </delete>
 </mapper>

@@ -21,6 +21,11 @@
         <result column="duration" property="duration"/>
         <result column="create_time" property="createTime"/>
         <result column="update_time" property="updateTime"/>
+        <result column="projection_event_id" property="projectionEventId"/>
+        <result column="projection_sequence" property="projectionSequence"/>
+        <result column="action_idempotency_key" property="actionIdempotencyKey"/>
+        <result column="action_request_digest" property="actionRequestDigest"/>
+        <result column="action_type" property="actionType"/>
     </resultMap>
 
     <sql id="Base_Columns">
@@ -41,7 +46,12 @@
         end_time,
         duration,
         create_time,
-        update_time
+        update_time,
+        projection_event_id,
+        projection_sequence,
+        action_idempotency_key,
+        action_request_digest,
+        action_type
     </sql>
 
     <select id="selectByProcessInstanceId" resultMap="BaseResultMap">
@@ -265,12 +275,44 @@
           AND process_def_key = #{processDefinitionKey}
     </select>
 
+    <select id="countByProcessDefKeyAndTenantId" resultType="long">
+        SELECT COUNT(1)
+        FROM sys_flow_business
+        WHERE tenant_id = #{tenantId}
+          AND process_def_key = #{processDefKey}
+    </select>
+
     <update id="updateStatusByProcessInstanceId">
         UPDATE sys_flow_business
         SET status = #{status},
             update_time = NOW()
         WHERE process_instance_id = #{processInstanceId}
           AND tenant_id = #{tenantId}
+    </update>
+
+    <update id="markWithdrawn">
+        UPDATE sys_flow_business
+        SET status = #{status},
+            end_time = #{endTime},
+            action_idempotency_key = #{idempotencyKey},
+            action_request_digest = #{requestDigest},
+            action_type = #{actionType},
+            update_time = NOW()
+        WHERE tenant_id = #{tenantId}
+          AND process_instance_id = #{processInstanceId}
+    </update>
+
+    <update id="applyProjection">
+        UPDATE sys_flow_business
+        SET status = #{status},
+            end_time = #{endTime},
+            duration = #{duration},
+            projection_event_id = #{eventId},
+            projection_sequence = #{eventSequence},
+            update_time = NOW()
+        WHERE tenant_id = #{tenantId}
+          AND process_instance_id = #{processInstanceId}
+          AND COALESCE(projection_sequence, 0) &lt; #{eventSequence}
     </update>
 
     <delete id="deleteByProcessInstanceIdPhysically">

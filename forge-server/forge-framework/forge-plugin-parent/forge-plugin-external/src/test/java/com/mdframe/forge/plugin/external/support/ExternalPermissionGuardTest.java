@@ -30,6 +30,7 @@ class ExternalPermissionGuardTest {
         assertThrows(BusinessException.class, () -> guard.check(api));
 
         api.setRequiredPermission("external:member:query");
+        assertThrows(BusinessException.class, () -> guard.check(api));
         try (ExecutionIdentityContextHolder.Scope ignored = ExecutionIdentityContextHolder.open(identity(Set.of()))) {
             assertThrows(BusinessException.class, () -> guard.check(api));
         }
@@ -37,6 +38,15 @@ class ExternalPermissionGuardTest {
                 identity(Set.of("external:member:query")))) {
             assertDoesNotThrow(() -> guard.check(api));
         }
+    }
+
+    @Test
+    void shouldFailClosedWhenPermissionCheckIsDisabledOrMissing() {
+        ExternalApi api = new ExternalApi();
+        assertThrows(BusinessException.class, () -> guard.check(api));
+
+        api.setPermissionCheckEnabled(false);
+        assertThrows(BusinessException.class, () -> guard.check(api));
     }
 
     private ExecutionIdentity identity(Set<String> permissions) {

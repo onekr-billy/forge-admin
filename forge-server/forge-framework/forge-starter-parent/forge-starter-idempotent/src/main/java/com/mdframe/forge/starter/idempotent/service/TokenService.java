@@ -6,7 +6,7 @@ public interface TokenService {
     
     boolean validateToken(String token, String prefix);
     
-    void consumeToken(String token, String prefix);
+    boolean consumeToken(String token, String prefix);
     
     boolean isTokenConsumed(String token, String prefix);
 }

@@ -137,5 +137,11 @@ management:
         readiness:
           include: readinessState
 forge:
+  auth:
+    # 用户主动改密后是否保留发起改密的当前会话；找回密码和管理员重置始终全部吊销。
+    keep-current-session-after-password-change: ${FORGE_AUTH_KEEP_CURRENT_SESSION_AFTER_PASSWORD_CHANGE:false}
   captcha:
     challenge-secret: ${FORGE_CAPTCHA_CHALLENGE_SECRET:}
+    verification-max-failures: ${FORGE_CAPTCHA_VERIFICATION_MAX_FAILURES:5}
+    verification-failure-window: ${FORGE_CAPTCHA_VERIFICATION_FAILURE_WINDOW:10m}
+    verification-lock-duration: ${FORGE_CAPTCHA_VERIFICATION_LOCK_DURATION:10m}

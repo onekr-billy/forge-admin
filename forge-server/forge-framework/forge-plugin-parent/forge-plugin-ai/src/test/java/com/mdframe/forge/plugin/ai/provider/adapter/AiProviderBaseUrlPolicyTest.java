@@ -67,6 +67,8 @@ class AiProviderBaseUrlPolicyTest {
                 AiProviderBaseUrlPolicy.normalizeAndValidate("openai_compatible", "deepseek", null));
         assertEquals("http://localhost:11434/v1",
                 AiProviderBaseUrlPolicy.normalizeAndValidate("openai_compatible", "ollama", null));
+        assertEquals("https://api.openai.com/v1",
+                AiProviderBaseUrlPolicy.normalizeAndValidate("openai_compatible", " OPENAI ", null));
         // DashScope 原生协议优先使用官方根地址，不受供应商类型影响
         assertEquals("https://dashscope.aliyuncs.com",
                 AiProviderBaseUrlPolicy.normalizeAndValidate("dashscope_native", "alibaba", null));
@@ -82,6 +84,10 @@ class AiProviderBaseUrlPolicyTest {
         // 未知供应商类型不补默认，保持原行为
         assertThrows(BusinessException.class,
                 () -> AiProviderBaseUrlPolicy.normalizeAndValidate("openai_compatible", "unknown", null));
+        assertThrows(BusinessException.class,
+                () -> AiProviderBaseUrlPolicy.normalizeAndValidate("openai_compatible", null, null));
+        assertThrows(BusinessException.class,
+                () -> AiProviderBaseUrlPolicy.normalizeAndValidate("openai_compatible", " ", null));
     }
 
     private String normalize(String baseUrl) {

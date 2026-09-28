@@ -11,6 +11,10 @@ public interface FlowTaskCandidateMapper extends BaseMapper<FlowTaskCandidate> {
 
     int insertIgnore(FlowTaskCandidate candidate);
 
+    int upsertProjection(@Param("candidate") FlowTaskCandidate candidate,
+                         @Param("eventId") String eventId,
+                         @Param("eventSequence") Long eventSequence);
+
     int activate(@Param("tenantId") Long tenantId,
                  @Param("taskId") String taskId,
                  @Param("candidateType") String candidateType,

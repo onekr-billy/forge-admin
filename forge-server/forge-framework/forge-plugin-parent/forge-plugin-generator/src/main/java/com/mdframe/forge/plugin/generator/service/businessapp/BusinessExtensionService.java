@@ -43,22 +43,22 @@ public class BusinessExtensionService extends ServiceImpl<BusinessExtensionMappe
 
     public Page<BusinessExtensionVO> page(Integer pageNum, Integer pageSize, BusinessExtensionQueryDTO query) {
         Page<BusinessExtensionVO> page = new Page<>(normalizePageNum(pageNum), normalizePageSize(pageSize));
-        return baseMapper.selectExtensionPage(page, resolveTenantId(), normalizeQuery(query));
+        return baseMapper.selectExtensionPage(page, requireTenantId(), normalizeQuery(query));
     }
 
     public List<BusinessExtensionVO> list(BusinessExtensionQueryDTO query) {
-        return baseMapper.selectExtensionList(resolveTenantId(), normalizeQuery(query));
+        return baseMapper.selectExtensionList(requireTenantId(), normalizeQuery(query));
     }
 
     public List<BusinessExtensionVO> listWorkspaceSummaries(Long applicationId) {
         if (applicationId == null) {
             throw new BusinessException("所属业务应用不能为空");
         }
-        return baseMapper.selectWorkspaceSummaries(resolveTenantId(), applicationId);
+        return baseMapper.selectWorkspaceSummaries(requireTenantId(), applicationId);
     }
 
     public BusinessExtensionVO detail(Long id) {
-        BusinessExtensionVO extension = baseMapper.selectExtensionDetail(resolveTenantId(), id);
+        BusinessExtensionVO extension = baseMapper.selectExtensionDetail(requireTenantId(), id);
         if (extension == null) {
             throw new BusinessException("业务扩展不存在");
         }
@@ -70,8 +70,9 @@ public class BusinessExtensionService extends ServiceImpl<BusinessExtensionMappe
         if (dto == null) {
             throw new BusinessException("业务扩展不能为空");
         }
+        IdentitySnapshot identity = requireIdentity();
         AiBusinessExtension extension = new AiBusinessExtension();
-        copyMetadata(dto, extension, true);
+        copyMetadata(identity.tenantId(), dto, extension, true);
         extension.setStatus(BusinessExtensionStatus.DRAFT.getCode());
         extension.setDraftVersion(1);
         extension.setEnabledVersion(null);
@@ -80,7 +81,7 @@ public class BusinessExtensionService extends ServiceImpl<BusinessExtensionMappe
         AiBusinessExtensionVersion version = buildVersion(extension, 1, dto.getContent(),
                 dto.getProcessedContent(), dto.getConfigJson(), dto.getChangeSummary());
         versionMapper.insert(version);
-        applicationChangeTracker.markApplicationChanged(extension.getApplicationId());
+        applicationChangeTracker.markApplicationChanged(identity.tenantId(), extension.getApplicationId());
         return extension.getId();
     }
 
@@ -89,36 +90,42 @@ public class BusinessExtensionService extends ServiceImpl<BusinessExtensionMappe
         if (dto == null || dto.getId() == null) {
             throw new BusinessException("业务扩展ID不能为空");
         }
-        AiBusinessExtension extension = requireEntity(dto.getId());
-        copyMetadata(dto, extension, false);
+        IdentitySnapshot identity = requireIdentity();
+        AiBusinessExtension extension = requireEntity(identity.tenantId(), dto.getId());
+        copyMetadata(identity.tenantId(), dto, extension, false);
         extension.setStatus(BusinessExtensionStatus.DRAFT.getCode());
         updateById(extension);
-        applicationChangeTracker.markApplicationChanged(extension.getApplicationId());
+        applicationChangeTracker.markApplicationChanged(identity.tenantId(), extension.getApplicationId());
     }
 
     @Transactional(rollbackFor = Exception.class)
     public void delete(Long id) {
-        AiBusinessExtension extension = requireEntity(id);
+        IdentitySnapshot identity = requireIdentity();
+        AiBusinessExtension extension = requireEntity(identity.tenantId(), id);
         if (BusinessExtensionStatus.ENABLED.matches(extension.getStatus())) {
             throw new BusinessException("已启用扩展不能删除，请先停用");
         }
         removeById(extension.getId());
-        applicationChangeTracker.markApplicationChanged(extension.getApplicationId());
+        applicationChangeTracker.markApplicationChanged(identity.tenantId(), extension.getApplicationId());
     }
 
     public AiBusinessExtension requireEntity(Long id) {
+        return requireEntity(requireTenantId(), id);
+    }
+
+    private AiBusinessExtension requireEntity(Long tenantId, Long id) {
         if (id == null) {
             throw new BusinessException("业务扩展ID不能为空");
         }
-        AiBusinessExtension extension = baseMapper.selectEntityById(resolveTenantId(), id);
+        AiBusinessExtension extension = baseMapper.selectEntityById(tenantId, id);
         if (extension == null) {
             throw new BusinessException("业务扩展不存在");
         }
         return extension;
     }
 
-    private void copyMetadata(BusinessExtensionDTO dto, AiBusinessExtension extension, boolean create) {
-        Long tenantId = resolveTenantId();
+    private void copyMetadata(Long tenantId, BusinessExtensionDTO dto,
+                              AiBusinessExtension extension, boolean create) {
         if (dto.getApplicationId() == null) {
             throw new BusinessException("所属业务应用不能为空");
         }
@@ -261,12 +268,33 @@ public class BusinessExtensionService extends ServiceImpl<BusinessExtensionMappe
         return Math.min(pageSize, 200);
     }
 
-    private Long resolveTenantId() {
+    private Long requireTenantId() {
+        Long tenantId;
         try {
-            Long tenantId = SessionHelper.getTenantId();
-            return tenantId == null ? 1L : tenantId;
+            tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
-            return 1L;
+            tenantId = null;
         }
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("业务扩展操作缺少可信租户上下文");
+        }
+        return tenantId;
+    }
+
+    private IdentitySnapshot requireIdentity() {
+        Long tenantId = requireTenantId();
+        Long userId;
+        try {
+            userId = SessionHelper.getUserId();
+        } catch (Exception e) {
+            userId = null;
+        }
+        if (userId == null || userId <= 0) {
+            throw new BusinessException("业务扩展操作缺少可信操作者");
+        }
+        return new IdentitySnapshot(tenantId, userId);
+    }
+
+    private record IdentitySnapshot(Long tenantId, Long userId) {
     }
 }

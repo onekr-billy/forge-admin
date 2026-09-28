@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.mdframe.forge.plugin.generator.mapper.BusinessEventOutboxMapper">
+
+    <resultMap id="BaseResultMap" type="com.mdframe.forge.plugin.generator.domain.entity.AiBusinessEventOutbox">
+        <id column="id" property="id"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="event_id" property="eventId"/>
+        <result column="event_source" property="eventSource"/>
+        <result column="event_version" property="eventVersion"/>
+        <result column="source_digest" property="sourceDigest"/>
+        <result column="event_digest" property="eventDigest"/>
+        <result column="event_type" property="eventType"/>
+        <result column="suite_code" property="suiteCode"/>
+        <result column="object_code" property="objectCode"/>
+        <result column="config_key" property="configKey"/>
+        <result column="record_id" property="recordId"/>
+        <result column="aggregate_key" property="aggregateKey"/>
+        <result column="aggregate_sequence" property="aggregateSequence"/>
+        <result column="event_payload" property="eventPayload"/>
+        <result column="delivery_status" property="deliveryStatus"/>
+        <result column="retry_count" property="retryCount"/>
+        <result column="next_retry_time" property="nextRetryTime"/>
+        <result column="lock_owner" property="lockOwner"/>
+        <result column="lock_time" property="lockTime"/>
+        <result column="error_type" property="errorType"/>
+        <result column="delivered_time" property="deliveredTime"/>
+        <result column="create_by" property="createBy"/>
+        <result column="create_time" property="createTime"/>
+        <result column="create_dept" property="createDept"/>
+        <result column="update_by" property="updateBy"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <sql id="Base_Columns">
+        id, tenant_id, event_id, event_source, event_version, source_digest, event_digest,
+        event_type, suite_code, object_code, config_key, record_id, aggregate_key,
+        aggregate_sequence, event_payload, delivery_status, retry_count, next_retry_time,
+        lock_owner, lock_time, error_type, delivered_time, create_by, create_time,
+        create_dept, update_by, update_time
+    </sql>
+
+    <select id="selectByEventId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Columns"/>
+        FROM ai_business_event_outbox
+        WHERE tenant_id = #{tenantId}
+          AND event_id = #{eventId}
+        LIMIT 1
+    </select>
+
+    <insert id="advanceAggregateSequence">
+        INSERT INTO ai_business_event_sequence (
+            aggregate_key, tenant_id, object_code, record_id, last_sequence,
+            create_time, update_time
+        ) VALUES (
+            #{aggregateKey}, #{tenantId}, #{objectCode}, #{recordId}, 1,
+            #{now}, #{now}
+        )
+        ON DUPLICATE KEY UPDATE
+            last_sequence = last_sequence + 1,
+            update_time = VALUES(update_time)
+    </insert>
+
+    <select id="selectAggregateSequence" resultType="java.lang.Long">
+        SELECT last_sequence
+        FROM ai_business_event_sequence
+        WHERE tenant_id = #{tenantId}
+          AND aggregate_key = #{aggregateKey}
+        FOR UPDATE
+    </select>
+
+    <select id="selectDeliveryCandidates" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Columns"/>
+        FROM ai_business_event_outbox current_event
+        WHERE (
+            (current_event.retry_count &lt; #{maxRetryCount} AND (
+                current_event.delivery_status = 'PENDING'
+                OR (current_event.delivery_status = 'FAILED' AND current_event.next_retry_time &lt;= #{now})
+            ))
+            OR (current_event.delivery_status = 'PROCESSING'
+                AND (current_event.lock_time IS NULL OR current_event.lock_time &lt;= #{staleBefore}))
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM ai_business_event_outbox earlier_event
+            WHERE earlier_event.tenant_id = current_event.tenant_id
+              AND earlier_event.aggregate_key = current_event.aggregate_key
+              AND earlier_event.aggregate_sequence &lt; current_event.aggregate_sequence
+              AND earlier_event.delivery_status != 'DELIVERED'
+          )
+        ORDER BY current_event.create_time ASC, current_event.id ASC
+        LIMIT #{batchSize}
+    </select>
+
+    <update id="claimDelivery">
+        UPDATE ai_business_event_outbox current_event
+        LEFT JOIN ai_business_event_outbox earlier_event
+          ON earlier_event.tenant_id = current_event.tenant_id
+         AND earlier_event.aggregate_key = current_event.aggregate_key
+         AND earlier_event.aggregate_sequence &lt; current_event.aggregate_sequence
+         AND earlier_event.delivery_status != 'DELIVERED'
+        SET current_event.delivery_status = 'PROCESSING',
+            current_event.retry_count = current_event.retry_count + 1,
+            current_event.next_retry_time = NULL,
+            current_event.lock_owner = #{lockOwner},
+            current_event.lock_time = #{now},
+            current_event.error_type = NULL,
+            current_event.update_time = #{now}
+        WHERE current_event.tenant_id = #{tenantId}
+          AND current_event.id = #{id}
+          AND earlier_event.id IS NULL
+          AND current_event.retry_count &lt; #{maxRetryCount}
+          AND (
+            (current_event.retry_count &lt; #{maxRetryCount} AND (
+                current_event.delivery_status = 'PENDING'
+                OR (current_event.delivery_status = 'FAILED' AND current_event.next_retry_time &lt;= #{now})
+            ))
+            OR (current_event.delivery_status = 'PROCESSING'
+                AND (current_event.lock_time IS NULL OR current_event.lock_time &lt;= #{staleBefore}))
+          )
+    </update>
+
+    <update id="expireExhaustedLease">
+        UPDATE ai_business_event_outbox
+        SET delivery_status = 'DEAD',
+            next_retry_time = NULL,
+            lock_owner = NULL,
+            lock_time = NULL,
+            error_type = 'LeaseExpiredAfterRetryLimit',
+            update_time = #{now}
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND delivery_status = 'PROCESSING'
+          AND retry_count &gt;= #{maxRetryCount}
+          AND (lock_time IS NULL OR lock_time &lt;= #{staleBefore})
+    </update>
+
+    <select id="selectByOutboxId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Columns"/>
+        FROM ai_business_event_outbox
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+        LIMIT 1
+    </select>
+
+    <update id="markDelivered">
+        UPDATE ai_business_event_outbox
+        SET delivery_status = 'DELIVERED',
+            next_retry_time = NULL,
+            lock_owner = NULL,
+            lock_time = NULL,
+            error_type = NULL,
+            delivered_time = #{now},
+            update_time = #{now}
+        WHERE tenant_id = #{outbox.tenantId}
+          AND id = #{outbox.id}
+          AND delivery_status = 'PROCESSING'
+          AND lock_owner = #{outbox.lockOwner}
+    </update>
+
+    <update id="markFailed">
+        UPDATE ai_business_event_outbox
+        SET delivery_status = #{status},
+            next_retry_time = #{nextRetryTime},
+            lock_owner = NULL,
+            lock_time = NULL,
+            error_type = #{errorType},
+            update_time = #{now}
+        WHERE tenant_id = #{outbox.tenantId}
+          AND id = #{outbox.id}
+          AND delivery_status = 'PROCESSING'
+          AND lock_owner = #{outbox.lockOwner}
+    </update>
+
+</mapper>

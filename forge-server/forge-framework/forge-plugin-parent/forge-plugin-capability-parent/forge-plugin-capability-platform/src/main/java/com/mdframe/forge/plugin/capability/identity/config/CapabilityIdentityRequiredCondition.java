@@ -20,8 +20,7 @@ public final class CapabilityIdentityRequiredCondition extends AnyNestedConditio
     @ConditionalOnProperty(
             prefix = "forge.capability.identity",
             name = "enabled",
-            havingValue = "true",
-            matchIfMissing = true)
+            havingValue = "true")
     static class IdentityEnabled {
     }
 

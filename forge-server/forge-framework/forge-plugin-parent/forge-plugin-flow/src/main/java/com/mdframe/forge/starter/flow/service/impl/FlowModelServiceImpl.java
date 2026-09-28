@@ -1,12 +1,10 @@
 package com.mdframe.forge.starter.flow.service.impl;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
-import com.mdframe.forge.starter.flow.entity.FlowBusiness;
 import com.mdframe.forge.starter.flow.entity.FlowModel;
 import com.mdframe.forge.starter.flow.dto.FlowStartConfig;
 import com.mdframe.forge.starter.flow.dto.FlowModelSortDTO;
@@ -14,6 +12,7 @@ import com.mdframe.forge.starter.flow.dto.FlowModelSortItemDTO;
 import com.mdframe.forge.starter.flow.vo.FlowModelStatisticsVO;
 import com.mdframe.forge.starter.flow.vo.FlowModelVersionSummaryVO;
 import com.mdframe.forge.starter.flow.enums.FlowModelStatus;
+import com.mdframe.forge.starter.flow.helper.BpmnXmlUtils;
 import com.mdframe.forge.starter.flow.mapper.FlowBusinessMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowModelMapper;
 import com.mdframe.forge.starter.flow.service.FlowModelService;
@@ -323,10 +322,10 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
         
         // 检查 BPMN XML 是否包含图形信息
         String bpmnXml = model.getBpmnXml();
-        if (!bpmnXml.contains("BPMNDiagram") && !bpmnXml.contains("bpmndi:BPMNDiagram")) {
-            log.error("BPMN XML 缺少图形信息，无法部署。XML 长度: {}, 内容预览: {}",
-                    bpmnXml.length(),
-                    bpmnXml.length() > 500 ? bpmnXml.substring(0, 500) + "..." : bpmnXml);
+        BpmnXmlUtils.BpmnAnalysis bpmnAnalysis = BpmnXmlUtils.analyze(bpmnXml);
+        if (!bpmnAnalysis.hasDiagram()) {
+            log.error("BPMN XML 缺少图形信息，无法部署。length={}, sha256={}",
+                    bpmnXml.length(), sha256(bpmnXml));
             throw new RuntimeException("流程图数据不完整，缺少图形坐标信息。请在流程设计器中重新设计流程图并保存后再部署。");
         }
         
@@ -431,12 +430,9 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
         }
         
         try {
-            // 打印 BPMN XML 内容用于调试（只打印前500字符）
-            if (bpmnXml != null && bpmnXml.length() > 0) {
-                String preview = bpmnXml.length() > 500 ? bpmnXml.substring(0, 500) + "..." : bpmnXml;
-                log.info("BPMN XML 内容预览: {}", preview);
-                log.info("BPMN XML 是否包含 BPMNDiagram: {}", bpmnXml.contains("BPMNDiagram"));
-                log.info("BPMN XML 是否包含 bpmndi:BPMNDiagram: {}", bpmnXml.contains("bpmndi:BPMNDiagram"));
+            if (bpmnXml != null && !bpmnXml.isEmpty()) {
+                log.debug("准备生成 BPMN 流程图: length={}, sha256={}",
+                        bpmnXml.length(), sha256(bpmnXml));
             }
             
             // 解析 BPMN XML（第三个参数 true 表示解析图形信息）
@@ -612,6 +608,10 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
         if (model.getBpmnXml() == null || model.getBpmnXml().isBlank()) {
             return config;
         }
+        // Stored legacy XML is still untrusted input. Run the hardened DOM boundary
+        // before handing bytes to Flowable's converter so start-config reads cannot
+        // bypass the DOCTYPE/entity and single-process checks used by deployment.
+        extractProcessKey(model.getBpmnXml());
         BpmnModel bpmnModel = new org.flowable.bpmn.converter.BpmnXMLConverter()
                 .convertToBpmnModel(new BytesStreamSource(
                         model.getBpmnXml().getBytes(java.nio.charset.StandardCharsets.UTF_8)), false, true);
@@ -639,12 +639,16 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
                 Objects.toString(model.getVersion(), ""),
                 Objects.toString(model.getUpdateTime(), ""),
                 Objects.toString(model.getBpmnXml(), ""));
+        return sha256(source);
+    }
+
+    private String sha256(String source) {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
                     .digest(source.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(digest);
         } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("当前 JDK 不支持 SHA-256，无法构建流程模型指纹", exception);
+            throw new IllegalStateException("当前 JDK 不支持 SHA-256", exception);
         }
     }
 
@@ -806,14 +810,11 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
         
         // 从XML中提取流程Key
         bpmnXml = normalizeBpmnXml(bpmnXml, "导入流程模型");
-        String modelKey = extractProcessKey(bpmnXml);
-        if (modelKey == null) {
-            modelKey = "imported_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
-        }
+        String modelKey = validateModelKey(extractProcessKey(bpmnXml));
         
         // 检查Key是否重复
         if (checkModelKeyExists(modelKey, null)) {
-            modelKey = modelKey + "_" + System.currentTimeMillis();
+            modelKey = generateModelKey();
         }
         
         FlowModel model = new FlowModel();
@@ -951,18 +952,24 @@ public class FlowModelServiceImpl extends ServiceImpl<FlowModelMapper, FlowModel
             return;
         }
 
-        long businessCount = flowBusinessMapper.selectCount(new LambdaQueryWrapper<FlowBusiness>()
-                .eq(FlowBusiness::getProcessDefKey, modelKey));
+        Long tenantId = model.getTenantId();
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException(400, "流程模型缺少可信租户信息，禁止删除");
+        }
+
+        long businessCount = flowBusinessMapper.countByProcessDefKeyAndTenantId(modelKey, tenantId);
         long runningCount = 0L;
         if (runtimeService != null) {
             runningCount = runtimeService.createProcessInstanceQuery()
                     .processDefinitionKey(modelKey)
+                    .processInstanceTenantId(String.valueOf(tenantId))
                     .count();
         }
         long historyCount = 0L;
         if (historyService != null) {
             historyCount = historyService.createHistoricProcessInstanceQuery()
                     .processDefinitionKey(modelKey)
+                    .processInstanceTenantId(String.valueOf(tenantId))
                     .count();
         }
 

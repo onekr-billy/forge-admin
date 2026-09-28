@@ -320,7 +320,7 @@ class FlowControllerBoundaryContractTest {
     }
 
     @Test
-    void formInstanceStatusAndCleanupSqlShouldBindTenantInTheirOwnStatements() throws IOException {
+    void formInstanceStatusProjectionAndCleanupSqlShouldBindTenantInTheirOwnStatements() throws IOException {
         String xml = mapperXml("FlowFormInstanceMapper.xml");
 
         assertThat(statement(xml, "update", "updateStatusByProcessInstanceId"))
@@ -331,12 +331,13 @@ class FlowControllerBoundaryContractTest {
         String mapper = Files.readString(Path.of(
                 "../../forge-framework/forge-plugin-parent/forge-plugin-flow/src/main/java/"
                         + "com/mdframe/forge/starter/flow/mapper/FlowFormInstanceMapper.java"));
-        String listener = Files.readString(Path.of(
+        String projectionHandler = Files.readString(Path.of(
                 "../../forge-framework/forge-plugin-parent/forge-plugin-flow/src/main/java/"
-                        + "com/mdframe/forge/starter/flow/listener/FlowTaskEventListener.java"));
+                        + "com/mdframe/forge/starter/flow/service/FlowProjectionHandler.java"));
         assertThat(mapper).contains("@Param(\"tenantId\") Long tenantId");
-        assertThat(listener).contains(
-                "updateStatusByProcessInstanceId(processInstanceId, status, tenantId)");
+        assertThat(projectionHandler)
+                .contains("formInstanceMapper.applyProjectionStatus(",
+                        "processInstanceId, formStatus, tenantId, outbox.getEventId(), outbox.getId())");
     }
 
     @Test
@@ -347,13 +348,17 @@ class FlowControllerBoundaryContractTest {
         String transactionExecutor = Files.readString(Path.of(
                 "../../forge-framework/forge-plugin-parent/forge-plugin-flow/src/main/java/"
                         + "com/mdframe/forge/starter/flow/service/support/FlowCleanupTransactionExecutor.java"));
+        String viewAssembler = Files.readString(Path.of(
+                "../../forge-framework/forge-plugin-parent/forge-plugin-flow/src/main/java/"
+                        + "com/mdframe/forge/starter/flow/service/impl/FlowMonitorViewAssembler.java"));
         String controller = Files.readString(Path.of(
                 "src/main/java/com/mdframe/forge/flow/controller/FlowMonitorController.java"));
 
         assertThat(service)
                 .contains("cleanupTransactionExecutor.execute", "PROCESS_CLEANUP_FAILURE_MESSAGE",
-                        "查询流程监控当前任务失败")
+                        "FlowMonitorViewAssembler.toAdminProcessInstance")
                 .doesNotContain("failure.put(\"message\", e.getMessage())", "catch (Exception ignored)");
+        assertThat(viewAssembler).contains("查询流程监控当前任务失败");
         assertThat(transactionExecutor)
                 .contains("PROPAGATION_REQUIRES_NEW", "transactionTemplate.execute");
         assertThat(controller).doesNotContain("+ e.getMessage()");
@@ -391,9 +396,15 @@ class FlowControllerBoundaryContractTest {
         String service = Files.readString(Path.of(
                 "../../forge-framework/forge-plugin-parent/forge-plugin-flow/src/main/java/"
                         + "com/mdframe/forge/starter/flow/service/impl/FlowMonitorServiceImpl.java"));
+        String viewAssembler = Files.readString(Path.of(
+                "../../forge-framework/forge-plugin-parent/forge-plugin-flow/src/main/java/"
+                        + "com/mdframe/forge/starter/flow/service/impl/FlowMonitorViewAssembler.java"));
 
         assertThat(service)
-                .contains("FlowMonitorUserLookup", "userLookupProvider.getIfAvailable()")
+                .contains("FlowMonitorUserLookup", "FlowMonitorViewAssembler.toAdminProcessInstance")
+                .doesNotContain("com.mdframe.forge.plugin.system", "ISysUserService");
+        assertThat(viewAssembler)
+                .contains("userLookupProvider.getIfAvailable()")
                 .doesNotContain("com.mdframe.forge.plugin.system", "ISysUserService");
     }
 

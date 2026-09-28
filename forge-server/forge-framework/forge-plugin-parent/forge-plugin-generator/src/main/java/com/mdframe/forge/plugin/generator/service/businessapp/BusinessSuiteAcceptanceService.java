@@ -36,7 +36,7 @@ public class BusinessSuiteAcceptanceService {
      * @return 验收状态信息
      */
     public BusinessSuiteAcceptanceVO acceptance(String suiteCode) {
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireTenantId();
 
         // 查询业务套件
         AiBusinessSuite suite = businessSuiteMapper.selectBySuiteCode(tenantId, suiteCode);
@@ -310,13 +310,16 @@ public class BusinessSuiteAcceptanceService {
         };
     }
 
-    private Long resolveTenantId() {
+    private Long requireTenantId() {
         Long tenantId;
         try {
             tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
             tenantId = null;
         }
-        return tenantId != null ? tenantId : 1L;
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("业务套件验收缺少可信租户上下文");
+        }
+        return tenantId;
     }
 }

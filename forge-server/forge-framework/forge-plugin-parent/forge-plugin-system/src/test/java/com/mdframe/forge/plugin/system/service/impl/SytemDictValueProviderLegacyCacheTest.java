@@ -1,10 +1,10 @@
 package com.mdframe.forge.plugin.system.service.impl;
 
-import com.mdframe.forge.plugin.system.mapper.SysFileMetadataMapper;
 import com.mdframe.forge.plugin.system.mapper.SysOrgMapper;
 import com.mdframe.forge.plugin.system.mapper.SysRegionMapper;
 import com.mdframe.forge.plugin.system.mapper.SysUserMapper;
 import com.mdframe.forge.plugin.system.service.ISysDictDataService;
+import com.mdframe.forge.starter.file.core.FileManager;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 class SytemDictValueProviderLegacyCacheTest {
 
@@ -32,7 +33,7 @@ class SytemDictValueProviderLegacyCacheTest {
                 mapper(SysOrgMapper.class),
                 mapper(SysUserMapper.class),
                 mapper(SysRegionMapper.class),
-                mapper(SysFileMetadataMapper.class));
+                mock(FileManager.class));
 
         assertThat(provider.getLabel("sys_normal_disable", "1")).isEqualTo("启用");
         assertThat(provider.getValue("sys_normal_disable", "启用")).isEqualTo("1");

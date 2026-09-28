@@ -6,7 +6,8 @@
         SELECT e.*
         FROM sys_flow_entry e
         <where>
-            e.deleted = 0
+            e.tenant_id = #{tenantId}
+            AND e.deleted = 0
             <if test="query != null and query.entryName != null and query.entryName != ''">
                 AND e.entry_name LIKE CONCAT('%', #{query.entryName}, '%')
             </if>
@@ -29,10 +30,20 @@
         ORDER BY e.sort ASC, e.create_time DESC
     </select>
 
+    <select id="selectByIdAndTenant" resultType="com.mdframe.forge.starter.flow.entity.FlowEntry">
+        SELECT e.*
+        FROM sys_flow_entry e
+        WHERE e.tenant_id = #{tenantId}
+          AND e.id = #{id}
+          AND e.deleted = 0
+        LIMIT 1
+    </select>
+
     <select id="selectByEntryCode" resultType="com.mdframe.forge.starter.flow.entity.FlowEntry">
         SELECT e.*
         FROM sys_flow_entry e
-        WHERE e.deleted = 0
+        WHERE e.tenant_id = #{tenantId}
+          AND e.deleted = 0
           AND e.entry_code = #{entryCode}
         LIMIT 1
     </select>
@@ -40,7 +51,8 @@
     <select id="countByEntryCode" resultType="java.lang.Long">
         SELECT COUNT(1)
         FROM sys_flow_entry e
-        WHERE e.deleted = 0
+        WHERE e.tenant_id = #{tenantId}
+          AND e.deleted = 0
           AND e.entry_code = #{entryCode}
         <if test="excludeId != null">
             AND e.id != #{excludeId}

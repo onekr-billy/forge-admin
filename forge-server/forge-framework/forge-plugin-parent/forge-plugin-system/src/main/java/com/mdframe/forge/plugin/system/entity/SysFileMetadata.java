@@ -123,7 +123,8 @@ public class SysFileMetadata extends TenantEntity {
     private Integer downloadCount;
 
     /**
-     * 状态
+     * 逻辑删除状态：1-正常，0-已删除。
      */
+    @TableLogic(value = "1", delval = "0")
     private Integer status;
 }

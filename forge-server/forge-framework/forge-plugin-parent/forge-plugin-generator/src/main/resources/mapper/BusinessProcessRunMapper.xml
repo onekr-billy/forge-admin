@@ -21,6 +21,10 @@
         <result column="status" property="status"/>
         <result column="current_node_id" property="currentNodeId"/>
         <result column="flow_process_instance_id" property="flowProcessInstanceId"/>
+        <result column="execution_token" property="executionToken"/>
+        <result column="lease_owner" property="leaseOwner"/>
+        <result column="lease_expire_time" property="leaseExpireTime"/>
+        <result column="heartbeat_time" property="heartbeatTime"/>
         <result column="context_snapshot" property="contextSnapshot"/>
         <result column="retry_count" property="retryCount"/>
         <result column="next_retry_time" property="nextRetryTime"/>
@@ -54,6 +58,10 @@
         status,
         current_node_id,
         flow_process_instance_id,
+        execution_token,
+        lease_owner,
+        lease_expire_time,
+        heartbeat_time,
         context_snapshot,
         retry_count,
         next_retry_time,
@@ -213,7 +221,8 @@
         WHERE tenant_id = #{tenantId}
           AND (
             status = 'PENDING'
-            OR (status IN ('RUNNING', 'WAITING') AND update_time &lt;= #{before})
+            OR (status = 'RUNNING' AND (lease_expire_time IS NULL OR lease_expire_time &lt;= #{before}))
+            OR (status = 'WAITING' AND update_time &lt;= #{before})
             OR (status = 'FAILED' AND next_retry_time IS NOT NULL AND next_retry_time &lt;= #{before})
           )
         ORDER BY
@@ -244,6 +253,8 @@
             next_retry_time = #{nextRetryTime},
             error_code = #{errorCode},
             error_summary = #{errorSummary},
+            lease_owner = CASE WHEN #{nextStatus} = 'RUNNING' THEN lease_owner ELSE NULL END,
+            lease_expire_time = CASE WHEN #{nextStatus} = 'RUNNING' THEN lease_expire_time ELSE NULL END,
             start_time = CASE
               WHEN #{nextStatus} = 'RUNNING' AND start_time IS NULL THEN NOW()
               ELSE start_time
@@ -274,6 +285,84 @@
         </choose>
     </update>
 
+    <update id="claimExecution">
+        UPDATE ai_business_process_run
+        SET status = 'RUNNING',
+            execution_token = execution_token + 1,
+            lease_owner = #{leaseOwner},
+            heartbeat_time = NOW(3),
+            lease_expire_time = DATE_ADD(NOW(3), INTERVAL #{leaseSeconds} SECOND),
+            start_time = COALESCE(start_time, NOW()),
+            end_time = NULL,
+            update_time = NOW()
+        WHERE tenant_id = #{tenantId}
+          AND id = #{runId}
+          AND (
+            status = 'PENDING'
+            OR (
+              status = 'RUNNING'
+              AND (lease_expire_time IS NULL OR lease_expire_time &lt;= NOW(3))
+            )
+          )
+    </update>
+
+    <update id="renewLease">
+        UPDATE ai_business_process_run
+        SET heartbeat_time = NOW(3),
+            lease_expire_time = DATE_ADD(NOW(3), INTERVAL #{leaseSeconds} SECOND),
+            update_time = NOW()
+        WHERE tenant_id = #{tenantId}
+          AND id = #{runId}
+          AND status = 'RUNNING'
+          AND execution_token = #{executionToken}
+          AND lease_owner = #{leaseOwner}
+          AND lease_expire_time &gt; NOW(3)
+    </update>
+
+    <update id="transitionWithLease">
+        UPDATE ai_business_process_run
+        SET status = #{nextStatus},
+            current_node_id = #{currentNodeId},
+            flow_process_instance_id = #{processInstanceId},
+            next_retry_time = #{nextRetryTime},
+            error_code = #{errorCode},
+            error_summary = #{errorSummary},
+            heartbeat_time = NOW(3),
+            lease_owner = CASE WHEN #{nextStatus} = 'RUNNING' THEN #{leaseOwner} ELSE NULL END,
+            lease_expire_time = CASE
+              WHEN #{nextStatus} = 'RUNNING' THEN DATE_ADD(NOW(3), INTERVAL #{leaseSeconds} SECOND)
+              ELSE NULL
+            END,
+            start_time = COALESCE(start_time, NOW()),
+            end_time = CASE
+              WHEN #{nextStatus} IN ('SUCCESS', 'FAILED', 'CANCELED') THEN NOW()
+              ELSE NULL
+            END,
+            update_time = NOW()
+        WHERE tenant_id = #{tenantId}
+          AND id = #{runId}
+          AND execution_token = #{executionToken}
+          AND lease_owner = #{leaseOwner}
+          AND lease_expire_time &gt; NOW(3)
+          AND status = #{expectedStatus}
+        <choose>
+          <when test="expectedCurrentNodeId != null and expectedCurrentNodeId != ''">
+            AND current_node_id = #{expectedCurrentNodeId}
+          </when>
+          <otherwise>
+            AND current_node_id IS NULL
+          </otherwise>
+        </choose>
+        <choose>
+          <when test="expectedProcessInstanceId != null and expectedProcessInstanceId != ''">
+            AND flow_process_instance_id = #{expectedProcessInstanceId}
+          </when>
+          <otherwise>
+            AND flow_process_instance_id IS NULL
+          </otherwise>
+        </choose>
+    </update>
+
     <update id="retryFailed">
         UPDATE ai_business_process_run
         SET status = 'PENDING',
@@ -281,6 +370,8 @@
             next_retry_time = NULL,
             error_code = NULL,
             error_summary = NULL,
+            lease_owner = NULL,
+            lease_expire_time = NULL,
             end_time = NULL,
             update_by = #{updateBy},
             update_time = NOW()

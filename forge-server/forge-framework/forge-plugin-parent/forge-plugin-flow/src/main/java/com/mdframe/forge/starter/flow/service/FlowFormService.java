@@ -34,6 +34,11 @@ public interface FlowFormService extends IService<FlowForm> {
     List<FlowForm> getEnabledForms();
 
     /**
+     * 按当前租户获取表单定义详情。
+     */
+    FlowForm getFormById(Long id);
+
+    /**
      * 根据表单Key获取表单定义
      *
      * @param formKey 表单Key

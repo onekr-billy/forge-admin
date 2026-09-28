@@ -6,7 +6,8 @@
         SELECT f.*
         FROM sys_flow_form f
         <where>
-            f.deleted = 0
+            f.tenant_id = #{tenantId}
+            AND f.deleted = 0
             <if test="formName != null and formName != ''">
                 AND f.form_name LIKE CONCAT('%', #{formName}, '%')
             </if>
@@ -20,15 +21,26 @@
     <select id="selectEnabledForms" resultType="com.mdframe.forge.starter.flow.entity.FlowForm">
         SELECT f.*
         FROM sys_flow_form f
-        WHERE f.deleted = 0
+        WHERE f.tenant_id = #{tenantId}
+          AND f.deleted = 0
           AND f.status = 1
         ORDER BY f.form_name ASC
+    </select>
+
+    <select id="selectByIdAndTenant" resultType="com.mdframe.forge.starter.flow.entity.FlowForm">
+        SELECT f.*
+        FROM sys_flow_form f
+        WHERE f.tenant_id = #{tenantId}
+          AND f.deleted = 0
+          AND f.id = #{id}
+        LIMIT 1
     </select>
 
     <select id="selectByFormKey" resultType="com.mdframe.forge.starter.flow.entity.FlowForm">
         SELECT f.*
         FROM sys_flow_form f
-        WHERE f.deleted = 0
+        WHERE f.tenant_id = #{tenantId}
+          AND f.deleted = 0
           AND f.form_key = #{formKey}
         LIMIT 1
     </select>
@@ -36,7 +48,8 @@
     <select id="countByFormKey" resultType="java.lang.Long">
         SELECT COUNT(1)
         FROM sys_flow_form f
-        WHERE f.deleted = 0
+        WHERE f.tenant_id = #{tenantId}
+          AND f.deleted = 0
           AND f.form_key = #{formKey}
         <if test="excludeId != null">
             AND f.id != #{excludeId}

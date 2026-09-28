@@ -17,6 +17,18 @@
         <result column="result" property="result"/>
         <result column="round_no" property="roundNo"/>
         <result column="variables_snapshot" property="variablesSnapshot"/>
+        <result column="status_sync_status" property="statusSyncStatus"/>
+        <result column="status_sync_retry_count" property="statusSyncRetryCount"/>
+        <result column="status_sync_next_time" property="statusSyncNextTime"/>
+        <result column="status_sync_lock_owner" property="statusSyncLockOwner"/>
+        <result column="status_sync_lock_time" property="statusSyncLockTime"/>
+        <result column="status_sync_remote_status" property="statusSyncRemoteStatus"/>
+        <result column="status_sync_error_type" property="statusSyncErrorType"/>
+        <result column="status_synced_time" property="statusSyncedTime"/>
+        <result column="status_sync_replay_count" property="statusSyncReplayCount"/>
+        <result column="status_sync_replayed_by" property="statusSyncReplayedBy"/>
+        <result column="status_sync_replayed_time" property="statusSyncReplayedTime"/>
+        <result column="status_sync_replay_reason" property="statusSyncReplayReason"/>
         <result column="create_by" property="createBy"/>
         <result column="create_time" property="createTime"/>
         <result column="create_dept" property="createDept"/>
@@ -39,6 +51,18 @@
         result,
         round_no,
         variables_snapshot,
+        status_sync_status,
+        status_sync_retry_count,
+        status_sync_next_time,
+        status_sync_lock_owner,
+        status_sync_lock_time,
+        status_sync_remote_status,
+        status_sync_error_type,
+        status_synced_time,
+        status_sync_replay_count,
+        status_sync_replayed_by,
+        status_sync_replayed_time,
+        status_sync_replay_reason,
         create_by,
         create_time,
         create_dept,
@@ -72,6 +96,18 @@
             result,
             round_no,
             variables_snapshot,
+            status_sync_status,
+            status_sync_retry_count,
+            status_sync_next_time,
+            status_sync_lock_owner,
+            status_sync_lock_time,
+            status_sync_remote_status,
+            status_sync_error_type,
+            status_synced_time,
+            status_sync_replay_count,
+            status_sync_replayed_by,
+            status_sync_replayed_time,
+            status_sync_replay_reason,
             create_by,
             create_time,
             create_dept,
@@ -125,5 +161,126 @@
           AND business_key = #{businessKey}
         ORDER BY round_no ASC, start_time ASC, create_time ASC, id ASC
     </select>
+
+    <select id="selectByLinkId" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Columns"/>
+        FROM ai_business_flow_instance_link
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="selectStatusSyncCandidates" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Columns"/>
+        FROM ai_business_flow_instance_link
+        WHERE end_time IS NULL
+          AND (result IS NULL OR result = '')
+          AND flow_status IN ('STARTED', 'RUNNING', 'IN_PROCESS', 'NEED_MODIFY')
+          AND status_sync_retry_count &lt; #{maxRetryCount}
+          AND (
+            status_sync_status = 'PENDING'
+            OR (status_sync_status IN ('WAITING', 'RETRY') AND status_sync_next_time &lt;= #{now})
+            OR (status_sync_status = 'PROCESSING'
+                AND (status_sync_lock_time IS NULL OR status_sync_lock_time &lt;= #{staleBefore}))
+          )
+        ORDER BY COALESCE(status_sync_next_time, create_time) ASC, id ASC
+        LIMIT #{batchSize}
+    </select>
+
+    <update id="claimStatusSync">
+        UPDATE ai_business_flow_instance_link
+        SET status_sync_status = 'PROCESSING',
+            status_sync_retry_count = status_sync_retry_count + 1,
+            status_sync_next_time = NULL,
+            status_sync_lock_owner = #{lockOwner},
+            status_sync_lock_time = #{now},
+            status_sync_error_type = NULL,
+            update_time = #{now}
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND end_time IS NULL
+          AND (result IS NULL OR result = '')
+          AND flow_status IN ('STARTED', 'RUNNING', 'IN_PROCESS', 'NEED_MODIFY')
+          AND status_sync_retry_count &lt; #{maxRetryCount}
+          AND (
+            status_sync_status = 'PENDING'
+            OR (status_sync_status IN ('WAITING', 'RETRY') AND status_sync_next_time &lt;= #{now})
+            OR (status_sync_status = 'PROCESSING'
+                AND (status_sync_lock_time IS NULL OR status_sync_lock_time &lt;= #{staleBefore}))
+          )
+    </update>
+
+    <update id="markStatusSyncWaiting">
+        UPDATE ai_business_flow_instance_link
+        SET status_sync_status = 'WAITING',
+            status_sync_retry_count = 0,
+            status_sync_next_time = #{nextSyncTime},
+            status_sync_lock_owner = NULL,
+            status_sync_lock_time = NULL,
+            status_sync_remote_status = #{remoteStatus},
+            status_sync_error_type = NULL,
+            status_synced_time = #{now},
+            update_time = #{now}
+        WHERE tenant_id = #{link.tenantId}
+          AND id = #{link.id}
+          AND status_sync_status = 'PROCESSING'
+          AND status_sync_lock_owner = #{link.statusSyncLockOwner}
+          AND end_time IS NULL
+          AND (result IS NULL OR result = '')
+    </update>
+
+    <update id="markStatusSyncCompleted">
+        UPDATE ai_business_flow_instance_link
+        SET status_sync_status = 'COMPLETED',
+            status_sync_next_time = NULL,
+            status_sync_lock_owner = NULL,
+            status_sync_lock_time = NULL,
+            status_sync_remote_status = #{remoteStatus},
+            status_sync_error_type = NULL,
+            status_synced_time = #{now},
+            update_time = #{now}
+        WHERE tenant_id = #{link.tenantId}
+          AND id = #{link.id}
+          AND status_sync_status = 'PROCESSING'
+          AND status_sync_lock_owner = #{link.statusSyncLockOwner}
+    </update>
+
+    <update id="markStatusSyncFailed">
+        UPDATE ai_business_flow_instance_link
+        SET status_sync_status = #{status},
+            status_sync_next_time = #{nextRetryTime},
+            status_sync_lock_owner = NULL,
+            status_sync_lock_time = NULL,
+            status_sync_error_type = #{errorType},
+            update_time = #{now}
+        WHERE tenant_id = #{link.tenantId}
+          AND id = #{link.id}
+          AND status_sync_status = 'PROCESSING'
+          AND status_sync_lock_owner = #{link.statusSyncLockOwner}
+    </update>
+
+    <update id="requeueDeadStatusSync">
+        UPDATE ai_business_flow_instance_link
+        SET status_sync_status = 'PENDING',
+            status_sync_retry_count = 0,
+            status_sync_next_time = #{now},
+            status_sync_lock_owner = NULL,
+            status_sync_lock_time = NULL,
+            status_sync_error_type = NULL,
+            status_sync_replay_count = status_sync_replay_count + 1,
+            status_sync_replayed_by = #{replayedBy},
+            status_sync_replayed_time = #{now},
+            status_sync_replay_reason = #{replayReason},
+            update_by = #{replayedBy},
+            update_time = #{now}
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND status_sync_status = 'DEAD'
+          AND end_time IS NULL
+          AND (result IS NULL OR result = '')
+          AND flow_status IN ('STARTED', 'RUNNING', 'IN_PROCESS', 'NEED_MODIFY')
+    </update>
 
 </mapper>

@@ -1,6 +1,5 @@
 package com.mdframe.forge.plugin.system.strategy;
 
-import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.mdframe.forge.plugin.system.entity.SysOrg;
@@ -15,6 +14,7 @@ import com.mdframe.forge.plugin.system.mapper.SysUserMapper;
 import com.mdframe.forge.plugin.system.mapper.SysUserOrgMapper;
 import com.mdframe.forge.plugin.system.mapper.SysUserOrgRoleMapper;
 import com.mdframe.forge.plugin.system.mapper.SysUserTenantMapper;
+import com.mdframe.forge.plugin.system.service.PasswordPolicyService;
 import com.mdframe.forge.starter.auth.domain.LoginRequest;
 import com.mdframe.forge.starter.auth.enums.AuthType;
 import com.mdframe.forge.starter.auth.util.PasswordUtil;
@@ -34,6 +34,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.stream.Stream;
 import com.mdframe.forge.starter.core.enums.EnableStatus;
@@ -90,6 +91,9 @@ public class SocialAuthStrategyImpl extends AbstractAuthStrategy {
 
     @Autowired
     private GiteeCommunityLoginSupport giteeCommunityLoginSupport;
+
+    @Autowired
+    private PasswordPolicyService passwordPolicyService;
 
     @Override
     protected void validateRequest(LoginRequest request) {
@@ -238,7 +242,8 @@ public class SocialAuthStrategyImpl extends AbstractAuthStrategy {
         }
 
         // 三方自动注册不生成共享默认密码，避免账号可被密码登录横向利用。
-        newUser.setPassword(PasswordUtil.encrypt(IdUtil.fastSimpleUUID()));
+        newUser.setPassword(PasswordUtil.encrypt(passwordPolicyService.generateSystemCredential()));
+        newUser.setPasswordChangedTime(LocalDateTime.now());
         newUser.setForcePasswordChange(false);
         newUser.setUserStatus(EnableStatus.ENABLED.getCode());
         newUser.setAvatar(identity.avatar());

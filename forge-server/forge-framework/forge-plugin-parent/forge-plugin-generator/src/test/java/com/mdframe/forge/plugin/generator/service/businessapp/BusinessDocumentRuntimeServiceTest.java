@@ -13,8 +13,13 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessProcessRunMapper;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessDocumentConfigVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessDocumentRuntimeVO;
+import com.mdframe.forge.starter.core.context.ExecutionIdentity;
+import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.session.LoginUser;
 import com.mdframe.forge.starter.core.session.SessionHelper;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -26,6 +31,7 @@ import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -39,6 +45,27 @@ import static org.mockito.Mockito.when;
 
 @DisplayName("BusinessDocumentRuntimeService")
 class BusinessDocumentRuntimeServiceTest {
+
+    private ExecutionIdentityContextHolder.Scope identityScope;
+
+    @BeforeEach
+    void setUpIdentity() {
+        LoginUser loginUser = new LoginUser();
+        loginUser.setUserId(100L);
+        loginUser.setTenantId(1L);
+        identityScope = ExecutionIdentityContextHolder.open(new ExecutionIdentity(
+                loginUser, "USER", 100L, null, 1L,
+                "pc", "document-runtime-test", Set.of()));
+    }
+
+    @AfterEach
+    void clearIdentity() {
+        if (identityScope != null) {
+            identityScope.close();
+            identityScope = null;
+        }
+        ExecutionIdentityContextHolder.clear();
+    }
 
     @ParameterizedTest
     @org.junit.jupiter.params.provider.CsvSource({

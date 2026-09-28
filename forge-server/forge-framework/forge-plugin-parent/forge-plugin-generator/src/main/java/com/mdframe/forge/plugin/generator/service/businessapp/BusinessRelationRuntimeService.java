@@ -10,6 +10,7 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessAppMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectRelationMapper;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessRelationRuntimeVO;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +20,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
-import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 对象关系运行解析服务
@@ -41,10 +41,10 @@ public class BusinessRelationRuntimeService {
      * @return 关系运行入口列表
      */
     public List<BusinessRelationRuntimeVO> relationRuntime(Long objectId) {
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireTenantId();
 
         // 查询业务对象
-        AiBusinessObject object = businessObjectMapper.selectById(objectId);
+        AiBusinessObject object = businessObjectMapper.selectByIdForTenant(tenantId, objectId);
         if (object == null) {
             throw new BusinessException("业务对象不存在");
         }
@@ -132,7 +132,7 @@ public class BusinessRelationRuntimeService {
             vo.setNextActionLabel("发布应用");
             return vo;
         }
-        if (EnableStatus.ENABLED.matches(config.getStatus())) {
+        if (EnableStatus.DISABLED.matches(config.getStatus())) {
             vo.setCanOpen(false);
             vo.setMessage("目标运行配置已停用");
             vo.setNextAction("ENABLE_RUNTIME");
@@ -189,13 +189,16 @@ public class BusinessRelationRuntimeService {
         return JSON.toJSONString(filter);
     }
 
-    private Long resolveTenantId() {
+    private Long requireTenantId() {
         Long tenantId;
         try {
             tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
             tenantId = null;
         }
-        return tenantId != null ? tenantId : 1L;
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("对象关系运行时缺少可信租户上下文");
+        }
+        return tenantId;
     }
 }

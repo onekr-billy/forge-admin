@@ -146,6 +146,27 @@
           AND status = 'PENDING'
     </update>
 
+    <update id="claimAttemptWithLease">
+        UPDATE ai_business_process_node_run n
+        SET status = 'RUNNING',
+            start_time = NOW(),
+            update_time = NOW()
+        WHERE n.tenant_id = #{tenantId}
+          AND n.id = #{id}
+          AND n.run_id = #{runId}
+          AND n.status = 'PENDING'
+          AND EXISTS (
+            SELECT 1
+            FROM ai_business_process_run r
+            WHERE r.tenant_id = n.tenant_id
+              AND r.id = n.run_id
+              AND r.status = 'RUNNING'
+              AND r.execution_token = #{executionToken}
+              AND r.lease_owner = #{leaseOwner}
+              AND r.lease_expire_time &gt; NOW(3)
+          )
+    </update>
+
     <update id="completeAttempt">
         UPDATE ai_business_process_node_run
         SET status = #{nextStatus},
@@ -170,6 +191,43 @@
             AND correlation_id IS NULL
           </otherwise>
         </choose>
+    </update>
+
+    <update id="completeAttemptWithLease">
+        UPDATE ai_business_process_node_run n
+        SET status = #{nextStatus},
+            correlation_id = #{correlationId},
+            output_summary = #{outputSummary},
+            error_code = #{errorCode},
+            error_summary = #{errorSummary},
+            next_retry_time = #{nextRetryTime},
+            end_time = CASE
+              WHEN #{nextStatus} IN ('SUCCESS', 'FAILED', 'CANCELED') THEN NOW()
+              ELSE NULL
+            END,
+            update_time = NOW()
+        WHERE n.tenant_id = #{tenantId}
+          AND n.id = #{id}
+          AND n.run_id = #{runId}
+          AND n.status = #{expectedStatus}
+        <choose>
+          <when test="expectedCorrelationId != null and expectedCorrelationId != ''">
+            AND n.correlation_id = #{expectedCorrelationId}
+          </when>
+          <otherwise>
+            AND n.correlation_id IS NULL
+          </otherwise>
+        </choose>
+          AND EXISTS (
+            SELECT 1
+            FROM ai_business_process_run r
+            WHERE r.tenant_id = n.tenant_id
+              AND r.id = n.run_id
+              AND r.status = 'RUNNING'
+              AND r.execution_token = #{executionToken}
+              AND r.lease_owner = #{leaseOwner}
+              AND r.lease_expire_time &gt; NOW(3)
+          )
     </update>
 
 </mapper>

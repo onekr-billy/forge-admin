@@ -6,7 +6,8 @@
         SELECT b.*
         FROM sys_flow_fill_batch b
         <where>
-            b.deleted = 0
+            b.tenant_id = #{tenantId}
+            AND b.deleted = 0
             <if test="query != null and query.batchName != null and query.batchName != ''">
                 AND b.batch_name LIKE CONCAT('%', #{query.batchName}, '%')
             </if>
@@ -21,5 +22,14 @@
             </if>
         </where>
         ORDER BY b.create_time DESC
+    </select>
+
+    <select id="selectByIdAndTenant" resultType="com.mdframe.forge.starter.flow.entity.FlowFillBatch">
+        SELECT b.*
+        FROM sys_flow_fill_batch b
+        WHERE b.tenant_id = #{tenantId}
+          AND b.deleted = 0
+          AND b.id = #{id}
+        LIMIT 1
     </select>
 </mapper>

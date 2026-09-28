@@ -10,7 +10,6 @@ import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFlowAppConfigVO
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFlowBindingVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectVO;
 import com.mdframe.forge.starter.core.exception.BusinessException;
-import com.mdframe.forge.starter.core.session.LoginUser;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
@@ -34,7 +33,8 @@ public class BusinessFlowAppConfigService {
 
     public BusinessFlowAppConfigVO getConfig(String objectCode) {
         String code = normalizeObjectCode(objectCode);
-        BusinessObjectVO object = findObject(code);
+        Long tenantId = requireTenantId();
+        BusinessObjectVO object = findObject(tenantId, code);
         if (object == null) {
             return buildCodeAppConfig(code);
         }
@@ -47,7 +47,8 @@ public class BusinessFlowAppConfigService {
             throw new BusinessException("业务流程应用配置不能为空");
         }
         String code = normalizeObjectCode(objectCode);
-        BusinessObjectVO object = findObject(code);
+        Long tenantId = requireTenantId();
+        BusinessObjectVO object = findObject(tenantId, code);
         if (object == null) {
             return saveCodeAppConfig(code, dto);
         }
@@ -189,10 +190,10 @@ public class BusinessFlowAppConfigService {
         return code;
     }
 
-    private BusinessObjectVO findObject(String objectCode) {
+    private BusinessObjectVO findObject(Long tenantId, String objectCode) {
         BusinessObjectQueryDTO query = new BusinessObjectQueryDTO();
         query.setObjectCode(objectCode);
-        List<BusinessObjectVO> objects = businessObjectMapper.selectObjectList(resolveTenantId(), query);
+        List<BusinessObjectVO> objects = businessObjectMapper.selectObjectList(tenantId, query);
         if (objects == null || objects.isEmpty()) {
             return null;
         }
@@ -272,8 +273,16 @@ public class BusinessFlowAppConfigService {
         }
     }
 
-    private Long resolveTenantId() {
-        LoginUser user = SessionHelper.getLoginUser();
-        return user != null && user.getTenantId() != null ? user.getTenantId() : 1L;
+    private Long requireTenantId() {
+        Long tenantId;
+        try {
+            tenantId = SessionHelper.getTenantId();
+        } catch (Exception e) {
+            tenantId = null;
+        }
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("业务流程应用配置缺少可信租户上下文");
+        }
+        return tenantId;
     }
 }

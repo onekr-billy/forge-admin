@@ -55,9 +55,11 @@ public class BusinessObjectTableMappingService {
     private final BusinessObjectMapper objectMapper;
 
     public BusinessObjectTableMappingVO getTableMapping(Long objectId) {
+        Long tenantId = requireTenantId();
         BusinessObjectDesignerService.DesignerContext context = contextProvider.loadContext(objectId);
+        validateContextTenant(context, tenantId);
         LowcodeModelSchema modelSchema = requireModelSchema(context);
-        BusinessObjectTableMappingVO mapping = baseMapping(context, modelSchema);
+        BusinessObjectTableMappingVO mapping = baseMapping(context, modelSchema, tenantId);
         applyLastSync(mapping, context.getObject());
         try {
             LowcodeDdlPreviewVO preview = ddlService.previewCreateTable(modelSchema);
@@ -92,14 +94,18 @@ public class BusinessObjectTableMappingService {
     }
 
     public LowcodeDdlPreviewVO previewDatabaseDiff(Long objectId, Integer designVersion) {
+        Long tenantId = requireTenantId();
         BusinessObjectDesignerService.DesignerContext context = contextProvider.loadContext(objectId);
+        validateContextTenant(context, tenantId);
         assertDesignVersion(context, designVersion);
         return ddlService.previewCreateTable(requireModelSchema(context));
     }
 
     @Transactional(rollbackFor = Exception.class)
     public void syncDatabase(Long objectId, Integer designVersion, boolean confirmOnlineDdl) {
+        Long tenantId = requireTenantId();
         BusinessObjectDesignerService.DesignerContext context = contextProvider.loadContext(objectId);
+        validateContextTenant(context, tenantId);
         assertDesignVersion(context, designVersion);
         if (!confirmOnlineDdl) {
             throw new BusinessException("同步数据库需要显式二次确认");
@@ -137,8 +143,10 @@ public class BusinessObjectTableMappingService {
      * {@link #syncDatabase(Long, Integer, boolean)} 的权限、版本和二次确认门禁。</p>
      */
     public void syncManagedDatabase(Long objectId, Long applicationId, String formAssetId) {
+        Long tenantId = requireTenantId();
         BusinessObjectDesignerService.DesignerContext context = contextProvider.loadContext(objectId);
-        syncManagedDatabase(context, applicationId, formAssetId);
+        validateContextTenant(context, tenantId);
+        syncManagedDatabaseInternal(context, applicationId, formAssetId);
     }
 
     /**
@@ -148,6 +156,15 @@ public class BusinessObjectTableMappingService {
     public void syncManagedDatabase(
             BusinessObjectDesignerService.DesignerContext context,
             Long applicationId, String formAssetId) {
+        Long tenantId = requireTenantId();
+        validateContextTenant(context, tenantId);
+        syncManagedDatabaseInternal(context, applicationId, formAssetId);
+    }
+
+    private void syncManagedDatabaseInternal(
+            BusinessObjectDesignerService.DesignerContext context,
+            Long applicationId,
+            String formAssetId) {
         assertManagedPageForm(context, applicationId, formAssetId);
         LowcodeModelSchema modelSchema = requireModelSchema(context);
         LowcodeDdlPreviewVO preview = ddlService.previewCreateTable(modelSchema);
@@ -266,7 +283,9 @@ public class BusinessObjectTableMappingService {
     }
 
     private BusinessObjectTableMappingVO baseMapping(
-            BusinessObjectDesignerService.DesignerContext context, LowcodeModelSchema modelSchema) {
+            BusinessObjectDesignerService.DesignerContext context,
+            LowcodeModelSchema modelSchema,
+            Long tenantId) {
         AiBusinessObject object = context.getObject();
         AiCrudConfig config = context.getConfig();
         LowcodeRuntimeDatasourceSnapshot datasource = modelSchema.getRuntimeDatasource();
@@ -288,7 +307,7 @@ public class BusinessObjectTableMappingService {
         mapping.setAllowDdl(datasource == null ? null : datasource.getAllowDdl());
         mapping.setReadonly(datasource == null ? null : datasource.getReadonly());
         mapping.setDesignVersion(config == null ? 0 : defaultInteger(config.getDraftVersion()));
-        Long sharedCount = applicationObjectMapper.countByObjectId(resolveTenantId(), object.getId());
+        Long sharedCount = applicationObjectMapper.countByObjectId(tenantId, object.getId());
         mapping.setSharedApplicationCount(sharedCount == null ? 0L : sharedCount);
         return mapping;
     }
@@ -588,12 +607,22 @@ public class BusinessObjectTableMappingService {
         return value == null ? 0 : value;
     }
 
-    private Long resolveTenantId() {
+    private Long requireTenantId() {
         try {
             Long tenantId = SessionHelper.getTenantId();
-            return tenantId == null ? 1L : tenantId;
+            if (tenantId != null && tenantId > 0) {
+                return tenantId;
+            }
         } catch (Exception e) {
-            return 1L;
+            // Fail closed below.
+        }
+        throw new BusinessException("业务对象表映射缺少可信租户上下文");
+    }
+
+    private void validateContextTenant(BusinessObjectDesignerService.DesignerContext context, Long tenantId) {
+        AiBusinessObject object = context == null ? null : context.getObject();
+        if (object == null || object.getTenantId() == null || !object.getTenantId().equals(tenantId)) {
+            throw new BusinessException("业务对象表映射上下文不属于当前租户");
         }
     }
 }

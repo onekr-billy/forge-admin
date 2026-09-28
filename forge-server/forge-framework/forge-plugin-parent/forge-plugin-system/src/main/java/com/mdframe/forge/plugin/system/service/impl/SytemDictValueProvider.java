@@ -2,15 +2,15 @@ package com.mdframe.forge.plugin.system.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.mdframe.forge.plugin.system.entity.SysDictData;
-import com.mdframe.forge.plugin.system.entity.SysFileMetadata;
 import com.mdframe.forge.plugin.system.entity.SysOrg;
 import com.mdframe.forge.plugin.system.entity.SysRegion;
 import com.mdframe.forge.plugin.system.entity.SysUser;
-import com.mdframe.forge.plugin.system.mapper.SysFileMetadataMapper;
 import com.mdframe.forge.plugin.system.mapper.SysOrgMapper;
 import com.mdframe.forge.plugin.system.mapper.SysRegionMapper;
 import com.mdframe.forge.plugin.system.mapper.SysUserMapper;
 import com.mdframe.forge.plugin.system.service.ISysDictDataService;
+import com.mdframe.forge.starter.file.core.FileManager;
+import com.mdframe.forge.starter.file.model.FileMetadata;
 import com.mdframe.forge.starter.trans.spi.DictValueProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,7 +31,7 @@ public class SytemDictValueProvider implements DictValueProvider {
     private final SysOrgMapper sysOrgMapper;
     private final SysUserMapper sysUserMapper;
     private final SysRegionMapper sysRegionMapper;
-    private final SysFileMetadataMapper sysFileMetadataMapper;
+    private final FileManager fileManager;
 
     @Override
     public String getLabel(String dictType, String key) {
@@ -181,9 +181,7 @@ public class SytemDictValueProvider implements DictValueProvider {
             return null;
         }
         try {
-            SysFileMetadata metadata = sysFileMetadataMapper.selectOne(
-                    new LambdaQueryWrapper<SysFileMetadata>().eq(SysFileMetadata::getFileId, fileId));
-            return metadata != null ? metadata.getAccessUrl() : null;
+            return fileManager.getAccessUrl(fileId, 3600);
         } catch (Exception e) {
             log.warn("[DictValueProvider] 获取文件URL失败, fileId={}", fileId, e);
             return null;
@@ -199,11 +197,12 @@ public class SytemDictValueProvider implements DictValueProvider {
         if (distinctIds.isEmpty()) {
             return Collections.emptyMap();
         }
-        List<SysFileMetadata> metadatas = sysFileMetadataMapper.selectList(
-                new LambdaQueryWrapper<SysFileMetadata>().in(SysFileMetadata::getFileId, distinctIds));
         Map<String, String> result = new LinkedHashMap<>();
-        for (SysFileMetadata metadata : metadatas) {
-            result.put(metadata.getFileId(), metadata.getAccessUrl());
+        for (String fileId : distinctIds) {
+            String url = getFileUrl(fileId);
+            if (url != null) {
+                result.put(fileId, url);
+            }
         }
         return result;
     }
@@ -214,8 +213,7 @@ public class SytemDictValueProvider implements DictValueProvider {
             return null;
         }
         try {
-            SysFileMetadata metadata = sysFileMetadataMapper.selectOne(
-                    new LambdaQueryWrapper<SysFileMetadata>().eq(SysFileMetadata::getFileId, fileId));
+            FileMetadata metadata = fileManager.getMetadata(fileId);
             return metadata != null ? metadata.getOriginalName() : null;
         } catch (Exception e) {
             log.warn("[DictValueProvider] 获取文件名失败, fileId={}", fileId, e);
@@ -232,11 +230,12 @@ public class SytemDictValueProvider implements DictValueProvider {
         if (distinctIds.isEmpty()) {
             return Collections.emptyMap();
         }
-        List<SysFileMetadata> metadatas = sysFileMetadataMapper.selectList(
-                new LambdaQueryWrapper<SysFileMetadata>().in(SysFileMetadata::getFileId, distinctIds));
         Map<String, String> result = new LinkedHashMap<>();
-        for (SysFileMetadata metadata : metadatas) {
-            result.put(metadata.getFileId(), metadata.getOriginalName());
+        for (String fileId : distinctIds) {
+            String fileName = getFileName(fileId);
+            if (fileName != null) {
+                result.put(fileId, fileName);
+            }
         }
         return result;
     }

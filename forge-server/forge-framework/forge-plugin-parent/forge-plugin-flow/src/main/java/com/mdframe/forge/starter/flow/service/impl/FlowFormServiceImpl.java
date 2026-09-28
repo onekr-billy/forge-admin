@@ -5,14 +5,14 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.flow.dto.FormFieldCatalogItemDTO;
 import com.mdframe.forge.starter.flow.entity.FlowForm;
+import com.mdframe.forge.starter.flow.entity.FlowFormVersion;
 import com.mdframe.forge.starter.flow.enums.FlowEnableStatus;
 import com.mdframe.forge.starter.flow.enums.FlowFormPublishStatus;
-import com.mdframe.forge.starter.flow.entity.FlowFormVersion;
 import com.mdframe.forge.starter.flow.mapper.FlowFormMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowFormVersionMapper;
+import com.mdframe.forge.starter.flow.security.FlowRuntimeIdentity;
 import com.mdframe.forge.starter.flow.service.FlowFormService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,7 +41,6 @@ import java.util.Set;
 public class FlowFormServiceImpl extends ServiceImpl<FlowFormMapper, FlowForm> implements FlowFormService {
 
     private static final String DATA_MODE_PROCESS_ONLY = "PROCESS_ONLY";
-    private static final Long DEFAULT_TENANT_ID = 1L;
 
     private final FlowFormMapper flowFormMapper;
     private final FlowFormVersionMapper flowFormVersionMapper;
@@ -49,12 +48,18 @@ public class FlowFormServiceImpl extends ServiceImpl<FlowFormMapper, FlowForm> i
 
     @Override
     public Page<FlowForm> getPage(String formName, Integer status, Integer pageNum, Integer pageSize) {
-        return flowFormMapper.selectFormPage(new Page<>(pageNum, pageSize), formName, status);
+        Long tenantId = FlowRuntimeIdentity.requireTenantId();
+        return flowFormMapper.selectFormPage(new Page<>(pageNum, pageSize), tenantId, formName, status);
     }
 
     @Override
     public List<FlowForm> getEnabledForms() {
-        return flowFormMapper.selectEnabledForms();
+        return flowFormMapper.selectEnabledForms(FlowRuntimeIdentity.requireTenantId());
+    }
+
+    @Override
+    public FlowForm getFormById(Long id) {
+        return flowFormMapper.selectByIdAndTenant(id, FlowRuntimeIdentity.requireTenantId());
     }
 
     @Override
@@ -62,22 +67,22 @@ public class FlowFormServiceImpl extends ServiceImpl<FlowFormMapper, FlowForm> i
         if (!StringUtils.hasText(formKey)) {
             return null;
         }
-        return flowFormMapper.selectByFormKey(formKey);
+        Long tenantId = FlowRuntimeIdentity.requireTenantId();
+        return flowFormMapper.selectByFormKey(tenantId, formKey);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean createForm(FlowForm form) {
-        if (checkFormKeyExists(form.getFormKey(), null)) {
+        Long tenantId = FlowRuntimeIdentity.requireTenantId();
+        if (formKeyExists(form.getFormKey(), null, tenantId)) {
             throw new RuntimeException("表单Key已存在: " + form.getFormKey());
         }
 
         form.setVersion(1);
         form.setStatus(form.getStatus() == null ? FlowEnableStatus.ENABLED.getCode() : form.getStatus());
         form.setPublishStatus(FlowFormPublishStatus.DRAFT.getCode());
-        if (form.getTenantId() == null) {
-            form.setTenantId(resolveTenantId());
-        }
+        form.setTenantId(tenantId);
         if (!StringUtils.hasText(form.getDefaultDataMode())) {
             form.setDefaultDataMode(DATA_MODE_PROCESS_ONLY);
         }
@@ -89,11 +94,13 @@ public class FlowFormServiceImpl extends ServiceImpl<FlowFormMapper, FlowForm> i
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean updateForm(FlowForm form) {
-        FlowForm existing = getById(form.getId());
+        Long tenantId = FlowRuntimeIdentity.requireTenantId();
+        FlowForm existing = flowFormMapper.selectByIdAndTenant(form.getId(), tenantId);
         if (existing == null) {
             throw new RuntimeException("表单不存在");
         }
 
+        form.setTenantId(tenantId);
         form.setFormKey(existing.getFormKey());
         if (!StringUtils.hasText(form.getDefaultDataMode())) {
             form.setDefaultDataMode(existing.getDefaultDataMode() != null
@@ -120,12 +127,14 @@ public class FlowFormServiceImpl extends ServiceImpl<FlowFormMapper, FlowForm> i
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean deleteForm(Long id) {
+        requireForm(id, FlowRuntimeIdentity.requireTenantId());
         return removeById(id);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean enableForm(Long id) {
+        requireForm(id, FlowRuntimeIdentity.requireTenantId());
         FlowForm form = new FlowForm();
         form.setId(id);
         form.setStatus(FlowEnableStatus.ENABLED.getCode());
@@ -135,6 +144,7 @@ public class FlowFormServiceImpl extends ServiceImpl<FlowFormMapper, FlowForm> i
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean disableForm(Long id) {
+        requireForm(id, FlowRuntimeIdentity.requireTenantId());
         FlowForm form = new FlowForm();
         form.setId(id);
         form.setStatus(FlowEnableStatus.DISABLED.getCode());
@@ -144,10 +154,8 @@ public class FlowFormServiceImpl extends ServiceImpl<FlowFormMapper, FlowForm> i
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long copyForm(Long id, String newName) {
-        FlowForm source = getById(id);
-        if (source == null) {
-            throw new RuntimeException("源表单不存在");
-        }
+        Long tenantId = FlowRuntimeIdentity.requireTenantId();
+        FlowForm source = requireForm(id, tenantId);
 
         String newFormKey = source.getFormKey() + "_copy_" + System.currentTimeMillis();
 
@@ -162,7 +170,7 @@ public class FlowFormServiceImpl extends ServiceImpl<FlowFormMapper, FlowForm> i
         newForm.setComponentPath(source.getComponentPath());
         newForm.setFormConfig(source.getFormConfig());
         newForm.setDefaultDataMode(source.getDefaultDataMode());
-        newForm.setTenantId(resolveTenantId());
+        newForm.setTenantId(tenantId);
         newForm.setVersion(1);
         newForm.setStatus(FlowEnableStatus.ENABLED.getCode());
         newForm.setPublishStatus(FlowFormPublishStatus.DRAFT.getCode());
@@ -175,20 +183,23 @@ public class FlowFormServiceImpl extends ServiceImpl<FlowFormMapper, FlowForm> i
 
     @Override
     public boolean checkFormKeyExists(String formKey, Long excludeId) {
+        Long tenantId = FlowRuntimeIdentity.requireTenantId();
+        return formKeyExists(formKey, excludeId, tenantId);
+    }
+
+    private boolean formKeyExists(String formKey, Long excludeId, Long tenantId) {
         if (!StringUtils.hasText(formKey)) {
             return false;
         }
-        Long count = flowFormMapper.countByFormKey(formKey, excludeId);
+        Long count = flowFormMapper.countByFormKey(tenantId, formKey, excludeId);
         return count != null && count > 0;
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean updateFormSchema(Long id, String formSchema) {
-        FlowForm existing = getById(id);
-        if (existing == null) {
-            throw new RuntimeException("表单不存在");
-        }
+        Long tenantId = FlowRuntimeIdentity.requireTenantId();
+        FlowForm existing = requireForm(id, tenantId);
 
         FlowForm form = new FlowForm();
         form.setId(id);
@@ -209,21 +220,19 @@ public class FlowFormServiceImpl extends ServiceImpl<FlowFormMapper, FlowForm> i
     @Override
     @Transactional(rollbackFor = Exception.class)
     public FlowFormVersion publishVersion(Long formId) {
-        FlowForm form = getById(formId);
-        if (form == null) {
-            throw new RuntimeException("表单不存在");
-        }
+        FlowRuntimeIdentity.Actor actor = FlowRuntimeIdentity.requireActor();
+        FlowForm form = requireForm(formId, actor.tenantId());
         if (!StringUtils.hasText(form.getFormSchema())) {
             throw new RuntimeException("表单Schema不能为空，不能发布");
         }
 
-        FlowFormVersion latest = flowFormVersionMapper.selectLatestByFormId(formId);
+        FlowFormVersion latest = flowFormVersionMapper.selectLatestByFormId(actor.tenantId(), formId);
         int nextVersion = latest == null || latest.getVersion() == null ? 1 : latest.getVersion() + 1;
         String fieldRegistry = StringUtils.hasText(form.getFieldRegistry())
                 ? form.getFieldRegistry() : buildFieldRegistryJson(form.getFormSchema());
 
         FlowFormVersion version = new FlowFormVersion();
-        version.setTenantId(form.getTenantId() == null ? resolveTenantId() : form.getTenantId());
+        version.setTenantId(actor.tenantId());
         version.setFormId(form.getId());
         version.setFormKey(form.getFormKey());
         version.setFormName(form.getFormName());
@@ -236,7 +245,7 @@ public class FlowFormServiceImpl extends ServiceImpl<FlowFormMapper, FlowForm> i
         version.setDefaultDataMode(StringUtils.hasText(form.getDefaultDataMode())
                 ? form.getDefaultDataMode() : DATA_MODE_PROCESS_ONLY);
         version.setPublishTime(LocalDateTime.now());
-        version.setPublishBy(resolveUserId());
+        version.setPublishBy(actor.userId());
         flowFormVersionMapper.insert(version);
 
         FlowForm update = new FlowForm();
@@ -252,22 +261,24 @@ public class FlowFormServiceImpl extends ServiceImpl<FlowFormMapper, FlowForm> i
 
     @Override
     public List<FlowFormVersion> listVersions(Long formId) {
-        return flowFormVersionMapper.selectVersionsByFormId(formId);
+        Long tenantId = FlowRuntimeIdentity.requireTenantId();
+        return flowFormVersionMapper.selectVersionsByFormId(tenantId, formId);
     }
 
     @Override
     public List<FormFieldCatalogItemDTO> resolveFieldCatalog(String formKey, Long versionId) {
+        Long tenantId = FlowRuntimeIdentity.requireTenantId();
         String fieldRegistry = null;
         String formSchema = null;
         if (versionId != null) {
-            FlowFormVersion version = flowFormVersionMapper.selectByIdForRuntime(versionId);
+            FlowFormVersion version = flowFormVersionMapper.selectByIdForRuntimeAndTenant(versionId, tenantId);
             if (version != null) {
                 fieldRegistry = version.getFieldRegistry();
                 formSchema = version.getFormSchema();
             }
         }
         if (!StringUtils.hasText(fieldRegistry) && StringUtils.hasText(formKey)) {
-            FlowForm form = getByFormKey(formKey);
+            FlowForm form = flowFormMapper.selectByFormKey(tenantId, formKey);
             if (form != null) {
                 fieldRegistry = form.getFieldRegistry();
                 formSchema = form.getFormSchema();
@@ -511,20 +522,11 @@ public class FlowFormServiceImpl extends ServiceImpl<FlowFormMapper, FlowForm> i
         return value.isValueNode() ? value.asText() : null;
     }
 
-    private Long resolveTenantId() {
-        try {
-            Long tenantId = SessionHelper.getTenantId();
-            return tenantId == null ? DEFAULT_TENANT_ID : tenantId;
-        } catch (Exception e) {
-            return DEFAULT_TENANT_ID;
+    private FlowForm requireForm(Long id, Long tenantId) {
+        FlowForm form = flowFormMapper.selectByIdAndTenant(id, tenantId);
+        if (form == null) {
+            throw new RuntimeException("表单不存在");
         }
-    }
-
-    private Long resolveUserId() {
-        try {
-            return SessionHelper.getUserId();
-        } catch (Exception e) {
-            return null;
-        }
+        return form;
     }
 }

@@ -17,6 +17,8 @@ import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.context.ExecutionIdentity;
 import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.session.LoginUser;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -24,6 +26,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -35,6 +38,47 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DisplayName("BusinessApplicationService")
 class BusinessApplicationServiceTest {
+
+    private ExecutionIdentityContextHolder.Scope identityScope;
+
+    @BeforeEach
+    void setUpIdentity() {
+        LoginUser loginUser = new LoginUser();
+        loginUser.setUserId(7L);
+        loginUser.setTenantId(1L);
+        identityScope = ExecutionIdentityContextHolder.open(
+                new ExecutionIdentity(loginUser, "USER", 7L, null, 1L,
+                        "pc", "application-service-test", Set.of()));
+    }
+
+    @AfterEach
+    void clearIdentity() {
+        if (identityScope != null) {
+            identityScope.close();
+            identityScope = null;
+        }
+        ExecutionIdentityContextHolder.clear();
+    }
+
+    @Test
+    @DisplayName("missing tenant is rejected before application data access")
+    void missingTenantIsRejectedBeforeDataAccess() throws Exception {
+        AtomicBoolean mapperCalled = new AtomicBoolean();
+        BusinessApplicationMapper applicationMapper = proxy(BusinessApplicationMapper.class, (method, args) -> {
+            mapperCalled.set(true);
+            return defaultValue(method, args);
+        });
+        BusinessApplicationService service = service(applicationMapper,
+                proxy(BusinessApplicationObjectMapper.class, BusinessApplicationServiceTest::defaultValue),
+                proxy(BusinessAppMapper.class, BusinessApplicationServiceTest::defaultValue));
+        identityScope.close();
+        identityScope = null;
+        ExecutionIdentityContextHolder.clear();
+
+        assertThrows(BusinessException.class, () -> service.detail(101L));
+
+        assertFalse(mapperCalled.get());
+    }
 
     @Test
     @DisplayName("create initializes a tenant-scoped draft application")

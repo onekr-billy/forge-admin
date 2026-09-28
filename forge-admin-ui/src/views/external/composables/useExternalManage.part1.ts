@@ -518,6 +518,12 @@ export function applyExternalManagePart1(props, emit) {
       responseContentType: 'application/json',
       paramMappingEnabled: false,
       responseTransformEnabled: false,
+      responseTransformScript: JSON.stringify({
+        version: 'FIELD_MAP_V1',
+        sourcePath: '',
+        fieldMapping: {},
+        targetPath: 'result',
+      }, null, 2),
       successCodes: '0,200',
       rateLimitEnabled: false,
       rateLimitQps: 10,

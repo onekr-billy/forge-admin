@@ -5,6 +5,7 @@ import org.springframework.util.StringUtils;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -61,7 +62,12 @@ public final class AiProviderBaseUrlPolicy {
             if (adapter == AiProviderAdapterCode.DASHSCOPE_NATIVE) {
                 return DASHSCOPE_NATIVE_BASE_URL;
             }
-            String defaultBaseUrl = PROVIDER_TYPE_DEFAULT_BASE_URL.get(providerType);
+            String normalizedProviderType = StringUtils.hasText(providerType)
+                    ? providerType.trim().toLowerCase(Locale.ROOT)
+                    : null;
+            String defaultBaseUrl = normalizedProviderType == null
+                    ? null
+                    : PROVIDER_TYPE_DEFAULT_BASE_URL.get(normalizedProviderType);
             if (defaultBaseUrl != null) {
                 return defaultBaseUrl;
             }

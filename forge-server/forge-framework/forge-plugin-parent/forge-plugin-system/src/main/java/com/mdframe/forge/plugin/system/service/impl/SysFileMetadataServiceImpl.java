@@ -1,8 +1,6 @@
 package com.mdframe.forge.plugin.system.service.impl;
 
 import cn.dev33.satoken.stp.StpUtil;
-import cn.hutool.core.util.StrUtil;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.mdframe.forge.plugin.system.entity.SysFileMetadata;
@@ -16,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.io.Serializable;
 import java.util.List;
 
 /**
@@ -31,71 +30,31 @@ public class SysFileMetadataServiceImpl extends ServiceImpl<SysFileMetadataMappe
     
     @Override
     public Page<SysFileMetadata> page(PageQuery query, SysFileMetadata condition) {
-        LambdaQueryWrapper<SysFileMetadata> wrapper = new LambdaQueryWrapper<>();
-        
-        if (StrUtil.isNotBlank(condition.getOriginalName())) {
-            wrapper.like(SysFileMetadata::getOriginalName, condition.getOriginalName());
-        }
-        
-        if (StrUtil.isNotBlank(condition.getStorageType())) {
-            wrapper.eq(SysFileMetadata::getStorageType, condition.getStorageType());
-        }
-        
-        if (StrUtil.isNotBlank(condition.getBusinessType())) {
-            wrapper.eq(SysFileMetadata::getBusinessType, condition.getBusinessType());
-        }
-        
-        if (StrUtil.isNotBlank(condition.getBusinessId())) {
-            wrapper.eq(SysFileMetadata::getBusinessId, condition.getBusinessId());
-        }
-        
-        if (condition.getUploaderId() != null) {
-            wrapper.eq(SysFileMetadata::getUploaderId, condition.getUploaderId());
-        }
-        
-        if (condition.getGroupId() != null) {
-            wrapper.eq(SysFileMetadata::getGroupId, condition.getGroupId());
-        }
-        
-        if (StrUtil.isNotBlank(condition.getMimeType())) {
-            wrapper.likeRight(SysFileMetadata::getMimeType, condition.getMimeType());
-        }
-
-        if (condition.getIsPrivate() != null) {
-            wrapper.eq(SysFileMetadata::getIsPrivate, condition.getIsPrivate());
-        }
-
-        if (!StpUtil.hasPermission("*:*:*")) {
-            Long currentUserId = StpUtil.getLoginIdAsLong();
-            wrapper.and(w -> w.eq(SysFileMetadata::getIsPrivate, false)
-                             .or()
-                             .eq(SysFileMetadata::getUploaderId, currentUserId));
-        }
-
-        wrapper.eq(SysFileMetadata::getStatus, "1");
-        
-        wrapper.orderByDesc(SysFileMetadata::getUploadTime);
-        
         Page<SysFileMetadata> page = new Page<>(query.getPageNum(), query.getPageSize());
-        return this.baseMapper.selectPage(page, wrapper);
+        boolean admin = StpUtil.hasPermission("*:*:*");
+        Long currentUserId = admin ? null : StpUtil.getLoginIdAsLong();
+        return this.baseMapper.selectActivePage(page, condition, currentUserId, admin);
     }
     
     @Override
     public List<SysFileMetadata> listByBusiness(String businessType, String businessId) {
-        return this.lambdaQuery()
-                .eq(SysFileMetadata::getBusinessType, businessType)
-                .eq(SysFileMetadata::getBusinessId, businessId)
-                .eq(SysFileMetadata::getStatus, 1)
-                .orderByDesc(SysFileMetadata::getUploadTime)
-                .list();
+        boolean admin = StpUtil.hasPermission("*:*:*");
+        Long currentUserId = admin ? null : StpUtil.getLoginIdAsLong();
+        return this.baseMapper.selectActiveByBusiness(businessType, businessId, currentUserId, admin);
     }
     
     @Override
     public SysFileMetadata getByFileId(String fileId) {
-        return this.lambdaQuery()
-                .eq(SysFileMetadata::getFileId, fileId)
-                .eq(SysFileMetadata::getStatus, 1)
-                .one();
+        SysFileMetadata metadata = this.baseMapper.selectActiveByFileId(fileId);
+        checkReadAccess(metadata);
+        return metadata;
+    }
+
+    @Override
+    public SysFileMetadata getById(Serializable id) {
+        SysFileMetadata metadata = super.getById(id);
+        checkReadAccess(metadata);
+        return metadata;
     }
 
     private void checkOwnership(SysFileMetadata metadata) {
@@ -106,17 +65,20 @@ public class SysFileMetadataServiceImpl extends ServiceImpl<SysFileMetadataMappe
             return;
         }
         Long currentUserId = StpUtil.getLoginIdAsLong();
-        if (metadata.getUploaderId() != null && !currentUserId.equals(metadata.getUploaderId())) {
+        if (metadata.getUploaderId() == null || !currentUserId.equals(metadata.getUploaderId())) {
             throw new BusinessException(403, "无权操作他人素材");
+        }
+    }
+
+    private void checkReadAccess(SysFileMetadata metadata) {
+        if (metadata != null && Boolean.TRUE.equals(metadata.getIsPrivate())) {
+            checkOwnership(metadata);
         }
     }
 
     @Override
     public void removeByFileId(String fileId) {
-        SysFileMetadata metadata = this.lambdaQuery()
-                .eq(SysFileMetadata::getFileId, fileId)
-                .eq(SysFileMetadata::getStatus, 1)
-                .one();
+        SysFileMetadata metadata = this.baseMapper.selectActiveByFileId(fileId);
         checkOwnership(metadata);
         // 文件 IO 在事务外执行，避免长事务占用 DB 连接
         fileManager.delete(metadata.getFileId());
@@ -125,7 +87,7 @@ public class SysFileMetadataServiceImpl extends ServiceImpl<SysFileMetadataMappe
     @Override
     public void removeBatch(String[] fileIds) {
         for (String fileId : fileIds) {
-            SysFileMetadata fileMetadata = this.getById(fileId);
+            SysFileMetadata fileMetadata = this.baseMapper.selectActiveByFileId(fileId);
             if (fileMetadata == null) {
                 continue;
             }
@@ -144,20 +106,16 @@ public class SysFileMetadataServiceImpl extends ServiceImpl<SysFileMetadataMappe
     public boolean updateById(SysFileMetadata metadata) {
         if (metadata != null && metadata.getId() != null) {
             checkOwnership(this.getById(metadata.getId()));
+            // status 专用于逻辑删除，只允许删除接口修改。
+            metadata.setStatus(null);
         }
         return super.updateById(metadata);
     }
 
     @Override
     public void rename(String fileId, String originalName) {
-        SysFileMetadata existing = this.lambdaQuery()
-                .eq(SysFileMetadata::getFileId, fileId)
-                .eq(SysFileMetadata::getStatus, 1)
-                .one();
+        SysFileMetadata existing = this.baseMapper.selectActiveByFileId(fileId);
         checkOwnership(existing);
-        this.lambdaUpdate()
-                .eq(SysFileMetadata::getFileId, fileId)
-                .set(SysFileMetadata::getOriginalName, originalName)
-                .update();
+        this.baseMapper.renameActiveFile(fileId, originalName);
     }
 }

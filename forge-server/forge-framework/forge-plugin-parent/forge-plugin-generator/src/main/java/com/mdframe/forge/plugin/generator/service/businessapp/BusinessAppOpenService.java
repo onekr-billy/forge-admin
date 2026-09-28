@@ -38,18 +38,19 @@ public class BusinessAppOpenService {
     private final AiCrudConfigMapper aiCrudConfigMapper;
 
     public BusinessAppOpenInfoVO openInfo(Long id) {
-        AiBusinessApp app = businessAppMapper.selectEntityById(resolveTenantId(), id);
+        Long tenantId = requireTenantId();
+        AiBusinessApp app = businessAppMapper.selectEntityById(tenantId, id);
         if (app == null) {
             throw new BusinessException("访问入口不存在");
         }
-        return buildOpenInfo(app);
+        return buildOpenInfo(app, tenantId);
     }
 
     public BusinessAppOpenInfoVO buildRuntimeOpenInfo(AiBusinessApp app) {
-        return buildOpenInfo(app);
+        return buildOpenInfo(app, requireTenantId());
     }
 
-    private BusinessAppOpenInfoVO buildOpenInfo(AiBusinessApp app) {
+    private BusinessAppOpenInfoVO buildOpenInfo(AiBusinessApp app, Long tenantId) {
         JSONObject options = readOptions(app.getOptions());
         JSONObject adminMenu = readAdminMenu(options);
         Long menuResourceId = readLong(firstNonNull(adminMenu.get("menuResourceId"), options.get("menuResourceId")));
@@ -79,7 +80,7 @@ public class BusinessAppOpenService {
         vo.setTargetRoute(targetUrl);
 
         // RUNTIME 模式下校验 configKey 对应的运行配置是否存在
-        String runtimeMessage = codeDownloadMode ? null : validateRuntimeConfig(app);
+        String runtimeMessage = codeDownloadMode ? null : validateRuntimeConfig(app, tenantId);
         vo.setRuntimeStatus(runtimeMessage == null ? "AVAILABLE" : "MISSING");
         vo.setRuntimeMessage(runtimeMessage);
 
@@ -126,7 +127,7 @@ public class BusinessAppOpenService {
                 && BusinessAppMode.isCodeDownload(options == null ? null : options.get("appMode"));
     }
 
-    private String validateRuntimeConfig(AiBusinessApp app) {
+    private String validateRuntimeConfig(AiBusinessApp app, Long tenantId) {
         String entryMode = StringUtils.defaultIfBlank(app.getEntryMode(), "").toUpperCase();
         if (!"RUNTIME".equals(entryMode)) {
             return null;
@@ -135,7 +136,7 @@ public class BusinessAppOpenService {
         if (configKey == null) {
             return "访问入口未配置运行配置，请先配置业务单元并发布应用";
         }
-        AiCrudConfig config = aiCrudConfigMapper.selectByConfigKey(resolveTenantId(), configKey);
+        AiCrudConfig config = aiCrudConfigMapper.selectByConfigKey(tenantId, configKey);
         if (config == null) {
             return "运行配置不存在，请先发布应用";
         }
@@ -405,13 +406,16 @@ public class BusinessAppOpenService {
         }
     }
 
-    private Long resolveTenantId() {
+    private Long requireTenantId() {
         Long tenantId;
         try {
             tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
             tenantId = null;
         }
-        return tenantId != null ? tenantId : 1L;
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("访问入口打开缺少可信租户上下文");
+        }
+        return tenantId;
     }
 }

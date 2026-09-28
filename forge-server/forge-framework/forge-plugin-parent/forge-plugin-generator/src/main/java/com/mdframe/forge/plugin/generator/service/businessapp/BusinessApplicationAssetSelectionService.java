@@ -43,10 +43,11 @@ public class BusinessApplicationAssetSelectionService {
     private final BusinessProcessMapper processMapper;
 
     ResolvedSelection resolveContext(Long applicationId, BusinessApplicationPublishDTO dto) {
+        Long tenantId = requireTenantId();
         List<BusinessApplicationObjectVO> objects = applicationObjectService.list(applicationId);
-        List<AiBusinessApp> entries = businessAppMapper.selectByApplicationId(resolveTenantId(), applicationId);
-        List<AiBusinessExtension> extensions = extensionMapper.selectByApplicationId(resolveTenantId(), applicationId);
-        List<AiBusinessProcess> processes = processMapper.selectByApplicationId(resolveTenantId(), applicationId);
+        List<AiBusinessApp> entries = businessAppMapper.selectByApplicationId(tenantId, applicationId);
+        List<AiBusinessExtension> extensions = extensionMapper.selectByApplicationId(tenantId, applicationId);
+        List<AiBusinessProcess> processes = processMapper.selectByApplicationId(tenantId, applicationId);
         Map<Long, BusinessApplicationObjectVO> objectMap = objects.stream()
                 .collect(Collectors.toMap(BusinessApplicationObjectVO::getObjectId, Function.identity()));
         Map<Long, AiBusinessApp> entryMap = entries.stream()
@@ -209,13 +210,17 @@ public class BusinessApplicationAssetSelectionService {
         }
     }
 
-    private Long resolveTenantId() {
+    private Long requireTenantId() {
+        Long tenantId;
         try {
-            Long tenantId = SessionHelper.getTenantId();
-            return tenantId == null ? 1L : tenantId;
+            tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
-            return 1L;
+            tenantId = null;
         }
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("应用发布资产选择缺少可信租户上下文");
+        }
+        return tenantId;
     }
 
     record ResolvedSelection(BusinessApplicationAssetSelectionVO selection,

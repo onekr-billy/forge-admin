@@ -32,11 +32,8 @@ class ClientCredentialSurfaceContractTest {
                 "requestUrl.replaceAll(\";[^/]*\", \"\").replaceAll(\"/+$\", \"\")");
         assertThat(hardExclusion).isGreaterThanOrEqualTo(0).isLessThan(configurableExclusion);
 
-        for (Path initSql : List.of(
-                Path.of("../../../db/全量初始化SQL.sql"),
-                Path.of("../../../forge-admin-server/sql/初始化脚本.sql"))) {
-            assertThat(Files.readString(initSql)).as(initSql.toString()).contains("\"/auth/login\"");
-        }
+        Path initSql = Path.of("../../../db/全量初始化SQL.sql");
+        assertThat(Files.readString(initSql)).as(initSql.toString()).contains("\"/auth/login\"");
     }
 
     @Test

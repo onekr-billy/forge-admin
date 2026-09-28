@@ -342,7 +342,7 @@ public class BusinessApplicationPublishService {
 
     private int enableExtensions(Long applicationId, List<Long> extensionIds) {
         Map<Long, AiBusinessExtension> extensions = extensionMapper
-                .selectByApplicationId(resolveTenantId(), applicationId).stream()
+                .selectByApplicationId(requireTenantId(), applicationId).stream()
                 .collect(Collectors.toMap(AiBusinessExtension::getId, Function.identity()));
         int count = 0;
         for (Long extensionId : extensionIds) {
@@ -501,13 +501,17 @@ public class BusinessApplicationPublishService {
         }
     }
 
-    private Long resolveTenantId() {
+    private Long requireTenantId() {
+        Long tenantId;
         try {
-            Long tenantId = SessionHelper.getTenantId();
-            return tenantId == null ? 1L : tenantId;
+            tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
-            return 1L;
+            tenantId = null;
         }
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("应用发布缺少可信租户上下文");
+        }
+        return tenantId;
     }
 
     private record PublishObjectsResult(AiBusinessApplicationPublishRun run,

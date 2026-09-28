@@ -13,6 +13,7 @@ import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessDocumentConfigV
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectRelationVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessPermissionSummaryVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessPublishCheckItemVO;
+import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import org.apache.commons.lang3.StringUtils;
 
@@ -58,7 +59,8 @@ final class BusinessObjectDesignPublishValidator {
 
     void validateSchema(BusinessObjectDesignerService.DesignerContext context,
                         List<BusinessPublishCheckItemVO> items) {
-        checkRelations(context, items);
+        Long tenantId = requireTenantId(context);
+        checkRelations(context, items, tenantId);
         checkLinkage(context, items);
         checkRuntimeConfig(context, items);
     }
@@ -66,12 +68,14 @@ final class BusinessObjectDesignPublishValidator {
     void validateGovernance(BusinessObjectDesignerService.DesignerContext context,
                             BusinessPermissionSummaryVO permissionSummary,
                             List<BusinessPublishCheckItemVO> items) {
-        checkDocumentConfig(context, items);
+        Long tenantId = requireTenantId(context);
+        checkDocumentConfig(context, items, tenantId);
         checkPermissionSummary(context, permissionSummary, items);
     }
 
     private void checkRelations(BusinessObjectDesignerService.DesignerContext context,
-                                List<BusinessPublishCheckItemVO> items) {
+                                List<BusinessPublishCheckItemVO> items,
+                                Long tenantId) {
         List<BusinessObjectRelationVO> relations = context.getRelations();
         if (relations == null || relations.isEmpty()) {
             add(items, "RELATION_EMPTY", "RELATION", BusinessPublishCheckLevel.WARN,
@@ -91,7 +95,7 @@ final class BusinessObjectDesignPublishValidator {
                 continue;
             }
             AiBusinessObject target = businessObjectMapper.selectByObjectCode(
-                    resolveTenantId(context), context.getObject().getSuiteCode(), relation.getTargetObjectCode());
+                    tenantId, context.getObject().getSuiteCode(), relation.getTargetObjectCode());
             if (target == null) {
                 add(items, "RELATION_TARGET_MISSING", "RELATION", BusinessPublishCheckLevel.BLOCK,
                         "关系目标不存在", "目标业务对象不存在: " + relation.getTargetObjectCode(), null, null,
@@ -244,7 +248,8 @@ final class BusinessObjectDesignPublishValidator {
     }
 
     private void checkDocumentConfig(BusinessObjectDesignerService.DesignerContext context,
-                                     List<BusinessPublishCheckItemVO> items) {
+                                     List<BusinessPublishCheckItemVO> items,
+                                     Long tenantId) {
         BusinessDocumentConfigVO config = documentConfigService.getConfig(context.getObject().getId());
         if (!Boolean.TRUE.equals(config.getDocumentEnabled())) {
             add(items, "DOCUMENT_DISABLED", "DOCUMENT", BusinessPublishCheckLevel.PASS,
@@ -299,7 +304,7 @@ final class BusinessObjectDesignPublishValidator {
         }
         if (requiresTrigger(startMode)) {
             Long triggerCount = triggerMapper.countActiveByObjectAndAction(
-                    resolveTenantId(context), context.getObject().getObjectCode(), "START_FLOW");
+                    tenantId, context.getObject().getObjectCode(), "START_FLOW");
             if (triggerCount == null || triggerCount <= 0) {
                 add(items, "DOCUMENT_TRIGGER_MISSING", "DOCUMENT", BusinessPublishCheckLevel.WARN,
                         "自动发起触发器缺失", "主流程发起方式包含触发器，但当前对象没有启用的发起主流程触发器", null, null,
@@ -576,17 +581,21 @@ final class BusinessObjectDesignPublishValidator {
                 + "_" + StringUtils.defaultString(context.getObject().getObjectCode());
     }
 
-    private Long resolveTenantId(BusinessObjectDesignerService.DesignerContext context) {
-        if (context != null && context.getObject() != null && context.getObject().getTenantId() != null) {
-            return context.getObject().getTenantId();
-        }
+    private Long requireTenantId(BusinessObjectDesignerService.DesignerContext context) {
         Long tenantId;
         try {
             tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
             tenantId = null;
         }
-        return tenantId != null ? tenantId : 1L;
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("业务对象设计发布校验缺少可信租户上下文");
+        }
+        AiBusinessObject object = context == null ? null : context.getObject();
+        if (object == null || object.getTenantId() == null || !object.getTenantId().equals(tenantId)) {
+            throw new BusinessException("业务对象设计发布上下文不属于当前租户");
+        }
+        return tenantId;
     }
 
     private void add(List<BusinessPublishCheckItemVO> items, String code, String category, String level,

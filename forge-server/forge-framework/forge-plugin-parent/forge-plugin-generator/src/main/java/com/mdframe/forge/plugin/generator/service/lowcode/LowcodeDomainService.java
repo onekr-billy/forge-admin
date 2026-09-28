@@ -13,7 +13,6 @@ import com.mdframe.forge.plugin.generator.vo.lowcode.LowcodeDomainVO;
 import com.mdframe.forge.plugin.generator.vo.lowcode.LowcodeDomainWorkspaceVO;
 import com.mdframe.forge.starter.core.domain.PageQuery;
 import com.mdframe.forge.starter.core.exception.BusinessException;
-import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -56,7 +55,7 @@ public class LowcodeDomainService extends ServiceImpl<AiLowcodeDomainMapper, AiL
     private final ObjectMapper objectMapper;
 
     public Page<LowcodeDomainVO> page(PageQuery pageQuery, String keyword, String status, Long parentId) {
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireTenantId();
         Page<AiLowcodeDomain> domainPage = baseMapper.selectDomainPage(
                 new Page<>(pageQuery.getPageNum(), pageQuery.getPageSize()),
                 tenantId,
@@ -69,7 +68,7 @@ public class LowcodeDomainService extends ServiceImpl<AiLowcodeDomainMapper, AiL
     }
 
     public List<LowcodeDomainTreeVO> tree(String keyword, String status) {
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireTenantId();
         List<AiLowcodeDomain> domains = baseMapper.selectDomainList(
                 tenantId,
                 StringUtils.trimToNull(keyword),
@@ -112,7 +111,7 @@ public class LowcodeDomainService extends ServiceImpl<AiLowcodeDomainMapper, AiL
 
     public LowcodeDomainWorkspaceVO workspace(Long id) {
         AiLowcodeDomain domain = requireDomain(id);
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireTenantId();
         LowcodeDomainWorkspaceVO workspace = baseMapper.selectWorkspaceSummary(tenantId, id);
         if (workspace == null) {
             workspace = new LowcodeDomainWorkspaceVO();
@@ -128,7 +127,7 @@ public class LowcodeDomainService extends ServiceImpl<AiLowcodeDomainMapper, AiL
         if (dto == null) {
             throw new BusinessException("业务领域不能为空");
         }
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireTenantId();
         AiLowcodeDomain domain = new AiLowcodeDomain();
         copyDtoToEntity(dto, domain, tenantId, true);
         save(domain);
@@ -142,7 +141,7 @@ public class LowcodeDomainService extends ServiceImpl<AiLowcodeDomainMapper, AiL
             throw new BusinessException("业务领域ID不能为空");
         }
         AiLowcodeDomain domain = requireDomain(dto.getId());
-        copyDtoToEntity(dto, domain, resolveTenantId(), false);
+        copyDtoToEntity(dto, domain, requireTenantId(), false);
         updateById(domain);
         LowcodePublishScopeCache.invalidatePrefix(DOMAIN_CACHE_PREFIX);
     }
@@ -159,7 +158,7 @@ public class LowcodeDomainService extends ServiceImpl<AiLowcodeDomainMapper, AiL
     @Transactional(rollbackFor = Exception.class)
     public void delete(Long id) {
         AiLowcodeDomain domain = requireDomain(id);
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireTenantId();
         if (baseMapper.countChildren(tenantId, id) > 0) {
             throw new BusinessException("存在下级业务领域，不能删除");
         }
@@ -182,7 +181,7 @@ public class LowcodeDomainService extends ServiceImpl<AiLowcodeDomainMapper, AiL
         if (id == null) {
             throw new BusinessException("业务领域ID不能为空");
         }
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireTenantId();
         AiLowcodeDomain domain = LowcodePublishScopeCache.get(
                 DOMAIN_CACHE_PREFIX + "id|" + tenantId + "|" + id,
                 () -> baseMapper.selectDomainById(tenantId, id));
@@ -196,7 +195,7 @@ public class LowcodeDomainService extends ServiceImpl<AiLowcodeDomainMapper, AiL
         if (StringUtils.isBlank(domainCode)) {
             return null;
         }
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireTenantId();
         return LowcodePublishScopeCache.get(
                 DOMAIN_CACHE_PREFIX + "code|" + tenantId + "|" + domainCode,
                 () -> baseMapper.selectByCode(tenantId, domainCode));
@@ -339,7 +338,10 @@ public class LowcodeDomainService extends ServiceImpl<AiLowcodeDomainMapper, AiL
         vo.setDomainSchema(readSchema(domain.getDomainSchema()));
         vo.setCreateTime(domain.getCreateTime());
         vo.setUpdateTime(domain.getUpdateTime());
-        Long tenantId = domain.getTenantId() == null ? resolveTenantId() : domain.getTenantId();
+        Long tenantId = requireTenantId();
+        if (domain.getTenantId() == null || !tenantId.equals(domain.getTenantId())) {
+            throw new BusinessException("低代码业务领域不属于当前租户");
+        }
         LowcodeDomainWorkspaceVO summary = baseMapper.selectWorkspaceSummary(tenantId, domain.getId());
         if (summary != null) {
             vo.setAppCount(summary.getAppCount());
@@ -386,7 +388,7 @@ public class LowcodeDomainService extends ServiceImpl<AiLowcodeDomainMapper, AiL
 
     public List<Long> collectDescendantIds(Long id) {
         AiLowcodeDomain domain = requireDomain(id);
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireTenantId();
         List<AiLowcodeDomain> domains = baseMapper.selectDomainList(tenantId, null, null);
         Map<Long, List<Long>> childrenMap = new LinkedHashMap<>();
         for (AiLowcodeDomain node : domains) {
@@ -433,13 +435,7 @@ public class LowcodeDomainService extends ServiceImpl<AiLowcodeDomainMapper, AiL
         return false;
     }
 
-    private Long resolveTenantId() {
-        Long tenantId;
-        try {
-            tenantId = SessionHelper.getTenantId();
-        } catch (Exception e) {
-            tenantId = null;
-        }
-        return tenantId != null ? tenantId : 1L;
+    private Long requireTenantId() {
+        return LowcodeTenantContext.requireTenantId("低代码业务领域");
     }
 }

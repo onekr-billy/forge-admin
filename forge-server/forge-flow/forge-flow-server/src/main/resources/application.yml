@@ -85,6 +85,12 @@ forge:
   flow:
     timeout:
       time-zone: ${FORGE_FLOW_TIMEOUT_TIME_ZONE:Asia/Shanghai}
+    notify-outbox:
+      # 正常通知在事务提交后立即异步投递；这里只补偿失败和过期租约。
+      scan-interval-ms: ${FORGE_FLOW_NOTIFY_OUTBOX_SCAN_INTERVAL_MS:30000}
+    projection-outbox:
+      # 正常镜像在 Flowable 事件线程即时更新；这里只补偿失败和中断记录。
+      scan-interval-ms: ${FORGE_FLOW_PROJECTION_OUTBOX_SCAN_INTERVAL_MS:30000}
     job:
       technical-identity:
         tenant-id: ${FORGE_FLOW_JOB_TENANT_ID:}

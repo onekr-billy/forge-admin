@@ -44,7 +44,7 @@ public class BusinessMessageChannelService {
         }
 
         boolean applicationChannel = normalizedCode.startsWith("app_") && normalizedCode.endsWith("_collaboration");
-        Long tenantId = applicationChannel ? BusinessMessageTenantContext.requireTenantId() : resolveTenantId();
+        Long tenantId = BusinessMessageTenantContext.requireTenantId();
         AiBusinessMessageChannel channel = channelMapper.selectByChannelCode(tenantId, normalizedCode);
         if (channel == null) {
             if (normalizedCode.startsWith("app_") && normalizedCode.endsWith("_collaboration")) {
@@ -61,7 +61,7 @@ public class BusinessMessageChannelService {
             throw new BusinessException("应用协同消息通道类型异常，请重新绑定企业协同连接");
         }
         if (BusinessMessageChannelType.COLLABORATION.matches(channelType)) {
-            if (!BusinessMessageTenantContext.requireTenantId().equals(channel.getTenantId())
+            if (!tenantId.equals(channel.getTenantId())
                     || !EnableStatus.ENABLED.matches(channel.getStatus())) {
                 throw new BusinessException("应用协同消息通道已停用或租户不匹配");
             }
@@ -126,11 +126,11 @@ public class BusinessMessageChannelService {
         if (roleIds == null || roleIds.isEmpty()) {
             return List.of();
         }
+        Long resolvedTenantId = requireTenantId(tenantId);
         Long resolvedOrgId = orgId != null ? orgId : resolveActiveOrgId();
         if (resolvedOrgId == null) {
             return List.of();
         }
-        Long resolvedTenantId = tenantId != null ? tenantId : resolveTenantId();
         return channelMapper.selectUserIdsByRoleIds(resolvedTenantId, resolvedOrgId, roleIds);
     }
 
@@ -138,7 +138,7 @@ public class BusinessMessageChannelService {
         if (orgIds == null || orgIds.isEmpty()) {
             return List.of();
         }
-        return channelMapper.selectUserIdsByOrgIds(resolveTenantId(), orgIds);
+        return channelMapper.selectUserIdsByOrgIds(BusinessMessageTenantContext.requireTenantId(), orgIds);
     }
 
     public Set<Long> toUserIdSet(List<Long> userIds) {
@@ -199,14 +199,12 @@ public class BusinessMessageChannelService {
                 || Set.of("WECHAT_WORK", "FEISHU", "DINGTALK").contains(type);
     }
 
-    private Long resolveTenantId() {
-        Long tenantId;
-        try {
-            tenantId = SessionHelper.getTenantId();
-        } catch (Exception e) {
-            tenantId = null;
+    private Long requireTenantId(Long requestedTenantId) {
+        Long tenantId = BusinessMessageTenantContext.requireTenantId();
+        if (requestedTenantId != null && !tenantId.equals(requestedTenantId)) {
+            throw new BusinessException("业务消息收件人租户与可信上下文不一致");
         }
-        return tenantId == null ? 1L : tenantId;
+        return tenantId;
     }
 
     private Long resolveActiveOrgId() {

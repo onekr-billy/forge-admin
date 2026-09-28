@@ -5,7 +5,6 @@ import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessActionStepDTO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessActionStepResultVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFlowRuntimeVO;
 import com.mdframe.forge.starter.core.exception.BusinessException;
-import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
@@ -42,8 +41,12 @@ public class StartFlowActionStepExecutor implements BusinessActionStepExecutor {
         variables.put("actionCode", context.getAction() == null ? null : context.getAction().getActionCode());
         variables.put("correlationId", context.getCorrelationId());
 
+        Long tenantId = BusinessActionStepConfigHelper.requireTenantId(context);
+        Long actorUserId = BusinessActionStepConfigHelper.requireActorUserId(context);
+        String actorUsername = BusinessActionStepConfigHelper.resolveActorUsername(context, actorUserId);
+
         BusinessFlowRuntimeVO runtime = flowService.startFlowFromTrigger(flowModelKey, businessKey, title,
-                resolveUserId(), resolveUsername(), context.getTenantId(), variables);
+                actorUserId, actorUsername, tenantId, variables);
 
         BusinessActionStepResultVO result = new BusinessActionStepResultVO();
         result.setStatus(com.mdframe.forge.plugin.generator.enums.BusinessActionStepStatus.SUCCESS.getCode());
@@ -54,19 +57,4 @@ public class StartFlowActionStepExecutor implements BusinessActionStepExecutor {
         return result;
     }
 
-    private Long resolveUserId() {
-        try {
-            return SessionHelper.getUserId();
-        } catch (Exception e) {
-            return 1L;
-        }
-    }
-
-    private String resolveUsername() {
-        try {
-            return SessionHelper.getUsername();
-        } catch (Exception e) {
-            return "system";
-        }
-    }
 }

@@ -2,8 +2,6 @@ package com.mdframe.forge.starter.flow.service.impl;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.mdframe.forge.starter.core.session.LoginUser;
-import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.flow.dto.FlowEntrySubmitDTO;
 import com.mdframe.forge.starter.flow.entity.FlowEntry;
 import com.mdframe.forge.starter.flow.entity.FlowEntryFieldMapping;
@@ -14,6 +12,7 @@ import com.mdframe.forge.starter.flow.enums.FlowFormInstanceStatus;
 import com.mdframe.forge.starter.flow.mapper.FlowEntryFieldMappingMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowFillBatchItemMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowFormInstanceMapper;
+import com.mdframe.forge.starter.flow.security.FlowRuntimeIdentity;
 import com.mdframe.forge.starter.flow.service.FlowBusinessObjectRuntimeAdapter;
 import com.mdframe.forge.starter.flow.service.FlowEntryService;
 import com.mdframe.forge.starter.flow.service.FlowInstanceService;
@@ -59,22 +58,28 @@ public class FlowRuntimeServiceImpl implements FlowRuntimeService {
 
     @Override
     public FlowEntryRuntimeVO getRuntimeEntry(String entryCode) {
-        return flowEntryService.getRuntimeEntry(entryCode);
+        Long tenantId = FlowRuntimeIdentity.requireTenantId();
+        FlowEntryRuntimeVO runtime = flowEntryService.getRuntimeEntry(entryCode);
+        requireEntryTenant(runtime == null ? null : runtime.getEntry(), tenantId);
+        return runtime;
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public FlowStartResultVO submitEntryForm(String entryCode, FlowEntrySubmitDTO dto) {
+        FlowRuntimeIdentity.Actor actor = FlowRuntimeIdentity.requireActor();
+        validateRequestedIdentity(dto, actor);
         FlowEntryRuntimeVO runtime = flowEntryService.getRuntimeEntry(entryCode);
         FlowEntry entry = runtime.getEntry();
+        requireEntryTenant(entry, actor.tenantId());
         String dataMode = StringUtils.hasText(entry.getDataMode()) ? entry.getDataMode() : PROCESS_ONLY;
         Map<String, Object> formData = dto != null && dto.getFormData() != null ? dto.getFormData() : new HashMap<>();
-        List<FlowEntryFieldMapping> mappings = mappingMapper.selectByEntryId(entry.getId());
+        List<FlowEntryFieldMapping> mappings = mappingMapper.selectByEntryId(actor.tenantId(), entry.getId());
 
         if (dto != null && dto.getBatchItemId() != null) {
-            return submitBatchItem(runtime, mappings, formData, dto, dataMode);
+            return submitBatchItem(runtime, mappings, formData, dto, dataMode, actor);
         }
-        return submitByMode(runtime, mappings, formData, dto, dataMode);
+        return submitByMode(runtime, mappings, formData, dto, dataMode, actor);
     }
 
     @Override
@@ -98,16 +103,16 @@ public class FlowRuntimeServiceImpl implements FlowRuntimeService {
     private FlowStartResultVO submitProcessOnly(FlowEntryRuntimeVO runtime,
                                                List<FlowEntryFieldMapping> mappings,
                                                Map<String, Object> formData,
-                                               FlowEntrySubmitDTO dto) {
+                                               FlowEntrySubmitDTO dto,
+                                               FlowRuntimeIdentity.Actor actor) {
         FlowEntry entry = runtime.getEntry();
         Long instanceId = IdWorker.getId();
         String businessKey = resolveBusinessKey(entry, instanceId);
         String title = resolveTitle(entry, formData, dto);
-        StarterContext starter = resolveStarter(dto);
 
         FlowFormInstance instance = new FlowFormInstance();
         instance.setId(instanceId);
-        instance.setTenantId(resolveTenantId());
+        instance.setTenantId(actor.tenantId());
         instance.setEntryId(entry.getId());
         instance.setEntryCode(entry.getEntryCode());
         instance.setBusinessKey(businessKey);
@@ -120,10 +125,10 @@ public class FlowRuntimeServiceImpl implements FlowRuntimeService {
         instance.setFormData(toJson(formData));
         instance.setDataMode(PROCESS_ONLY);
         instance.setTitle(title);
-        instance.setStartUserId(starter.userId);
-        instance.setStartUserName(starter.userName);
-        instance.setStartDeptId(starter.deptId);
-        instance.setStartDeptName(starter.deptName);
+        instance.setStartUserId(actor.userId());
+        instance.setStartUserName(actor.userName());
+        instance.setStartDeptId(actor.deptId());
+        instance.setStartDeptName(actor.deptName());
         instance.setStatus(FlowFormInstanceStatus.DRAFT.getCode());
         instance.setSubmitTime(LocalDateTime.now());
         formInstanceMapper.insert(instance);
@@ -138,10 +143,10 @@ public class FlowRuntimeServiceImpl implements FlowRuntimeService {
                 PROCESS_ONLY,
                 title,
                 variables,
-                toStringValue(starter.userId),
-                starter.userName,
-                toStringValue(starter.deptId),
-                starter.deptName);
+                toStringValue(actor.userId()),
+                actor.userName(),
+                toStringValue(actor.deptId()),
+                actor.deptName());
 
         formInstanceMapper.updateProcessInstance(instanceId, processInstanceId, FlowFormInstanceStatus.RUNNING.getCode());
 
@@ -157,8 +162,10 @@ public class FlowRuntimeServiceImpl implements FlowRuntimeService {
                                               List<FlowEntryFieldMapping> mappings,
                                               Map<String, Object> formData,
                                               FlowEntrySubmitDTO dto,
-                                              String dataMode) {
-        FlowFillBatchItem item = fillBatchItemMapper.selectByIdForUpdate(dto.getBatchItemId());
+                                              String dataMode,
+                                              FlowRuntimeIdentity.Actor actor) {
+        FlowFillBatchItem item = fillBatchItemMapper.selectByIdForUpdateAndTenant(
+                dto.getBatchItemId(), actor.tenantId());
         if (item == null) {
             throw new RuntimeException("填报明细不存在");
         }
@@ -175,7 +182,7 @@ public class FlowRuntimeServiceImpl implements FlowRuntimeService {
         variables.put("flowOwnerUserName", item.getOwnerUserName());
         dto.setVariables(variables);
 
-        FlowStartResultVO result = submitByMode(runtime, mappings, formData, dto, dataMode);
+        FlowStartResultVO result = submitByMode(runtime, mappings, formData, dto, dataMode, actor);
         FlowFillBatchItem update = new FlowFillBatchItem();
         update.setId(item.getId());
         update.setFormInstanceId(result.getFormInstanceId());
@@ -193,22 +200,24 @@ public class FlowRuntimeServiceImpl implements FlowRuntimeService {
                                            List<FlowEntryFieldMapping> mappings,
                                            Map<String, Object> formData,
                                            FlowEntrySubmitDTO dto,
-                                           String dataMode) {
+                                           String dataMode,
+                                           FlowRuntimeIdentity.Actor actor) {
         FlowEntry entry = runtime.getEntry();
         if (BUSINESS_OBJECT.equals(dataMode)) {
-            return submitBusinessObject(entry, mappings, formData, dto, false);
+            return submitBusinessObject(entry, mappings, formData, dto, false, actor);
         }
         if (HYBRID.equals(dataMode)) {
-            return submitBusinessObject(entry, mappings, formData, dto, true);
+            return submitBusinessObject(entry, mappings, formData, dto, true, actor);
         }
-        return submitProcessOnly(runtime, mappings, formData, dto);
+        return submitProcessOnly(runtime, mappings, formData, dto, actor);
     }
 
     private FlowStartResultVO submitBusinessObject(FlowEntry entry,
                                                    List<FlowEntryFieldMapping> mappings,
                                                    Map<String, Object> formData,
                                                    FlowEntrySubmitDTO dto,
-                                                   boolean keepSnapshot) {
+                                                   boolean keepSnapshot,
+                                                   FlowRuntimeIdentity.Actor actor) {
         if (businessObjectRuntimeAdapter == null) {
             throw new RuntimeException("业务对象落表扩展未启用，当前入口不能使用 " + entry.getDataMode() + " 模式");
         }
@@ -226,7 +235,6 @@ public class FlowRuntimeServiceImpl implements FlowRuntimeService {
         String businessKey = StringUtils.hasText(record.getBusinessKey())
                 ? record.getBusinessKey() : objectCode + ":" + record.getRecordId();
         String title = resolveTitle(entry, formData, dto);
-        StarterContext starter = resolveStarter(dto);
 
         Long formInstanceId = null;
         if (keepSnapshot) {
@@ -234,7 +242,7 @@ public class FlowRuntimeServiceImpl implements FlowRuntimeService {
             FlowEntryRuntimeVO runtime = flowEntryService.getRuntimeEntry(entry.getEntryCode());
             FlowFormInstance instance = new FlowFormInstance();
             instance.setId(formInstanceId);
-            instance.setTenantId(resolveTenantId());
+            instance.setTenantId(actor.tenantId());
             instance.setEntryId(entry.getId());
             instance.setEntryCode(entry.getEntryCode());
             instance.setBusinessKey(businessKey);
@@ -249,10 +257,10 @@ public class FlowRuntimeServiceImpl implements FlowRuntimeService {
             instance.setObjectCode(objectCode);
             instance.setRecordId(record.getRecordId());
             instance.setTitle(title);
-            instance.setStartUserId(starter.userId);
-            instance.setStartUserName(starter.userName);
-            instance.setStartDeptId(starter.deptId);
-            instance.setStartDeptName(starter.deptName);
+            instance.setStartUserId(actor.userId());
+            instance.setStartUserName(actor.userName());
+            instance.setStartDeptId(actor.deptId());
+            instance.setStartDeptName(actor.deptName());
             instance.setStatus(FlowFormInstanceStatus.DRAFT.getCode());
             instance.setSubmitTime(LocalDateTime.now());
             formInstanceMapper.insert(instance);
@@ -265,10 +273,10 @@ public class FlowRuntimeServiceImpl implements FlowRuntimeService {
                 entry.getDataMode(),
                 title,
                 variables,
-                toStringValue(starter.userId),
-                starter.userName,
-                toStringValue(starter.deptId),
-                starter.deptName);
+                toStringValue(actor.userId()),
+                actor.userName(),
+                toStringValue(actor.deptId()),
+                actor.deptName());
 
         if (formInstanceId != null) {
             formInstanceMapper.updateProcessInstance(formInstanceId, processInstanceId, FlowFormInstanceStatus.RUNNING.getCode());
@@ -340,44 +348,30 @@ public class FlowRuntimeServiceImpl implements FlowRuntimeService {
         return title;
     }
 
-    private StarterContext resolveStarter(FlowEntrySubmitDTO dto) {
-        StarterContext context = new StarterContext();
-        LoginUser loginUser = null;
-        try {
-            loginUser = SessionHelper.getLoginUser();
-        } catch (Exception ignored) {
-            // Flow 服务独立部署调试时可能没有 Sa-Token 上下文。
+    private void validateRequestedIdentity(FlowEntrySubmitDTO dto, FlowRuntimeIdentity.Actor actor) {
+        if (dto == null) {
+            return;
         }
-        if (loginUser != null) {
-            context.userId = loginUser.getUserId();
-            context.userName = firstNotBlank(loginUser.getRealName(), loginUser.getUsername());
-            context.deptId = loginUser.getMainOrgId();
-            context.deptName = loginUser.getDeptName();
+        Long requestedUserId = parsePositiveId(dto.getStartUserId());
+        if (StringUtils.hasText(dto.getStartUserId())
+                && (requestedUserId == null || !actor.userId().equals(requestedUserId))) {
+            throw new IllegalStateException("FLOW_START_USER_MISMATCH");
         }
-        if (dto != null) {
-            context.userId = context.userId != null ? context.userId : parseLong(dto.getStartUserId());
-            context.userName = firstNotBlank(context.userName, dto.getStartUserName());
-            context.deptId = context.deptId != null ? context.deptId : parseLong(dto.getStartDeptId());
-            context.deptName = firstNotBlank(context.deptName, dto.getStartDeptName());
-        }
-        return context;
-    }
-
-    private Long resolveTenantId() {
-        try {
-            Long tenantId = SessionHelper.getTenantId();
-            return tenantId == null ? 1L : tenantId;
-        } catch (Exception e) {
-            return 1L;
+        Long requestedDeptId = parsePositiveId(dto.getStartDeptId());
+        if (StringUtils.hasText(dto.getStartDeptId())
+                && (requestedDeptId == null || actor.deptId() == null || !actor.deptId().equals(requestedDeptId))) {
+            throw new IllegalStateException("FLOW_START_DEPT_MISMATCH");
         }
     }
 
     private Long requireTenantIdForRead() {
-        Long tenantId = SessionHelper.getTenantId();
-        if (tenantId == null || tenantId <= 0) {
-            throw new IllegalStateException("FLOW_TENANT_REQUIRED");
+        return FlowRuntimeIdentity.requireTenantId();
+    }
+
+    private void requireEntryTenant(FlowEntry entry, Long tenantId) {
+        if (entry == null || entry.getTenantId() == null || !tenantId.equals(entry.getTenantId())) {
+            throw new IllegalStateException("FLOW_ENTRY_NOT_FOUND");
         }
-        return tenantId;
     }
 
     private String toJson(Map<String, Object> value) {
@@ -400,12 +394,13 @@ public class FlowRuntimeServiceImpl implements FlowRuntimeService {
         return null;
     }
 
-    private Long parseLong(String value) {
+    private Long parsePositiveId(String value) {
         if (!StringUtils.hasText(value)) {
             return null;
         }
         try {
-            return Long.parseLong(value);
+            long parsed = Long.parseLong(value.trim());
+            return parsed > 0 ? parsed : null;
         } catch (NumberFormatException e) {
             return null;
         }
@@ -413,12 +408,5 @@ public class FlowRuntimeServiceImpl implements FlowRuntimeService {
 
     private String toStringValue(Long value) {
         return value == null ? null : String.valueOf(value);
-    }
-
-    private static class StarterContext {
-        private Long userId;
-        private String userName;
-        private Long deptId;
-        private String deptName;
     }
 }

@@ -13,7 +13,11 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessProcessVersion
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectDesignVersionMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessProcessMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessProcessVersionMapper;
+import com.mdframe.forge.starter.core.context.ExecutionIdentity;
+import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.session.LoginUser;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -32,6 +36,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @DisplayName("BusinessProcessPublishService")
@@ -50,9 +55,18 @@ class BusinessProcessPublishServiceTest {
 
     private BusinessProcessPublishService service;
     private String draftHash;
+    private ExecutionIdentityContextHolder.Scope identityScope;
 
     @BeforeEach
     void setUp() {
+        LoginUser user = new LoginUser();
+        user.setTenantId(1L);
+        user.setUserId(101L);
+        user.setUsername("publisher");
+        user.setActiveOrgId(201L);
+        identityScope = ExecutionIdentityContextHolder.open(new ExecutionIdentity(
+                user, "USER", 101L, null, 301L,
+                "business_process_publish_test", "token-process-publish", Set.of()));
         BusinessProcessSchemaValidator validator = new BusinessProcessSchemaValidator(objectMapper);
         draftHash = validator.schemaHash(validator.normalize(schemaJson()));
         service = new BusinessProcessPublishService(
@@ -63,6 +77,14 @@ class BusinessProcessPublishServiceTest {
                 validator,
                 contextResolver,
                 flowClientProvider);
+    }
+
+    @AfterEach
+    void clearIdentity() {
+        if (identityScope != null) {
+            identityScope.close();
+        }
+        ExecutionIdentityContextHolder.clear();
     }
 
     @Test
@@ -83,7 +105,7 @@ class BusinessProcessPublishServiceTest {
         verify(versionMapper, never()).insertImmutable(any());
         verify(processMapper, never()).updatePublishedProjection(
                 any(), any(), any(), any(), any(), any());
-        verify(processMapper).clearPublishedProjectionExcept(1L, 10L, List.of(20L), null);
+        verify(processMapper).clearPublishedProjectionExcept(1L, 10L, List.of(20L), 101L);
     }
 
     @Test
@@ -95,13 +117,13 @@ class BusinessProcessPublishServiceTest {
         AiBusinessProcessVersion existing = version(801L, draftHash, 6, 3);
         when(processMapper.selectForPublish(1L, 10L, 20L)).thenReturn(process);
         when(versionMapper.selectPublishedForApplicationVersion(1L, 20L, 3)).thenReturn(existing);
-        when(processMapper.updatePublishedProjection(1L, 10L, 20L, 6, draftHash, null)).thenReturn(1);
+        when(processMapper.updatePublishedProjection(1L, 10L, 20L, 6, draftHash, 101L)).thenReturn(1);
 
         BusinessProcessPublishResult result = service.publishForApplication(
                 10L, 3, List.of(20L), Map.of(20L, draftHash), 300L);
 
         assertEquals("801", result.snapshots().get(0).processVersionId());
-        verify(processMapper).updatePublishedProjection(1L, 10L, 20L, 6, draftHash, null);
+        verify(processMapper).updatePublishedProjection(1L, 10L, 20L, 6, draftHash, 101L);
     }
 
     @Test
@@ -151,6 +173,8 @@ class BusinessProcessPublishServiceTest {
         assertEquals("deployment-7", flowModel.get("deploymentId"));
         assertEquals("801", result.snapshots().get(0).processVersionId());
         assertTrue(result.snapshots().get(0).dependencies().containsKey("objects"));
+        assertEquals(101L, inserted.getValue().getPublishedBy());
+        assertEquals(201L, inserted.getValue().getCreateDept());
     }
 
     @Test
@@ -189,7 +213,7 @@ class BusinessProcessPublishServiceTest {
         AiBusinessProcessVersion historical = version(701L, draftHash, 4, 2);
         when(versionMapper.selectPublishedVersionById(1L, 701L)).thenReturn(historical);
         when(processMapper.selectForProjection(1L, 10L, 20L)).thenReturn(process);
-        when(processMapper.updatePublishedProjection(1L, 10L, 20L, 4, draftHash, null)).thenReturn(1);
+        when(processMapper.updatePublishedProjection(1L, 10L, 20L, 4, draftHash, 101L)).thenReturn(1);
 
         List<BusinessProcessSnapshot> restored
                 = service.restorePublishedProjection(10L, List.of(701L));
@@ -197,7 +221,20 @@ class BusinessProcessPublishServiceTest {
         assertEquals(1, restored.size());
         assertEquals("701", restored.get(0).processVersionId());
         verify(versionMapper, never()).insertImmutable(any());
-        verify(processMapper).clearPublishedProjectionExcept(1L, 10L, List.of(20L), null);
+        verify(processMapper).clearPublishedProjectionExcept(1L, 10L, List.of(20L), 101L);
+    }
+
+    @Test
+    @DisplayName("missing trusted identity is rejected before process publish reads")
+    void missingIdentityIsRejectedBeforePersistence() {
+        identityScope.close();
+        identityScope = null;
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.publishForApplication(
+                10L, 3, List.of(20L), Map.of(20L, draftHash), 300L));
+
+        assertEquals("业务流程发布缺少可信租户上下文", error.getMessage());
+        verifyNoInteractions(processMapper, versionMapper, objectVersionMapper, contextResolver);
     }
 
     private void stubNewVersionDependencies(Integer flowModelVersion) {
@@ -237,7 +274,7 @@ class BusinessProcessPublishServiceTest {
             ((AiBusinessProcessVersion) invocation.getArgument(0)).setId(801L);
             return 1;
         });
-        when(processMapper.updatePublishedProjection(1L, 10L, 20L, 6, draftHash, null)).thenReturn(1);
+        when(processMapper.updatePublishedProjection(1L, 10L, 20L, 6, draftHash, 101L)).thenReturn(1);
     }
 
     private AiBusinessProcess process() {

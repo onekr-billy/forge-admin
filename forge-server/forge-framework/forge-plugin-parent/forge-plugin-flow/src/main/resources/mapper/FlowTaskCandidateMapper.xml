@@ -25,6 +25,27 @@
             update_time = VALUES(update_time)
     </insert>
 
+    <insert id="upsertProjection" useGeneratedKeys="true" keyProperty="candidate.id">
+        INSERT INTO sys_flow_task_candidate
+        (tenant_id, task_id, process_instance_id, candidate_type, candidate_value, source,
+         status, projection_event_id, projection_sequence, create_time, update_time)
+        VALUES
+        (#{candidate.tenantId}, #{candidate.taskId}, #{candidate.processInstanceId},
+         #{candidate.candidateType}, #{candidate.candidateValue}, #{candidate.source},
+         #{candidate.status}, #{eventId}, #{eventSequence},
+         COALESCE(#{candidate.createTime}, NOW()), COALESCE(#{candidate.updateTime}, NOW()))
+        ON DUPLICATE KEY UPDATE
+            status = IF(VALUES(projection_sequence) &gt; COALESCE(projection_sequence, 0), VALUES(status), status),
+            source = IF(VALUES(projection_sequence) &gt; COALESCE(projection_sequence, 0), VALUES(source), source),
+            process_instance_id = IF(VALUES(projection_sequence) &gt; COALESCE(projection_sequence, 0),
+                                     VALUES(process_instance_id), process_instance_id),
+            projection_event_id = IF(VALUES(projection_sequence) &gt; COALESCE(projection_sequence, 0),
+                                     VALUES(projection_event_id), projection_event_id),
+            update_time = IF(VALUES(projection_sequence) &gt; COALESCE(projection_sequence, 0),
+                             VALUES(update_time), update_time),
+            projection_sequence = GREATEST(COALESCE(projection_sequence, 0), VALUES(projection_sequence))
+    </insert>
+
     <update id="activate">
         UPDATE sys_flow_task_candidate
         SET status = 1, source = #{source}, update_time = #{updateTime}

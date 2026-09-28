@@ -97,6 +97,10 @@ public class ExecutionResult {
             this.executedFields.add(field);
             return this;
         }
+        public Builder putFallback(String field, Object value) {
+            this.results.put(field, value);
+            return this;
+        }
         public Builder putError(String field, String error) {
             this.errors.computeIfAbsent(field, k -> new ArrayList<>()).add(error);
             return this;

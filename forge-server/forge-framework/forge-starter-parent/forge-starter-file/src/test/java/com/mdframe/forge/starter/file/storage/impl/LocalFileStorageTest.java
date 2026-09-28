@@ -13,6 +13,7 @@ import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -94,6 +95,19 @@ class LocalFileStorageTest {
         assertTrue(Files.notExists(tempDir));
         assertThrows(RuntimeException.class,
                 () -> storage.uploadPart(uploadId, 1, new ByteArrayInputStream("part".getBytes())));
+    }
+
+    @Test
+    void shouldResumeMultipartUploadFromAnotherNodeUsingSharedDirectory() {
+        LocalFileStorage firstNode = createStorage();
+        LocalFileStorage secondNode = createStorage();
+        String uploadId = firstNode.initMultipartUpload("report.txt", "reports", "1");
+
+        String eTag = secondNode.uploadPart(uploadId, 1, new ByteArrayInputStream("part".getBytes()));
+        FileMetadata metadata = secondNode.completeMultipartUpload(uploadId, java.util.List.of(eTag));
+
+        assertEquals(4L, metadata.getFileSize());
+        assertTrue(Files.isRegularFile(tempDirectory.resolve(metadata.getFilePath()).normalize()));
     }
 
     private LocalFileStorage createStorage() {

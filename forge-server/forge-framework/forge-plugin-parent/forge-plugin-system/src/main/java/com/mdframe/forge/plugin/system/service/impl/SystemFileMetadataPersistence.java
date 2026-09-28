@@ -2,8 +2,6 @@ package com.mdframe.forge.plugin.system.service.impl;
 
 import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.bean.BeanUtil;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.mdframe.forge.plugin.system.entity.SysFileMetadata;
 import com.mdframe.forge.plugin.system.mapper.SysFileMetadataMapper;
 import com.mdframe.forge.starter.file.model.FileMetadata;
@@ -33,11 +31,7 @@ public class SystemFileMetadataPersistence implements FileMetadataPersistence {
     
     @Override
     public FileMetadata getById(String fileId) {
-        SysFileMetadata entity = metadataMapper.selectOne(
-            new LambdaQueryWrapper<SysFileMetadata>()
-                .eq(SysFileMetadata::getFileId, fileId)
-                .eq(SysFileMetadata::getStatus, 1)
-        );
+        SysFileMetadata entity = metadataMapper.selectActiveByFileId(fileId);
         
         if (entity == null) {
             return null;
@@ -52,12 +46,7 @@ public class SystemFileMetadataPersistence implements FileMetadataPersistence {
             return null;
         }
         
-        SysFileMetadata entity = metadataMapper.selectOne(
-            new LambdaQueryWrapper<SysFileMetadata>()
-                .eq(SysFileMetadata::getMd5, md5)
-                .eq(SysFileMetadata::getStatus, 1)
-                .last("LIMIT 1")
-        );
+        SysFileMetadata entity = metadataMapper.selectActiveByMd5(md5);
         
         if (entity == null) {
             return null;
@@ -73,12 +62,7 @@ public class SystemFileMetadataPersistence implements FileMetadataPersistence {
     
     @Override
     public void delete(String fileId) {
-        // 逻辑删除
-        metadataMapper.update(null,
-            new LambdaUpdateWrapper<SysFileMetadata>()
-                .eq(SysFileMetadata::getFileId, fileId)
-                .set(SysFileMetadata::getStatus, 0)
-        );
+        metadataMapper.softDeleteByFileId(fileId);
     }
     
     @Override
@@ -103,11 +87,7 @@ public class SystemFileMetadataPersistence implements FileMetadataPersistence {
     }
 
     private SysFileMetadata findEnabled(String fileId) {
-        return metadataMapper.selectOne(
-            new LambdaQueryWrapper<SysFileMetadata>()
-                .eq(SysFileMetadata::getFileId, fileId)
-                .eq(SysFileMetadata::getStatus, 1)
-        );
+        return metadataMapper.selectActiveByFileId(fileId);
     }
 
     private boolean isAdminOrUploader(SysFileMetadata entity, Long userId) {

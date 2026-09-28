@@ -57,6 +57,19 @@
           AND deleted = 0
     </update>
 
+    <update id="applyProjectionStatus">
+        UPDATE sys_flow_form_instance
+        SET status = #{status},
+            end_time = NOW(),
+            projection_event_id = #{eventId},
+            projection_sequence = #{eventSequence},
+            update_time = NOW()
+        WHERE process_instance_id = #{processInstanceId}
+          AND tenant_id = #{tenantId}
+          AND deleted = 0
+          AND COALESCE(projection_sequence, 0) &lt; #{eventSequence}
+    </update>
+
     <update id="deleteByProcessInstanceIdLogically">
         UPDATE sys_flow_form_instance
         SET deleted = 1,

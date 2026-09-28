@@ -3,7 +3,6 @@ package com.mdframe.forge.plugin.generator.service.businessapp;
 import com.alibaba.fastjson2.JSONObject;
 import com.mdframe.forge.flow.client.FlowClient;
 import com.mdframe.forge.flow.client.FlowResult;
-import com.mdframe.forge.flow.client.annotation.FlowBind;
 import com.mdframe.forge.flow.client.annotation.FlowCallback;
 import com.mdframe.forge.flow.client.annotation.FlowEventContext;
 import com.mdframe.forge.flow.client.spi.FlowBusinessListDisplayItem;
@@ -72,7 +71,6 @@ import static com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlo
  */
 @Slf4j
 @Service
-@FlowBind(modelKey = "*", businessType = "lowcode-business")
 public class BusinessFlowService {
 
     private static final BusinessFlowStartContextAssembler START_CONTEXT_ASSEMBLER =
@@ -157,6 +155,27 @@ public class BusinessFlowService {
                                ApplicationEventPublisher applicationEventPublisher,
                                ObjectProvider<RedissonClient> redissonClientProvider,
                                ObjectProvider<BusinessActionExecutionService> actionExecutionServiceProvider) {
+        this(bindingMapper, flowInstanceLinkMapper, crudConfigMapper, businessObjectMapper,
+                documentConfigService, documentRuntimeService, dynamicCrudService,
+                businessFieldDesignService, variableResolver, codeFormProviderRegistry,
+                applicationEventPublisher, redissonClientProvider, actionExecutionServiceProvider, null);
+    }
+
+    @Autowired
+    public BusinessFlowService(BusinessBindingMapper bindingMapper,
+                               BusinessFlowInstanceLinkMapper flowInstanceLinkMapper,
+                               AiCrudConfigMapper crudConfigMapper,
+                               BusinessObjectMapper businessObjectMapper,
+                               BusinessDocumentConfigService documentConfigService,
+                               BusinessDocumentRuntimeService documentRuntimeService,
+                               DynamicCrudService dynamicCrudService,
+                               BusinessFieldDesignService businessFieldDesignService,
+                               BusinessFlowVariableResolver variableResolver,
+                               BusinessCodeFormProviderRegistry codeFormProviderRegistry,
+                               ApplicationEventPublisher applicationEventPublisher,
+                               ObjectProvider<RedissonClient> redissonClientProvider,
+                               ObjectProvider<BusinessActionExecutionService> actionExecutionServiceProvider,
+                               BusinessFlowRemoteCommandService remoteCommandService) {
         this.bindingMapper = bindingMapper;
         this.flowInstanceLinkMapper = flowInstanceLinkMapper;
         this.crudConfigMapper = crudConfigMapper;
@@ -276,7 +295,8 @@ public class BusinessFlowService {
                 redissonClientProvider,
                 this::resolveUserId,
                 this::resolveActiveOrgId,
-                this::resolveUsername);
+                this::resolveUsername,
+                remoteCommandService);
         this.taskEventCoordinator = new BusinessFlowTaskEventCoordinator(
                 () -> flowClient,
                 flowInstanceLinkMapper,
@@ -322,7 +342,9 @@ public class BusinessFlowService {
                 formAssetCatalog::queryBusinessObject,
                 formAssetCatalog::toBusinessObjectVO,
                 formAssetCatalog::resolveBusinessFormSchema,
-                this::resolveTerminalBusinessFlowResult);
+                this::resolveTerminalBusinessFlowResult,
+                remoteCommandService,
+                () -> transactionManager);
     }
 
     /** 查询 Flowable 模型中需要发起人选择审批人的节点，供应用级流程启动页复用。 */
@@ -381,7 +403,7 @@ public class BusinessFlowService {
         String title = startContext.title();
 
         // 4. 发起流程
-        Long userId = resolveUserId();
+        Long userId = requireUserId();
         String userName = resolveUsername();
 
         FlowResult<String> result = flowClient.startProcess(
@@ -541,7 +563,6 @@ public class BusinessFlowService {
      * 办理低代码业务待办。该入口在 Flowable 任务完成后同步业务流程实例和业务单据状态，
      * 避免低代码单据状态停留在发起时的 IN_PROCESS。
      */
-    @Transactional(rollbackFor = Exception.class)
     public BusinessFlowRuntimeVO completeBusinessTask(BusinessTaskActionDTO dto) {
         return taskCommandCoordinator.completeBusinessTask(dto);
     }
@@ -708,6 +729,28 @@ public class BusinessFlowService {
                 () -> startCoordinator.start(dto, true, null, null, tenantId, true, false));
     }
 
+    /** 由恢复扫描器按持久化命令快照补齐远端启动和本地流程关联。 */
+    @Transactional(rollbackFor = Exception.class)
+    public BusinessFlowRuntimeVO recoverRemoteStartCommand(Long tenantId, Long commandId) {
+        Long effectiveTenantId = requireTenantId(tenantId);
+        if (commandId == null) {
+            throw new BusinessException("流程远程命令ID不能为空");
+        }
+        return TenantContextHolder.executeWithTenant(effectiveTenantId,
+                () -> startCoordinator.recover(effectiveTenantId, commandId));
+    }
+
+    /** 由恢复扫描器按可信快照回放远程任务命令，并补齐本地流程状态。 */
+    @Transactional(rollbackFor = Exception.class)
+    public BusinessFlowRuntimeVO recoverRemoteTaskCommand(Long tenantId, Long commandId) {
+        Long effectiveTenantId = requireTenantId(tenantId);
+        if (commandId == null) {
+            throw new BusinessException("流程远程任务命令ID不能为空");
+        }
+        return TenantContextHolder.executeWithTenant(effectiveTenantId,
+                () -> taskCommandCoordinator.recoverRemoteTaskCommand(effectiveTenantId, commandId));
+    }
+
     /**
      * 旧审批入口兼容发起。接口层仍有旧权限校验，这里不再重复要求新流程按钮权限。
      */
@@ -733,6 +776,8 @@ public class BusinessFlowService {
     @Transactional(rollbackFor = Exception.class)
     public BusinessFlowRuntimeVO startFlowFromTrigger(String flowModelKey, String businessKey, String title,
                                                       Long userId, String userName, Long tenantId, JSONObject variables) {
+        Long effectiveTenantId = requireTenantId(tenantId);
+        Long effectiveUserId = requireUserId(userId);
         BusinessKeyParts parts = parseBusinessKey(businessKey);
         BusinessFlowStartDTO dto = new BusinessFlowStartDTO();
         dto.setObjectCode(parts.objectCode());
@@ -742,9 +787,8 @@ public class BusinessFlowService {
         if (variables != null) {
             dto.setVariables(new LinkedHashMap<>(variables));
         }
-        Long effectiveTenantId = tenantId != null ? tenantId : resolveTenantId();
         return TenantContextHolder.executeWithTenant(effectiveTenantId,
-                () -> startCoordinator.start(dto, false, userId, userName,
+                () -> startCoordinator.start(dto, false, effectiveUserId, userName,
                         effectiveTenantId, false, false));
     }
 
@@ -758,6 +802,8 @@ public class BusinessFlowService {
         if (StringUtils.isBlank(flowModelKey)) {
             throw new BusinessException("审批节点未配置已发布流程模型");
         }
+        Long effectiveTenantId = requireTenantId(tenantId);
+        Long effectiveUserId = requireUserId(userId);
         BusinessKeyParts parts = parseBusinessKey(businessKey);
         BusinessFlowStartDTO dto = new BusinessFlowStartDTO();
         dto.setObjectCode(parts.objectCode());
@@ -767,9 +813,8 @@ public class BusinessFlowService {
         if (variables != null) {
             dto.setVariables(new LinkedHashMap<>(variables));
         }
-        Long effectiveTenantId = tenantId != null ? tenantId : resolveTenantId();
         return TenantContextHolder.executeWithTenant(effectiveTenantId,
-                () -> startCoordinator.start(dto, false, userId, userName,
+                () -> startCoordinator.start(dto, false, effectiveUserId, userName,
                         effectiveTenantId, false, true));
     }
 
@@ -807,13 +852,6 @@ public class BusinessFlowService {
         callbackCoordinator.handleCallback(dto);
     }
 
-    @FlowCallback(on = {
-            FlowCallback.ON_TASK_CREATED,
-            FlowCallback.ON_TASK_COMPLETED,
-            FlowCallback.ON_COMPLETED,
-            FlowCallback.ON_REJECTED,
-            FlowCallback.ON_CANCELED
-    })
     @Transactional(rollbackFor = Exception.class)
     public void handleFlowEngineEvent(FlowEventContext ctx) {
         if (ctx == null) {
@@ -919,7 +957,23 @@ public class BusinessFlowService {
         if (tenantId == null) {
             tenantId = TenantContextHolder.getTenantId();
         }
-        return tenantId != null ? tenantId : 1L;
+        if (tenantId == null || tenantId <= 0 || TenantContextHolder.isIgnore()) {
+            throw new BusinessException("业务流程缺少隔离的可信租户上下文");
+        }
+        return tenantId;
+    }
+
+    private Long requireTenantId(Long tenantId) {
+        if (TenantContextHolder.isIgnore()) {
+            throw new BusinessException("业务流程缺少隔离的可信租户上下文");
+        }
+        if (tenantId != null) {
+            if (tenantId <= 0) {
+                throw new BusinessException("业务流程租户上下文无效");
+            }
+            return tenantId;
+        }
+        return resolveTenantId();
     }
 
     private Long resolveUserId() {
@@ -928,6 +982,17 @@ public class BusinessFlowService {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private Long requireUserId() {
+        return requireUserId(resolveUserId());
+    }
+
+    private Long requireUserId(Long userId) {
+        if (userId == null || userId <= 0) {
+            throw new BusinessException("业务流程缺少可信发起人");
+        }
+        return userId;
     }
 
     private Long resolveActiveOrgId() {

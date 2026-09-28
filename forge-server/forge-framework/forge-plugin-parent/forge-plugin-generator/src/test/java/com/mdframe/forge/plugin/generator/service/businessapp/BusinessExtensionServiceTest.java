@@ -10,21 +10,50 @@ import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessExtensionDTO;
 import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessExtensionMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessExtensionVersionMapper;
+import com.mdframe.forge.starter.core.context.ExecutionIdentity;
+import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.session.LoginUser;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @DisplayName("BusinessExtensionService")
 class BusinessExtensionServiceTest {
+
+    private ExecutionIdentityContextHolder.Scope identityScope;
+
+    @BeforeEach
+    void setUpIdentity() {
+        LoginUser user = new LoginUser();
+        user.setTenantId(1L);
+        user.setUserId(101L);
+        user.setUsername("extension-editor");
+        identityScope = ExecutionIdentityContextHolder.open(new ExecutionIdentity(
+                user, "USER", 101L, null, 301L,
+                "extension_service_test", "token-extension-service", Set.of()));
+    }
+
+    @AfterEach
+    void clearIdentity() {
+        if (identityScope != null) {
+            identityScope.close();
+        }
+        ExecutionIdentityContextHolder.clear();
+    }
 
     @Test
     @DisplayName("create persists a tenant-scoped draft and immutable version one")
@@ -145,6 +174,25 @@ class BusinessExtensionServiceTest {
         BusinessException error = assertThrows(BusinessException.class, () -> service.create(dto));
 
         assertTrue(error.getMessage().contains("不支持钩子"));
+    }
+
+    @Test
+    @DisplayName("missing trusted identity is rejected before extension persistence")
+    void missingIdentityIsRejectedBeforePersistence() throws Exception {
+        identityScope.close();
+        identityScope = null;
+        BusinessExtensionMapper extensionMapper = mock(BusinessExtensionMapper.class);
+        BusinessExtensionVersionMapper versionMapper = mock(BusinessExtensionVersionMapper.class);
+        BusinessApplicationChangeTracker changeTracker = mock(BusinessApplicationChangeTracker.class);
+        BusinessExtensionService service = new BusinessExtensionService(
+                versionMapper, new ObjectMapper(), changeTracker);
+        setBaseMapper(service, extensionMapper);
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.create(extensionDto()));
+
+        assertEquals("业务扩展操作缺少可信租户上下文", error.getMessage());
+        verifyNoInteractions(extensionMapper, versionMapper, changeTracker);
     }
 
     private BusinessExtensionDTO extensionDto() {

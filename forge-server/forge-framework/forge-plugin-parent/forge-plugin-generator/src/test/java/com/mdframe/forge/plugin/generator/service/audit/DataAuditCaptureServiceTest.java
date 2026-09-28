@@ -58,6 +58,8 @@ class DataAuditCaptureServiceTest {
     @BeforeEach
     void setUp() {
         TenantContextHolder.setTenantId(TENANT_ID);
+        // 全量测试会复用 JVM 内的租户审计索引，先清理同租户缓存，避免前一测试类的策略污染首个用例。
+        DataAuditTransactionHolder.index().clearTenant(TENANT_ID);
         TransactionSynchronizationManager.initSynchronization();
         TransactionSynchronizationManager.setActualTransactionActive(true);
         config.setConfigKey("audit_test");

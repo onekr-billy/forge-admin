@@ -12,6 +12,8 @@ import com.mdframe.forge.plugin.generator.mapper.AiLowcodeModelMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessAppMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessSuiteMapper;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
+import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
@@ -21,8 +23,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Locale;
-import com.mdframe.forge.starter.core.enums.EnableStatus;
-import com.mdframe.forge.starter.core.exception.BusinessException;
 
 /**
  * 低代码历史数据到业务应用平台的幂等映射服务。
@@ -43,7 +43,10 @@ public class BusinessBootstrapService {
 
     @Transactional(rollbackFor = Exception.class)
     public void syncSuitesFromLowcodeDomains() {
-        Long tenantId = resolveTenantId();
+        syncSuitesFromLowcodeDomains(requireTenantId());
+    }
+
+    private void syncSuitesFromLowcodeDomains(Long tenantId) {
         List<AiLowcodeDomain> domains = lowcodeDomainMapper.selectDomainList(tenantId, null, null);
         for (AiLowcodeDomain domain : domains) {
             if (domain == null || StringUtils.isBlank(domain.getDomainCode())) {
@@ -68,8 +71,11 @@ public class BusinessBootstrapService {
 
     @Transactional(rollbackFor = Exception.class)
     public void syncObjectsFromLowcodeModels() {
-        syncSuitesFromLowcodeDomains();
-        Long tenantId = resolveTenantId();
+        syncObjectsFromLowcodeModels(requireTenantId());
+    }
+
+    private void syncObjectsFromLowcodeModels(Long tenantId) {
+        syncSuitesFromLowcodeDomains(tenantId);
         List<AiLowcodeModel> models = lowcodeModelMapper.selectModelList(tenantId, null, null, null);
         for (AiLowcodeModel model : models) {
             if (model == null || StringUtils.isBlank(model.getModelCode())) {
@@ -105,8 +111,8 @@ public class BusinessBootstrapService {
 
     @Transactional(rollbackFor = Exception.class)
     public void syncAppsFromPublishedCrudConfigs() {
-        syncObjectsFromLowcodeModels();
-        Long tenantId = resolveTenantId();
+        Long tenantId = requireTenantId();
+        syncObjectsFromLowcodeModels(tenantId);
         List<AiCrudConfig> configs = crudConfigMapper.selectPublishedLowcodeConfigs(tenantId);
         for (AiCrudConfig config : configs) {
             if (config == null || StringUtils.isBlank(config.getConfigKey())) {
@@ -246,13 +252,16 @@ public class BusinessBootstrapService {
         return normalized.length() > 64 ? normalized.substring(0, 64) : normalized;
     }
 
-    private Long resolveTenantId() {
+    private Long requireTenantId() {
         Long tenantId;
         try {
             tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
             tenantId = null;
         }
-        return tenantId != null ? tenantId : 1L;
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("业务应用初始化缺少可信租户上下文");
+        }
+        return tenantId;
     }
 }

@@ -5,15 +5,17 @@
     <select id="selectByBatchId" resultType="com.mdframe.forge.starter.flow.entity.FlowFillBatchItem">
         SELECT i.*
         FROM sys_flow_fill_batch_item i
-        WHERE i.deleted = 0
+        WHERE i.tenant_id = #{tenantId}
+          AND i.deleted = 0
           AND i.batch_id = #{batchId}
         ORDER BY i.create_time ASC
     </select>
 
-    <select id="selectByIdForUpdate" resultType="com.mdframe.forge.starter.flow.entity.FlowFillBatchItem">
+    <select id="selectByIdForUpdateAndTenant" resultType="com.mdframe.forge.starter.flow.entity.FlowFillBatchItem">
         SELECT i.*
         FROM sys_flow_fill_batch_item i
-        WHERE i.deleted = 0
+        WHERE i.tenant_id = #{tenantId}
+          AND i.deleted = 0
           AND i.id = #{id}
         FOR UPDATE
     </select>

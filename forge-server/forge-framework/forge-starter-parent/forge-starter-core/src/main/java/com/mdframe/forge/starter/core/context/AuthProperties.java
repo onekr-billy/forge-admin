@@ -28,6 +28,24 @@ public class AuthProperties {
     };
 
     /**
+     * 是否在应用启动完成前盘点 Controller 路由与 API 权限资源覆盖关系。
+     * API 资源采用显式配置策略，默认不要求全部 Controller 都配置资源。
+     */
+    private Boolean apiPermissionCoverageEnabled = false;
+
+    /**
+     * 权限资源缺失或查询失败时是否阻止应用完成启动。
+     * 默认关闭；仅在要求全部 Controller 都配置 API 资源的部署中显式开启。
+     * 请求期只有明确配置的 API 资源才执行资源权限校验，不受此开关影响。
+     */
+    private Boolean apiPermissionCoverageFailOnMissing = false;
+
+    /**
+     * 启动日志中最多输出的缺失路由数量，避免错误配置导致日志洪泛。
+     */
+    private Integer apiPermissionCoverageReportLimit = 100;
+
+    /**
      * 是否启用登录失败锁定功能
      * 默认启用
      */
@@ -79,4 +97,10 @@ public class AuthProperties {
      * 完成存量盘点和机会式升级后应关闭。
      */
     private Boolean enableLegacyClientSecretRead = true;
+
+    /**
+     * 用户主动修改密码后是否保留当前会话。
+     * 默认关闭；找回密码和管理员重置始终吊销全部旧会话。
+     */
+    private Boolean keepCurrentSessionAfterPasswordChange = false;
 }

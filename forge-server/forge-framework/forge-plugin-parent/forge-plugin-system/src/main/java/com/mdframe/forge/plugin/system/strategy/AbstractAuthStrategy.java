@@ -2,6 +2,7 @@ package com.mdframe.forge.plugin.system.strategy;
 
 import cn.hutool.core.util.StrUtil;
 import com.mdframe.forge.plugin.system.service.IUserLoadService;
+import com.mdframe.forge.plugin.system.service.PasswordPolicyService;
 import com.mdframe.forge.starter.core.context.AuthProperties;
 import com.mdframe.forge.starter.auth.domain.LoginRequest;
 import com.mdframe.forge.starter.core.session.LoginUser;
@@ -31,6 +32,9 @@ public abstract class AbstractAuthStrategy implements IAuthStrategy {
 
     @Autowired
     protected AuthProperties authProperties;
+
+    @Autowired
+    protected PasswordPolicyService passwordPolicyService;
 
     /**
  * 认证模板方法
@@ -136,6 +140,11 @@ public abstract class AbstractAuthStrategy implements IAuthStrategy {
 
         log.info("{}认证成功: username={}, userId={}",
                 getAuthType(), loginUser.getUsername(), loginUser.getUserId());
+    }
+
+    protected LoginUser applyPasswordExpiration(LoginUser loginUser) {
+        passwordPolicyService.applyPasswordExpiration(loginUser);
+        return loginUser;
     }
 
     /**

@@ -11,7 +11,8 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessProcessMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessProcessVersionMapper;
-import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessObjectProcessVO;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
+import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
@@ -23,7 +24,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
  * 按当前对象/应用投影已发布或设计预览中的手动开始按钮。
@@ -62,6 +62,7 @@ public class BusinessProcessRuntimeActionProjectionService {
             String configKey,
             Long applicationId,
             boolean includeDraft) {
+        Long tenantId = requireTenantId();
         Set<String> codes = new LinkedHashSet<>();
         for (String code : objectCodes) {
             if (StringUtils.isNotBlank(code)) {
@@ -69,13 +70,13 @@ public class BusinessProcessRuntimeActionProjectionService {
             }
         }
         if (StringUtils.isNotBlank(configKey)) {
-            AiBusinessObject byConfigKey = businessObjectMapper.selectByConfigKey(resolveTenantId(), configKey.trim());
+            AiBusinessObject byConfigKey = businessObjectMapper.selectByConfigKey(tenantId, configKey.trim());
             if (byConfigKey != null && StringUtils.isNotBlank(byConfigKey.getObjectCode())) {
                 codes.add(byConfigKey.getObjectCode().trim());
             }
         }
         for (String code : List.copyOf(codes)) {
-            AiBusinessObject byCode = businessObjectMapper.selectFirstByObjectCode(resolveTenantId(), code);
+            AiBusinessObject byCode = businessObjectMapper.selectFirstByObjectCode(tenantId, code);
             if (byCode != null && StringUtils.isNotBlank(byCode.getObjectCode())) {
                 codes.add(byCode.getObjectCode().trim());
             }
@@ -85,11 +86,11 @@ public class BusinessProcessRuntimeActionProjectionService {
         }
         Map<String, Map<String, Object>> unique = new LinkedHashMap<>();
         for (String code : codes) {
-            for (Map<String, Object> action : compilePublished(code, applicationId)) {
+            for (Map<String, Object> action : compilePublished(tenantId, code, applicationId)) {
                 unique.put(String.valueOf(action.get("key")), action);
             }
             if (includeDraft) {
-                for (Map<String, Object> action : compileDrafts(code)) {
+                for (Map<String, Object> action : compileDrafts(tenantId, code)) {
                     unique.put(String.valueOf(action.get("key")), action);
                 }
             }
@@ -97,8 +98,7 @@ public class BusinessProcessRuntimeActionProjectionService {
         return List.copyOf(unique.values());
     }
 
-    private List<Map<String, Object>> compilePublished(String objectCode, Long applicationId) {
-        Long tenantId = resolveTenantId();
+    private List<Map<String, Object>> compilePublished(Long tenantId, String objectCode, Long applicationId) {
         List<AiBusinessProcessVersion> versions = applicationId != null && applicationId > 0
                 ? safeList(versionMapper.selectCurrentPublishedByApplication(tenantId, applicationId))
                 : safeList(versionMapper.selectCurrentPublishedBySubjectObjectCode(tenantId, objectCode));
@@ -110,7 +110,7 @@ public class BusinessProcessRuntimeActionProjectionService {
             }
             BusinessProcessSnapshot snapshot = publishService.toRuntimeSnapshot(version);
             String applicationCode = applicationCodes.computeIfAbsent(
-                    version.getApplicationId(), this::resolveApplicationCode);
+                    version.getApplicationId(), id -> resolveApplicationCode(tenantId, id));
             if (StringUtils.isBlank(applicationCode)) {
                 continue;
             }
@@ -121,23 +121,17 @@ public class BusinessProcessRuntimeActionProjectionService {
         return actions;
     }
 
-    private List<Map<String, Object>> compileDrafts(String objectCode) {
-        Long tenantId = resolveTenantId();
+    private List<Map<String, Object>> compileDrafts(Long tenantId, String objectCode) {
         List<Map<String, Object>> actions = new ArrayList<>();
-        for (BusinessObjectProcessVO summary : safeDrafts(processMapper.selectBySubjectObjectCode(tenantId, objectCode))) {
-            if (summary == null || !EnableStatus.ENABLED.matches(summary.getStatus()) || StringUtils.isBlank(summary.getDraftSchemaJson())) {
+        for (AiBusinessProcess process : safeList(processMapper.selectActiveDraftsBySubjectObjectCode(tenantId, objectCode))) {
+            if (process == null || !EnableStatus.ENABLED.matches(process.getStatus()) || StringUtils.isBlank(process.getDraftSchemaJson())) {
                 continue;
             }
-            Long processId = parseId(summary.getId());
-            AiBusinessProcess process = processId == null ? null : processMapper.selectActiveById(tenantId, processId);
-            if (process == null || !EnableStatus.ENABLED.matches(process.getStatus())) {
-                continue;
-            }
-            String applicationCode = resolveApplicationCode(process.getApplicationId());
+            String applicationCode = resolveApplicationCode(tenantId, process.getApplicationId());
             if (StringUtils.isBlank(applicationCode)) {
                 continue;
             }
-            BusinessProcessSchema schema = readSchema(summary.getDraftSchemaJson());
+            BusinessProcessSchema schema = readSchema(process.getDraftSchemaJson());
             if (schema == null) {
                 continue;
             }
@@ -204,40 +198,28 @@ public class BusinessProcessRuntimeActionProjectionService {
         return new LinkedHashMap<>();
     }
 
-    private String resolveApplicationCode(Long applicationId) {
+    private String resolveApplicationCode(Long tenantId, Long applicationId) {
         if (applicationId == null || applicationId <= 0) {
             return "";
         }
-        AiBusinessApplication application = applicationMapper.selectEntityById(resolveTenantId(), applicationId);
+        AiBusinessApplication application = applicationMapper.selectEntityById(tenantId, applicationId);
         return application == null ? "" : StringUtils.trimToEmpty(application.getApplicationCode());
     }
 
-    private Long parseId(String value) {
-        if (StringUtils.isBlank(value)) {
-            return null;
-        }
+    private <T> List<T> safeList(List<T> values) {
+        return values == null ? List.of() : values;
+    }
+
+    private Long requireTenantId() {
+        Long tenantId;
         try {
-            long parsed = Long.parseLong(value.trim());
-            return parsed > 0 ? parsed : null;
-        } catch (NumberFormatException ignored) {
-            return null;
-        }
-    }
-
-    private List<AiBusinessProcessVersion> safeList(List<AiBusinessProcessVersion> versions) {
-        return versions == null ? List.of() : versions;
-    }
-
-    private List<BusinessObjectProcessVO> safeDrafts(List<BusinessObjectProcessVO> drafts) {
-        return drafts == null ? List.of() : drafts;
-    }
-
-    private Long resolveTenantId() {
-        try {
-            Long tenantId = SessionHelper.getTenantId();
-            return tenantId == null || tenantId <= 0 ? 1L : tenantId;
+            tenantId = SessionHelper.getTenantId();
         } catch (Exception ignored) {
-            return 1L;
+            tenantId = null;
         }
+        if (tenantId == null || tenantId <= 0) {
+            throw new BusinessException("未获取到有效租户上下文");
+        }
+        return tenantId;
     }
 }

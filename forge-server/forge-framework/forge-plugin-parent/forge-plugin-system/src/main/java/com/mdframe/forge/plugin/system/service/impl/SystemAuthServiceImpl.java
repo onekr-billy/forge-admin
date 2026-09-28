@@ -1,6 +1,5 @@
 package com.mdframe.forge.plugin.system.service.impl;
 
-import cn.dev33.satoken.SaManager;
 import cn.dev33.satoken.session.SaSession;
 import cn.dev33.satoken.stp.SaLoginModel;
 import cn.dev33.satoken.stp.StpUtil;
@@ -8,7 +7,6 @@ import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.mdframe.forge.plugin.system.auth.LoginCaptchaPolicy;
 import com.mdframe.forge.plugin.system.auth.LoginCaptchaPolicyResolver;
 import com.mdframe.forge.plugin.system.auth.LoginPasswordDecoder;
@@ -18,6 +16,8 @@ import com.mdframe.forge.plugin.system.entity.*;
 import com.mdframe.forge.plugin.system.mapper.*;
 import com.mdframe.forge.plugin.system.service.IUserLoadService;
 import com.mdframe.forge.plugin.system.service.IClientService;
+import com.mdframe.forge.plugin.system.service.PasswordPolicyService;
+import com.mdframe.forge.plugin.system.constant.SystemConstants;
 import com.mdframe.forge.starter.cache.service.ICacheService;
 import com.mdframe.forge.starter.config.config.LoginConfig;
 import com.mdframe.forge.starter.config.service.ConfigManagerService;
@@ -36,6 +36,8 @@ import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
@@ -45,6 +47,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 import com.mdframe.forge.starter.core.enums.EnableStatus;
 
 /**
@@ -60,6 +63,10 @@ public class SystemAuthServiceImpl implements IAuthService {
     private static final String SSO_TICKET_CACHE_KEY = "auth:sso:ticket:";
     private static final String CLIENT_AUTHENTICATION_FAILED = "客户端认证失败";
     private static final long SSO_TICKET_EXPIRE_SECONDS = 60L;
+    private static final long PUBLIC_REGISTRATION_TENANT_ID = 1L;
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{3,31}");
+    private static final Pattern PHONE_PATTERN = Pattern.compile("1[3-9]\\d{9}");
+    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
 
     private final SysUserMapper userMapper;
     private final ICaptchaService captchaService;
@@ -75,6 +82,7 @@ public class SystemAuthServiceImpl implements IAuthService {
     private final SysTenantMapper tenantMapper;
     private final RecoveryChannelSupport recoveryChannelSupport;
     private final LoginPasswordDecoder loginPasswordDecoder;
+    private final PasswordPolicyService passwordPolicyService;
 
     // ==================== 核心认证方法 ====================
 
@@ -323,15 +331,18 @@ public class SystemAuthServiceImpl implements IAuthService {
         }
     }
     
-    private void applyClientTokenConfig(SysClient client) {
-        cn.dev33.satoken.config.SaTokenConfig config = cn.dev33.satoken.SaManager.getConfig();
-        config.setTimeout(client.getTokenTimeout());
-        config.setActiveTimeout(client.getTokenActivityTimeout());
-        config.setIsConcurrent(client.getConcurrentLogin());
-        config.setIsShare(client.getShareToken());
-        SaManager.setConfig(config);
-        log.debug("应用客户端Token配置: client={}, timeout={}s, concurrent={}",
-            client.getClientCode(), client.getTokenTimeout(), client.getConcurrentLogin());
+    SaLoginModel buildClientLoginModel(SysClient client, String device) {
+        SaLoginModel loginModel = new SaLoginModel().setDevice(device);
+        if (client.getTokenTimeout() != null && client.getTokenTimeout() > 0) {
+            loginModel.setTimeout(client.getTokenTimeout());
+        }
+        if (client.getTokenActivityTimeout() != null && client.getTokenActivityTimeout() > 0) {
+            loginModel.setActiveTimeout(client.getTokenActivityTimeout());
+        }
+        if (Boolean.FALSE.equals(client.getShareToken())) {
+            loginModel.setToken(cn.dev33.satoken.util.SaFoxUtil.getRandomString(64));
+        }
+        return loginModel;
     }
 
     private LoginResult issueTokenForUser(LoginUser loginUser, SysClient client, String userClient) {
@@ -341,12 +352,10 @@ public class SystemAuthServiceImpl implements IAuthService {
         }
         executeWithRequiredTenant(loginUser.getTenantId(),
                 () -> handleSameAccountLogin(loginUser.getUserId(), client, resolvedClient));
-        applyClientTokenConfig(client);
-
         loginUser.setLoginTime(System.currentTimeMillis());
         loginUser.setUserClient(resolvedClient);
 
-        StpUtil.login(loginUser.getUserId(), new SaLoginModel().setDevice(resolvedClient));
+        StpUtil.login(loginUser.getUserId(), buildClientLoginModel(client, resolvedClient));
         SessionHelper.setLoginUser(loginUser);
         try {
             onlineUserService.addOnlineUser(StpUtil.getTokenValue(), loginUser.getUserId());
@@ -429,6 +438,8 @@ public class SystemAuthServiceImpl implements IAuthService {
 
         // 1. 参数校验
         validateRegisterRequest(request);
+        request.setTenantId(PUBLIC_REGISTRATION_TENANT_ID);
+        assertRegistrationTenantEnabled(PUBLIC_REGISTRATION_TENANT_ID);
         
         // 2. 验证验证码
         if (!captchaService.validateAndDelete(request.getCodeKey(), request.getCode())) {
@@ -436,8 +447,8 @@ public class SystemAuthServiceImpl implements IAuthService {
         }
         
         // 3. 检查用户名是否已存在
-        if (checkUsernameExists(request.getUsername(), request.getTenantId())) {
-            throw new RuntimeException("用户名已存在");
+        if (hasRegistrationConflict(request)) {
+            throw new BusinessException("用户名、手机号或邮箱已存在");
         }
         
         // 4. 加密密码
@@ -466,17 +477,28 @@ public class SystemAuthServiceImpl implements IAuthService {
         if (!matchPassword(oldPassword, currentPassword)) {
             throw new RuntimeException("旧密码错误");
         }
+
+        SysUser credentialOwner = TenantContextHolder.executeIgnore(() ->
+                userMapper.selectById(loginUser.getUserId()));
+        Long credentialTenantId = credentialOwner != null && credentialOwner.getTenantId() != null
+                ? credentialOwner.getTenantId() : loginUser.getTenantId();
         
-        // 3. 加密新密码
+        // 3. 校验并加密新密码
+        passwordPolicyService.validateForUpdate(
+                loginUser.getUserId(), credentialTenantId, newPassword, currentPassword);
         String encodedPassword = PasswordUtil.encrypt(newPassword);
         
         // 4. 更新密码
-        boolean success = updateUserPassword(loginUser.getUserId(), encodedPassword);
+        boolean success = updateUserPassword(loginUser.getUserId(), loginUser.getTenantId(), encodedPassword);
         
         if (success) {
-            loginUser.setForcePasswordChange(false);
-            SessionHelper.setLoginUser(loginUser);
-            log.info("用户修改密码成功: userId={}", loginUser.getUserId());
+            passwordPolicyService.recordPasswordChange(
+                    loginUser.getUserId(), credentialTenantId, currentPassword, LocalDateTime.now());
+            boolean keepCurrentSession = Boolean.TRUE.equals(
+                    authProperties.getKeepCurrentSessionAfterPasswordChange());
+            Long passwordVersion = keepCurrentSession ? loadCurrentCredentialVersion(loginUser) : null;
+            afterCommitOrNow(() -> handlePasswordChangeSessions(
+                    loginUser, keepCurrentSession, passwordVersion));
         }
         
         return success;
@@ -495,10 +517,9 @@ public class SystemAuthServiceImpl implements IAuthService {
         recoveryChannelSupport.requireChannel(channel);
 
         String intervalKey = "auth:reset:interval:" + channel + ":" + account;
-        if (cacheService.get(intervalKey) != null) {
+        if (!cacheService.setIfAbsent(intervalKey, "1", 60, TimeUnit.SECONDS)) {
             throw new BusinessException("发送过于频繁，请稍后再试");
         }
-        cacheService.set(intervalKey, "1", Duration.ofSeconds(60));
 
         SysUser user = findUserByRecoveryAccount(channel, account, request.getTenantId());
         if (user == null) {
@@ -534,10 +555,19 @@ public class SystemAuthServiceImpl implements IAuthService {
             throw new BusinessException("验证码错误或已过期");
         }
 
-        String encodedPassword = PasswordUtil.encrypt(loginPasswordDecoder.decode(request.getNewPassword()));
-        boolean success = updateUserPassword(user.getId(), encodedPassword);
+        String rawPassword = loginPasswordDecoder.decode(request.getNewPassword());
+        Long credentialTenantId = user.getTenantId() == null ? request.getTenantId() : user.getTenantId();
+        passwordPolicyService.validateForUpdate(
+                user.getId(), credentialTenantId, rawPassword, user.getPassword());
+        String encodedPassword = PasswordUtil.encrypt(rawPassword);
+        boolean success = updateUserPassword(user.getId(), user.getTenantId(), encodedPassword);
         if (success) {
-            log.info("用户重置密码成功: userId={}, channel={}", user.getId(), channel);
+            passwordPolicyService.recordPasswordChange(
+                    user.getId(), credentialTenantId, user.getPassword(), LocalDateTime.now());
+            afterCommitOrNow(() -> {
+                revokePasswordSessions(user.getId(), null);
+                log.info("用户重置密码成功: userId={}, channel={}", user.getId(), channel);
+            });
         }
         return success;
     }
@@ -667,27 +697,43 @@ public class SystemAuthServiceImpl implements IAuthService {
      * 校验注册请求参数
      */
     private void validateRegisterRequest(RegisterRequest request) {
-        if (StrUtil.isBlank(request.getUsername())) {
-            throw new RuntimeException("用户名不能为空");
+        if (request == null) {
+            throw new BusinessException("注册参数不能为空");
         }
-        if (StrUtil.isBlank(request.getPassword())) {
-            throw new RuntimeException("密码不能为空");
+        String username = StrUtil.trim(request.getUsername());
+        if (StrUtil.isBlank(username) || !USERNAME_PATTERN.matcher(username).matches()) {
+            throw new BusinessException("用户名须为4到32位字母、数字、点、下划线或短横线，且以字母或数字开头");
         }
+        request.setUsername(username);
+        if (!Objects.equals(request.getPassword(), request.getConfirmPassword())) {
+            throw new BusinessException("两次输入的密码不一致");
+        }
+        passwordPolicyService.validate(request.getPassword());
+        String phone = StrUtil.trim(request.getPhone());
+        if (StrUtil.isNotBlank(phone) && !PHONE_PATTERN.matcher(phone).matches()) {
+            throw new BusinessException("手机号格式不正确");
+        }
+        request.setPhone(StrUtil.emptyToNull(phone));
+        String email = StrUtil.trim(request.getEmail());
+        if (StrUtil.isNotBlank(email) && !EMAIL_PATTERN.matcher(email).matches()) {
+            throw new BusinessException("邮箱格式不正确");
+        }
+        request.setEmail(StrUtil.emptyToNull(email));
         if (StrUtil.isBlank(request.getCode()) || StrUtil.isBlank(request.getCodeKey())) {
-            throw new RuntimeException("验证码不能为空");
+            throw new BusinessException("验证码不能为空");
         }
     }
 
-    /**
-     * 检查用户名是否已存在
-     */
-    private boolean checkUsernameExists(String username, Long tenantId) {
-        LambdaQueryWrapper<SysUser> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(SysUser::getUsername, username);
-        if (tenantId != null) {
-            wrapper.eq(SysUser::getTenantId, tenantId);
+    private void assertRegistrationTenantEnabled(Long tenantId) {
+        SysTenant tenant = TenantContextHolder.executeIgnore(() -> tenantMapper.selectById(tenantId));
+        if (tenant == null || !EnableStatus.ENABLED.matches(tenant.getTenantStatus())) {
+            throw new BusinessException("注册租户不可用");
         }
-        return userMapper.selectCount(wrapper) > 0;
+    }
+
+    private boolean hasRegistrationConflict(RegisterRequest request) {
+        return TenantContextHolder.executeIgnore(() -> userMapper.countRegistrationConflicts(
+                request.getTenantId(), request.getUsername(), request.getPhone(), request.getEmail())) > 0;
     }
 
     /**
@@ -699,11 +745,12 @@ public class SystemAuthServiceImpl implements IAuthService {
         SysUser user = new SysUser();
         user.setUsername(request.getUsername());
         user.setPassword(encodedPassword);
+        user.setPasswordChangedTime(LocalDateTime.now());
         user.setRealName(request.getRealName());
         user.setPhone(request.getPhone());
         user.setEmail(request.getEmail());
         user.setTenantId(request.getTenantId());
-        user.setUserType(2); // 普通用户
+        user.setUserType(SystemConstants.UserType.NORMAL_USER);
         user.setUserStatus(EnableStatus.ENABLED.getCode()); // 正常
         user.setCreateTime(LocalDateTime.now());
         user.setUpdateTime(LocalDateTime.now());
@@ -729,13 +776,63 @@ public class SystemAuthServiceImpl implements IAuthService {
      * 更新用户密码
      */
     @Transactional(rollbackFor = Exception.class)
-    protected boolean updateUserPassword(Long userId, String encodedPassword) {
-        LambdaUpdateWrapper<SysUser> wrapper = new LambdaUpdateWrapper<>();
-        wrapper.eq(SysUser::getId, userId)
-                .set(SysUser::getPassword, encodedPassword)
-                .set(SysUser::getForcePasswordChange, false)
-                .set(SysUser::getUpdateTime, LocalDateTime.now());
-        return userMapper.update(null, wrapper) > 0;
+    protected boolean updateUserPassword(Long userId, Long tenantId, String encodedPassword) {
+        return TenantContextHolder.executeIgnore(() -> userMapper.updateActiveUserPassword(
+                userId, tenantId, encodedPassword, LocalDateTime.now())) > 0;
+    }
+
+    private Long loadCurrentCredentialVersion(LoginUser loginUser) {
+        Long passwordVersion = TenantContextHolder.executeIgnore(() ->
+                userMapper.selectActivePasswordVersion(loginUser.getUserId(), loginUser.getTenantId()));
+        if (passwordVersion == null) {
+            log.warn("密码修改后无法读取凭证版本，按 fail-closed 策略吊销当前会话: userId={}",
+                    loginUser.getUserId());
+        }
+        return passwordVersion;
+    }
+
+    private void handlePasswordChangeSessions(LoginUser loginUser,
+                                              boolean keepCurrentSession,
+                                              Long passwordVersion) {
+        String excludedToken = null;
+        Long previousVersion = loginUser.getPasswordVersion();
+        if (keepCurrentSession && passwordVersion != null) {
+            try {
+                loginUser.setPasswordVersion(passwordVersion);
+                SessionHelper.setLoginUser(loginUser);
+                excludedToken = StpUtil.getTokenValue();
+            } catch (RuntimeException exception) {
+                loginUser.setPasswordVersion(previousVersion);
+                log.warn("密码修改后刷新当前会话失败，按 fail-closed 策略吊销全部会话: userId={}, exceptionType={}",
+                        loginUser.getUserId(), exception.getClass().getSimpleName());
+            }
+        }
+        boolean currentSessionKept = StrUtil.isNotBlank(excludedToken);
+        revokePasswordSessions(loginUser.getUserId(), currentSessionKept ? excludedToken : null);
+        log.info("用户修改密码成功: userId={}, keepCurrentSessionConfigured={}, currentSessionKept={}",
+                loginUser.getUserId(), keepCurrentSession, currentSessionKept);
+    }
+
+    private void revokePasswordSessions(Long userId, String excludedToken) {
+        try {
+            onlineUserService.kickoutAllSessions(userId, excludedToken);
+        } catch (RuntimeException exception) {
+            log.warn("在线会话镜像清理失败，数据库凭证版本将继续拒绝旧会话: userId={}, exceptionType={}",
+                    userId, exception.getClass().getSimpleName());
+        }
+    }
+
+    private void afterCommitOrNow(Runnable action) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            action.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
+            }
+        });
     }
 
     /**

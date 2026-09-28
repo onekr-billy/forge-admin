@@ -22,6 +22,10 @@ import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeSchemaValidator
 import com.mdframe.forge.plugin.generator.service.lowcode.runtime.LowcodeRuntimeDataSourceResolver;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessPublishCheckItemVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessPublishCheckVO;
+import com.mdframe.forge.starter.core.context.ExecutionIdentity;
+import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
+import com.mdframe.forge.starter.core.session.LoginUser;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -34,6 +38,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -62,9 +67,16 @@ class BusinessObjectPublishServiceFormulaTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private FormulaPublishValidator realValidator;
     private BusinessObjectPublishService service;
+    private ExecutionIdentityContextHolder.Scope identityScope;
 
     @BeforeEach
     void setUp() {
+        LoginUser loginUser = new LoginUser();
+        loginUser.setUserId(7L);
+        loginUser.setTenantId(1L);
+        identityScope = ExecutionIdentityContextHolder.open(new ExecutionIdentity(
+                loginUser, "USER", 7L, null, 1L,
+                "pc", "object-publish-formula-test", Set.of()));
         realValidator = new FormulaPublishValidator(new FormulaValidationService(), objectMapper);
         service = new BusinessObjectPublishService(
                 designerService, designVersionService, lowcodePublishService,
@@ -81,6 +93,15 @@ class BusinessObjectPublishServiceFormulaTest {
         BusinessPermissionSummaryVO permSummary = new BusinessPermissionSummaryVO();
         permSummary.setActionPermissions(java.util.Collections.emptyList());
         when(permissionService.documentActionSummary(any(AiBusinessObject.class))).thenReturn(permSummary);
+    }
+
+    @AfterEach
+    void clearIdentity() {
+        if (identityScope != null) {
+            identityScope.close();
+            identityScope = null;
+        }
+        ExecutionIdentityContextHolder.clear();
     }
 
     private LowcodeFieldSchema plainField(String name) {
@@ -105,6 +126,7 @@ class BusinessObjectPublishServiceFormulaTest {
         ctx.setPageSchema(new LowcodePageSchema());
         AiBusinessObject obj = new AiBusinessObject();
         obj.setId(1L);
+        obj.setTenantId(1L);
         obj.setSuiteCode("test");
         obj.setObjectCode("test_obj");
         ctx.setObject(obj);
