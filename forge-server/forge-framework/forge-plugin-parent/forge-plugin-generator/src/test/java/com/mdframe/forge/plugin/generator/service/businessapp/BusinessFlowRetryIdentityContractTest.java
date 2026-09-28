@@ -20,5 +20,10 @@ class BusinessFlowRetryIdentityContractTest {
                         "BusinessFlowCommandIdentity.forProcessAction(",
                         "comment, tenantId,\n                credentials.idempotencyKey(), credentials.requestDigest()")
                 .doesNotContain("String.valueOf(userIdSupplier.get()),\n                StringUtils.defaultIfBlank(dto.getComment(), \"修改后重提\"), variables");
+
+        assertThat(source.indexOf("remoteCommandService.findTaskCommand("))
+                .isGreaterThanOrEqualTo(0)
+                .isLessThan(source.indexOf("taskNodeFormResolver.loadTaskFormInfo(query.getTaskId())",
+                        source.indexOf("BusinessFlowRuntimeVO resubmit(")));
     }
 }

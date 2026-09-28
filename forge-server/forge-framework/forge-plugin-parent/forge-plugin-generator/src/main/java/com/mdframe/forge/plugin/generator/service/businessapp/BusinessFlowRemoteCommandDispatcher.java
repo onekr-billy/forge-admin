@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 
-/** 接管超时及失败的流程启动命令，并在原租户上下文中补齐本地状态。 */
+/** 接管超时及失败的流程远程命令，并在原租户上下文中补齐本地状态。 */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -34,7 +34,13 @@ public class BusinessFlowRemoteCommandDispatcher {
         for (AiBusinessFlowRemoteCommand command : commandService.findRecoveryCandidates(
                 LocalDateTime.now(), Math.max(1, batchSize))) {
             try {
-                businessFlowService.recoverRemoteStartCommand(command.getTenantId(), command.getId());
+                if (BusinessFlowRemoteStartEnvelope.COMMAND_TYPE.equals(command.getCommandType())) {
+                    businessFlowService.recoverRemoteStartCommand(command.getTenantId(), command.getId());
+                } else if (BusinessFlowRemoteTaskEnvelope.supports(command.getCommandType())) {
+                    businessFlowService.recoverRemoteTaskCommand(command.getTenantId(), command.getId());
+                } else {
+                    throw new IllegalStateException("不支持的流程远程命令类型");
+                }
             } catch (RuntimeException failure) {
                 try {
                     commandService.recordRecoveryFailure(command.getTenantId(), command.getId(), failure);

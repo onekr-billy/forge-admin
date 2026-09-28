@@ -3,6 +3,7 @@ package com.mdframe.forge.plugin.generator.service.businessapp;
 import com.alibaba.fastjson2.JSONObject;
 import com.mdframe.forge.flow.client.FlowClient;
 import com.mdframe.forge.flow.client.FlowResult;
+import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessFlowRemoteCommand;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessFlowInstanceLink;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
 import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfig;
@@ -66,6 +67,7 @@ final class BusinessFlowTaskCommandCoordinator {
     private final Function<AiBusinessObject, BusinessObjectVO> businessObjectConverter;
     private final FormSchemaResolver formSchemaResolver;
     private final Function<String, String> terminalResultResolver;
+    private final BusinessFlowRemoteCommandService remoteCommandService;
 
     BusinessFlowTaskCommandCoordinator(
             Supplier<FlowClient> flowClientSupplier,
@@ -87,7 +89,8 @@ final class BusinessFlowTaskCommandCoordinator {
             BusinessObjectLookup businessObjectLookup,
             Function<AiBusinessObject, BusinessObjectVO> businessObjectConverter,
             FormSchemaResolver formSchemaResolver,
-            Function<String, String> terminalResultResolver) {
+            Function<String, String> terminalResultResolver,
+            BusinessFlowRemoteCommandService remoteCommandService) {
         this.flowClientSupplier = flowClientSupplier;
         this.flowInstanceLinkMapper = flowInstanceLinkMapper;
         this.dynamicCrudService = dynamicCrudService;
@@ -108,6 +111,7 @@ final class BusinessFlowTaskCommandCoordinator {
         this.businessObjectConverter = businessObjectConverter;
         this.formSchemaResolver = formSchemaResolver;
         this.terminalResultResolver = terminalResultResolver;
+        this.remoteCommandService = remoteCommandService;
     }
 
     BusinessTaskFormContextVO saveTaskFormContext(BusinessTaskFormSaveDTO dto) {
@@ -200,6 +204,21 @@ final class BusinessFlowTaskCommandCoordinator {
         if (dto == null) {
             throw new BusinessException("重提参数不能为空");
         }
+        Long tenantId = tenantIdSupplier.get();
+        Long userId = userIdSupplier.get();
+        Map<String, Object> variables = dto.getVariables() == null ? Map.of() : dto.getVariables();
+        String comment = StringUtils.defaultIfBlank(dto.getComment(), "修改后重提");
+        BusinessFlowCommandIdentity.Credentials credentials = BusinessFlowCommandIdentity.forTaskAction(
+                BusinessFlowRemoteTaskEnvelope.COMMAND_RESUBMIT,
+                tenantId, userId, dto.getTaskId(), comment, variables);
+        if (remoteCommandService != null) {
+            AiBusinessFlowRemoteCommand existing = remoteCommandService.findTaskCommand(
+                    tenantId, BusinessFlowRemoteTaskEnvelope.COMMAND_RESUBMIT, credentials.idempotencyKey());
+            if (existing != null) {
+                return recoverRemoteTaskCommand(tenantId, existing.getId());
+            }
+        }
+
         BusinessTaskFormContextQueryDTO query = new BusinessTaskFormContextQueryDTO();
         query.setTaskId(dto.getTaskId());
         query.setBusinessKey(dto.getBusinessKey());
@@ -210,34 +229,31 @@ final class BusinessFlowTaskCommandCoordinator {
         Map<String, Object> taskFormInfo = taskNodeFormResolver.loadTaskFormInfo(query.getTaskId());
         validateTaskAccess(query, taskFormInfo);
         TaskFormRuntimeContext runtime = runtimeContextResolver.resolveTask(query, true, taskFormInfo);
-        Map<String, Object> variables = dto.getVariables() == null ? Map.of() : dto.getVariables();
-        Long tenantId = tenantIdSupplier.get();
-        Long userId = userIdSupplier.get();
-        String comment = StringUtils.defaultIfBlank(dto.getComment(), "修改后重提");
-        BusinessFlowCommandIdentity.Credentials credentials = BusinessFlowCommandIdentity.forTaskAction(
-                "RESUBMIT", tenantId, userId, query.getTaskId(), comment, variables);
-        FlowResult<Void> result = requireFlowClient("流程服务未配置，无法重提").approve(
-                query.getTaskId(), String.valueOf(userId), comment, null, variables,
-                tenantId, credentials.idempotencyKey(), credentials.requestDigest());
-        requireSuccess(result, "重提失败");
-
-        AiBusinessFlowInstanceLink link = findRuntimeLink(
-                tenantId, query.getProcessInstanceId(), runtime.businessKey());
-        if (link == null) {
-            BusinessFlowRuntimeVO vo = new BusinessFlowRuntimeVO();
-            vo.setObjectCode(runtime.objectCode());
-            vo.setRecordId(runtime.recordId());
-            vo.setBusinessKey(runtime.businessKey());
-            vo.setProcessInstanceId(query.getProcessInstanceId());
-            vo.setFlowStatus(BusinessDocumentFlowStatus.IN_PROCESS.getCode());
-            vo.setMessage("已重提");
-            return vo;
+        FlowClient flowClient = requireFlowClient("流程服务未配置，无法重提");
+        if (remoteCommandService == null) {
+            FlowResult<Void> result = flowClient.approve(
+                    query.getTaskId(), String.valueOf(userId), comment, null, variables,
+                    tenantId, credentials.idempotencyKey(), credentials.requestDigest());
+            requireSuccess(result, "重提失败");
+            return persistResubmitWithoutJournal(tenantId, query, runtime, variables);
         }
-        taskEventCoordinator.applyRunningFlowState(link, BusinessDocumentFlowStatus.IN_PROCESS);
-        link.setVariablesSnapshot(BusinessFlowLinkRuntimeState.writeModifyTask(
-                taskEventCoordinator.mergeLinkVariablesSnapshot(link, variables), null));
-        flowInstanceLinkMapper.updateById(link);
-        return toRuntimeVO(link, "已重提");
+
+        BusinessFlowRemoteTaskRequest request = createResubmitRequest(
+                tenantId, userId, query, runtime, comment, variables, credentials);
+        AiBusinessFlowRemoteCommand command = remoteCommandService.prepareTask(request);
+        AiBusinessFlowRemoteCommand executed = remoteCommandService.executeTask(command, flowClient);
+        return persistRecoveredResubmit(executed, request);
+    }
+
+    BusinessFlowRuntimeVO recoverRemoteTaskCommand(Long tenantId, Long commandId) {
+        if (remoteCommandService == null) {
+            throw new BusinessException("流程远程任务命令恢复服务未配置");
+        }
+        AiBusinessFlowRemoteCommand command = remoteCommandService.requireCommand(tenantId, commandId);
+        BusinessFlowRemoteTaskRequest request = remoteCommandService.restoreTask(command);
+        FlowClient flowClient = requireFlowClient("流程服务未配置，无法恢复远程任务命令");
+        AiBusinessFlowRemoteCommand executed = remoteCommandService.executeTask(command, flowClient);
+        return persistRecoveredResubmit(executed, request);
     }
 
     BusinessFlowRuntimeVO withdrawDocumentFlow(BusinessFlowWithdrawDTO dto) {
@@ -465,6 +481,82 @@ final class BusinessFlowTaskCommandCoordinator {
     private void validateTaskAccess(BusinessTaskFormContextQueryDTO query, Map<String, Object> task) {
         taskAccessPolicy.validate(
                 query, true, task, flowClientSupplier.get() != null, userIdSupplier.get());
+    }
+
+    private BusinessFlowRemoteTaskRequest createResubmitRequest(
+            Long tenantId,
+            Long userId,
+            BusinessTaskFormContextQueryDTO query,
+            TaskFormRuntimeContext runtime,
+            String comment,
+            Map<String, Object> variables,
+            BusinessFlowCommandIdentity.Credentials credentials) {
+        BusinessFlowRemoteTaskRequest request = new BusinessFlowRemoteTaskRequest();
+        request.setTenantId(tenantId);
+        request.setCommandType(BusinessFlowRemoteTaskEnvelope.COMMAND_RESUBMIT);
+        request.setTaskId(query.getTaskId());
+        request.setProcessInstanceId(query.getProcessInstanceId());
+        request.setBusinessKey(runtime.businessKey());
+        request.setObjectCode(runtime.objectCode());
+        request.setRecordId(runtime.recordId());
+        request.setFlowModelKey(StringUtils.firstNonBlank(
+                StringUtils.trimToNull(query.getProcessDefKey()), resolveFlowModelKey(runtime.bindingConfig())));
+        request.setOperatorUserId(userId);
+        request.setComment(comment);
+        request.setVariables(variables);
+        request.setIdempotencyKey(credentials.idempotencyKey());
+        request.setActionRequestDigest(credentials.requestDigest());
+        return request;
+    }
+
+    private BusinessFlowRuntimeVO persistRecoveredResubmit(
+            AiBusinessFlowRemoteCommand command, BusinessFlowRemoteTaskRequest request) {
+        try {
+            AiBusinessFlowInstanceLink link = flowInstanceLinkMapper.selectByProcessInstanceId(
+                    request.getTenantId(), request.getProcessInstanceId());
+            if (link == null
+                    || !request.getTenantId().equals(link.getTenantId())
+                    || !request.getObjectCode().equals(link.getObjectCode())
+                    || !request.getRecordId().equals(link.getRecordId())
+                    || !request.getBusinessKey().equals(link.getBusinessKey())) {
+                throw new BusinessException("重提恢复失败：本地流程关联不存在或身份不匹配");
+            }
+            taskEventCoordinator.applyRunningFlowState(link, BusinessDocumentFlowStatus.IN_PROCESS);
+            link.setVariablesSnapshot(BusinessFlowLinkRuntimeState.writeModifyTask(
+                    taskEventCoordinator.mergeLinkVariablesSnapshot(link, request.getVariables()), null));
+            if (flowInstanceLinkMapper.updateById(link) != 1) {
+                throw new BusinessException("重提恢复失败：本地流程状态更新失败");
+            }
+            remoteCommandService.completeAfterCommit(command);
+            return toRuntimeVO(link, "已重提");
+        } catch (RuntimeException failure) {
+            remoteCommandService.recordRecoveryFailure(command.getTenantId(), command.getId(), failure);
+            throw failure;
+        }
+    }
+
+    private BusinessFlowRuntimeVO persistResubmitWithoutJournal(
+            Long tenantId,
+            BusinessTaskFormContextQueryDTO query,
+            TaskFormRuntimeContext runtime,
+            Map<String, Object> variables) {
+        AiBusinessFlowInstanceLink link = findRuntimeLink(
+                tenantId, query.getProcessInstanceId(), runtime.businessKey());
+        if (link == null) {
+            BusinessFlowRuntimeVO vo = new BusinessFlowRuntimeVO();
+            vo.setObjectCode(runtime.objectCode());
+            vo.setRecordId(runtime.recordId());
+            vo.setBusinessKey(runtime.businessKey());
+            vo.setProcessInstanceId(query.getProcessInstanceId());
+            vo.setFlowStatus(BusinessDocumentFlowStatus.IN_PROCESS.getCode());
+            vo.setMessage("已重提");
+            return vo;
+        }
+        taskEventCoordinator.applyRunningFlowState(link, BusinessDocumentFlowStatus.IN_PROCESS);
+        link.setVariablesSnapshot(BusinessFlowLinkRuntimeState.writeModifyTask(
+                taskEventCoordinator.mergeLinkVariablesSnapshot(link, variables), null));
+        flowInstanceLinkMapper.updateById(link);
+        return toRuntimeVO(link, "已重提");
     }
 
     private String normalizeAction(String rawAction) {

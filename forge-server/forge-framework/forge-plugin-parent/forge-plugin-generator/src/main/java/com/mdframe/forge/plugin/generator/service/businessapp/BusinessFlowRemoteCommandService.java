@@ -29,7 +29,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
-/** FlowClient 启动命令的持久化、租约、远端幂等恢复与提交后完成状态机。 */
+/** FlowClient 远程命令的持久化、租约、远端幂等恢复与提交后完成状态机。 */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -91,6 +91,62 @@ public class BusinessFlowRemoteCommandService {
         }
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
+    public AiBusinessFlowRemoteCommand prepareTask(BusinessFlowRemoteTaskRequest request) {
+        validateTaskRequest(request);
+        String commandKey = BusinessFlowRemoteTaskEnvelope.commandKey(request);
+        String requestDigest = BusinessFlowRemoteTaskEnvelope.requestDigest(request);
+        AiBusinessFlowRemoteCommand existing = selectByCommandKey(request.getTenantId(), commandKey);
+        if (existing != null) {
+            return assertSameTaskRequest(existing, requestDigest, request.getCommandType());
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        AiBusinessFlowRemoteCommand command = new AiBusinessFlowRemoteCommand();
+        command.setId(IdWorker.getId());
+        command.setTenantId(request.getTenantId());
+        command.setCommandKey(commandKey);
+        command.setCommandType(request.getCommandType());
+        command.setRequestDigest(requestDigest);
+        command.setRequestPayload(BusinessFlowRemoteTaskEnvelope.requestPayload(request));
+        command.setObjectCode(request.getObjectCode());
+        command.setRecordId(request.getRecordId());
+        command.setBusinessKey(request.getBusinessKey());
+        command.setFlowBusinessKey(request.getBusinessKey());
+        command.setFlowModelKey(request.getFlowModelKey());
+        command.setProcessInstanceId(request.getProcessInstanceId());
+        command.setCommandStatus(BusinessFlowRemoteCommandStatus.PENDING.getCode());
+        command.setRetryCount(0);
+        command.setCreateBy(request.getOperatorUserId());
+        command.setUpdateBy(request.getOperatorUserId());
+        command.setCreateTime(now);
+        command.setUpdateTime(now);
+        try {
+            int inserted = TenantContextHolder.executeIgnore(() -> commandMapper.insert(command));
+            if (inserted != 1) {
+                throw new BusinessException("流程远程任务命令持久化失败");
+            }
+            return command;
+        } catch (DuplicateKeyException duplicateKey) {
+            AiBusinessFlowRemoteCommand duplicate = selectByCommandKey(request.getTenantId(), commandKey);
+            if (duplicate != null) {
+                return assertSameTaskRequest(duplicate, requestDigest, request.getCommandType());
+            }
+            throw duplicateKey;
+        }
+    }
+
+    public AiBusinessFlowRemoteCommand findTaskCommand(
+            Long tenantId, String commandType, String idempotencyKey) {
+        if (tenantId == null || tenantId <= 0
+                || !BusinessFlowRemoteTaskEnvelope.supports(commandType)
+                || StringUtils.isBlank(idempotencyKey)) {
+            return null;
+        }
+        return selectByCommandKey(tenantId,
+                BusinessFlowRemoteTaskEnvelope.commandKey(tenantId, commandType, idempotencyKey));
+    }
+
     public AiBusinessFlowRemoteCommand requireCommand(Long tenantId, Long commandId) {
         if (tenantId == null || commandId == null) {
             throw new BusinessException("流程远程命令身份不能为空");
@@ -104,7 +160,9 @@ public class BusinessFlowRemoteCommandService {
     }
 
     public BusinessFlowRemoteStartRequest restore(AiBusinessFlowRemoteCommand command) {
-        if (command == null || StringUtils.isBlank(command.getRequestPayload())) {
+        if (command == null
+                || !BusinessFlowRemoteStartEnvelope.COMMAND_TYPE.equals(command.getCommandType())
+                || StringUtils.isBlank(command.getRequestPayload())) {
             throw new BusinessException("流程远程命令缺少请求快照");
         }
         BusinessFlowRemoteStartRequest request;
@@ -124,6 +182,33 @@ public class BusinessFlowRemoteCommandService {
                 || !Objects.equals(command.getRequestDigest(), BusinessFlowRemoteStartEnvelope.requestDigest(request))) {
             throw new BusinessException("流程远程命令身份或请求摘要校验失败");
         }
+        return request;
+    }
+
+    public BusinessFlowRemoteTaskRequest restoreTask(AiBusinessFlowRemoteCommand command) {
+        if (command == null || !BusinessFlowRemoteTaskEnvelope.supports(command.getCommandType())
+                || StringUtils.isBlank(command.getRequestPayload())) {
+            throw new BusinessException("流程远程任务命令缺少请求快照");
+        }
+        BusinessFlowRemoteTaskRequest request;
+        try {
+            request = BusinessFlowRemoteTaskEnvelope.restore(command.getRequestPayload());
+        } catch (RuntimeException invalidPayload) {
+            throw new BusinessException("流程远程任务命令请求快照无效");
+        }
+        if (request == null
+                || !Objects.equals(command.getTenantId(), request.getTenantId())
+                || !Objects.equals(command.getCommandType(), request.getCommandType())
+                || !Objects.equals(command.getObjectCode(), request.getObjectCode())
+                || !Objects.equals(command.getRecordId(), request.getRecordId())
+                || !Objects.equals(command.getBusinessKey(), request.getBusinessKey())
+                || !Objects.equals(command.getFlowModelKey(), request.getFlowModelKey())
+                || !Objects.equals(command.getProcessInstanceId(), request.getProcessInstanceId())
+                || !Objects.equals(command.getCommandKey(), BusinessFlowRemoteTaskEnvelope.commandKey(request))
+                || !Objects.equals(command.getRequestDigest(), BusinessFlowRemoteTaskEnvelope.requestDigest(request))) {
+            throw new BusinessException("流程远程任务命令身份或请求摘要校验失败");
+        }
+        validateTaskRequest(request);
         return request;
     }
 
@@ -191,6 +276,47 @@ public class BusinessFlowRemoteCommandService {
             }
             markAttemptFailedIfProcessing(claimed, failure);
             throw new BusinessException("流程发起结果未知，已记录恢复命令，请稍后重试");
+        }
+    }
+
+    public AiBusinessFlowRemoteCommand executeTask(AiBusinessFlowRemoteCommand command, FlowClient flowClient) {
+        if (command == null || flowClient == null) {
+            throw new BusinessException("流程远程任务执行条件不完整");
+        }
+        if (BusinessFlowRemoteCommandStatus.REMOTE_SUCCEEDED.matches(command.getCommandStatus())
+                || BusinessFlowRemoteCommandStatus.COMPLETED.matches(command.getCommandStatus())) {
+            return command;
+        }
+        if (BusinessFlowRemoteCommandStatus.DEAD.matches(command.getCommandStatus())) {
+            throw new BusinessException("流程远程任务命令已进入死信，请人工核对后恢复");
+        }
+
+        AiBusinessFlowRemoteCommand claimed = claim(command);
+        if (claimed == null) {
+            AiBusinessFlowRemoteCommand latest = requireCommand(command.getTenantId(), command.getId());
+            if (BusinessFlowRemoteCommandStatus.REMOTE_SUCCEEDED.matches(latest.getCommandStatus())
+                    || BusinessFlowRemoteCommandStatus.COMPLETED.matches(latest.getCommandStatus())) {
+                return latest;
+            }
+            throw new BusinessException("流程远程任务命令正在处理或等待重试");
+        }
+
+        BusinessFlowRemoteTaskRequest request = restoreTask(claimed);
+        try {
+            FlowResult<Void> result = executeRemoteTask(flowClient, request);
+            if (result != null && result.isSuccess()) {
+                return markRemoteSucceeded(claimed, request.getProcessInstanceId());
+            }
+            BusinessException failure = new BusinessException("流程远程任务执行失败: "
+                    + (result == null ? "无返回结果" : StringUtils.defaultIfBlank(result.getMsg(), "未知错误")));
+            markAttemptFailed(claimed, failure);
+            throw failure;
+        } catch (BusinessException failure) {
+            markAttemptFailedIfProcessing(claimed, failure);
+            throw failure;
+        } catch (RuntimeException failure) {
+            markAttemptFailedIfProcessing(claimed, failure);
+            throw new BusinessException("流程远程任务结果未知，已记录恢复命令，请稍后重试");
         }
     }
 
@@ -338,6 +464,15 @@ public class BusinessFlowRemoteCommandService {
         return existing;
     }
 
+    private AiBusinessFlowRemoteCommand assertSameTaskRequest(
+            AiBusinessFlowRemoteCommand existing, String requestDigest, String commandType) {
+        if (!Objects.equals(existing.getCommandType(), commandType)
+                || !Objects.equals(existing.getRequestDigest(), requestDigest)) {
+            throw new BusinessException("流程远程任务命令幂等键与请求摘要冲突");
+        }
+        return existing;
+    }
+
     private void validateRequest(BusinessFlowRemoteStartRequest request) {
         if (request == null || request.getTenantId() == null || request.getTenantId() <= 0
                 || request.getRecordId() == null
@@ -345,6 +480,28 @@ public class BusinessFlowRemoteCommandService {
                 request.getFlowBusinessKey(), request.getFlowModelKey())) {
             throw new BusinessException("流程远程启动命令缺少可信业务身份");
         }
+    }
+
+    private void validateTaskRequest(BusinessFlowRemoteTaskRequest request) {
+        if (request == null || request.getTenantId() == null || request.getTenantId() <= 0
+                || request.getOperatorUserId() == null || request.getOperatorUserId() <= 0
+                || request.getRecordId() == null
+                || !BusinessFlowRemoteTaskEnvelope.supports(request.getCommandType())
+                || StringUtils.isAnyBlank(request.getTaskId(), request.getProcessInstanceId(),
+                request.getBusinessKey(), request.getObjectCode(), request.getFlowModelKey(),
+                request.getIdempotencyKey(), request.getActionRequestDigest())) {
+            throw new BusinessException("流程远程任务命令缺少可信业务身份");
+        }
+    }
+
+    private FlowResult<Void> executeRemoteTask(FlowClient flowClient, BusinessFlowRemoteTaskRequest request) {
+        if (BusinessFlowRemoteTaskEnvelope.COMMAND_RESUBMIT.equals(request.getCommandType())) {
+            Map<String, Object> variables = request.getVariables() == null ? Map.of() : request.getVariables();
+            return flowClient.approve(
+                    request.getTaskId(), text(request.getOperatorUserId()), request.getComment(), null, variables,
+                    request.getTenantId(), request.getIdempotencyKey(), request.getActionRequestDigest());
+        }
+        throw new BusinessException("不支持的流程远程任务命令");
     }
 
     private int safeMaxRetryCount() {

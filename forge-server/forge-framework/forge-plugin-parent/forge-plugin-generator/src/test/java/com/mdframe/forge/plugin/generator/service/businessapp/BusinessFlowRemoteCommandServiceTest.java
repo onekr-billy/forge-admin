@@ -30,6 +30,7 @@ class BusinessFlowRemoteCommandServiceTest {
     private BusinessFlowRemoteCommandService service;
     private FlowClient flowClient;
     private BusinessFlowRemoteStartRequest request;
+    private BusinessFlowRemoteTaskRequest taskRequest;
 
     @BeforeEach
     void setUp() {
@@ -51,6 +52,21 @@ class BusinessFlowRemoteCommandServiceTest {
         request.setVariables(Map.of("orderNo", "PO-42"));
         request.setStarterUserId(7L);
         request.setStarterUserName("张三");
+
+        taskRequest = new BusinessFlowRemoteTaskRequest();
+        taskRequest.setTenantId(1L);
+        taskRequest.setCommandType(BusinessFlowRemoteTaskEnvelope.COMMAND_RESUBMIT);
+        taskRequest.setTaskId("task-42");
+        taskRequest.setProcessInstanceId("process-42");
+        taskRequest.setBusinessKey("purchase:42");
+        taskRequest.setObjectCode("purchase");
+        taskRequest.setRecordId(42L);
+        taskRequest.setFlowModelKey("purchase_approval");
+        taskRequest.setOperatorUserId(7L);
+        taskRequest.setComment("修改后重提");
+        taskRequest.setVariables(Map.of("amount", 100));
+        taskRequest.setIdempotencyKey("flow:resubmit-42");
+        taskRequest.setActionRequestDigest("a".repeat(64));
     }
 
     @Test
@@ -130,6 +146,40 @@ class BusinessFlowRemoteCommandServiceTest {
         assertThrows(RuntimeException.class, () -> service.restore(command));
     }
 
+    @Test
+    void replaysPersistedResubmitWithoutReadingCurrentTaskFirst() {
+        AiBusinessFlowRemoteCommand pending = taskCommand(BusinessFlowRemoteCommandStatus.PENDING, null);
+        AiBusinessFlowRemoteCommand claimed = taskCommand(
+                BusinessFlowRemoteCommandStatus.PROCESSING, "worker-1");
+        AiBusinessFlowRemoteCommand succeeded = taskCommand(
+                BusinessFlowRemoteCommandStatus.REMOTE_SUCCEEDED, null);
+        when(mapper.claim(eq(1L), eq(20L), anyString(), any(LocalDateTime.class),
+                any(LocalDateTime.class), anyInt())).thenReturn(1);
+        when(mapper.selectByCommandId(1L, 20L)).thenReturn(claimed, succeeded);
+        when(flowClient.approve(
+                eq("task-42"), eq("7"), eq("修改后重提"), eq(null), eq(taskRequest.getVariables()),
+                eq(1L), eq("flow:resubmit-42"), eq("a".repeat(64))))
+                .thenReturn(FlowResult.success(null));
+        when(mapper.markRemoteSucceeded(eq(claimed), eq("process-42"), any(LocalDateTime.class)))
+                .thenReturn(1);
+
+        AiBusinessFlowRemoteCommand result = service.executeTask(pending, flowClient);
+
+        assertEquals(BusinessFlowRemoteCommandStatus.REMOTE_SUCCEEDED.getCode(), result.getCommandStatus());
+        verify(flowClient).approve(
+                eq("task-42"), eq("7"), eq("修改后重提"), eq(null), eq(taskRequest.getVariables()),
+                eq(1L), eq("flow:resubmit-42"), eq("a".repeat(64)));
+    }
+
+    @Test
+    void rejectsTamperedTaskRecoveryPayload() {
+        AiBusinessFlowRemoteCommand command = taskCommand(
+                BusinessFlowRemoteCommandStatus.REMOTE_SUCCEEDED, null);
+        command.setBusinessKey("purchase:other");
+
+        assertThrows(RuntimeException.class, () -> service.restoreTask(command));
+    }
+
     private AiBusinessFlowRemoteCommand command(
             BusinessFlowRemoteCommandStatus status, String processInstanceId, String lockOwner) {
         AiBusinessFlowRemoteCommand command = new AiBusinessFlowRemoteCommand();
@@ -145,6 +195,27 @@ class BusinessFlowRemoteCommandServiceTest {
         command.setFlowBusinessKey(request.getFlowBusinessKey());
         command.setFlowModelKey(request.getFlowModelKey());
         command.setProcessInstanceId(processInstanceId);
+        command.setCommandStatus(status.getCode());
+        command.setRetryCount(BusinessFlowRemoteCommandStatus.PROCESSING == status ? 1 : 0);
+        command.setLockOwner(lockOwner);
+        return command;
+    }
+
+    private AiBusinessFlowRemoteCommand taskCommand(
+            BusinessFlowRemoteCommandStatus status, String lockOwner) {
+        AiBusinessFlowRemoteCommand command = new AiBusinessFlowRemoteCommand();
+        command.setId(20L);
+        command.setTenantId(1L);
+        command.setCommandKey(BusinessFlowRemoteTaskEnvelope.commandKey(taskRequest));
+        command.setCommandType(taskRequest.getCommandType());
+        command.setRequestDigest(BusinessFlowRemoteTaskEnvelope.requestDigest(taskRequest));
+        command.setRequestPayload(BusinessFlowRemoteTaskEnvelope.requestPayload(taskRequest));
+        command.setObjectCode(taskRequest.getObjectCode());
+        command.setRecordId(taskRequest.getRecordId());
+        command.setBusinessKey(taskRequest.getBusinessKey());
+        command.setFlowBusinessKey(taskRequest.getBusinessKey());
+        command.setFlowModelKey(taskRequest.getFlowModelKey());
+        command.setProcessInstanceId(taskRequest.getProcessInstanceId());
         command.setCommandStatus(status.getCode());
         command.setRetryCount(BusinessFlowRemoteCommandStatus.PROCESSING == status ? 1 : 0);
         command.setLockOwner(lockOwner);

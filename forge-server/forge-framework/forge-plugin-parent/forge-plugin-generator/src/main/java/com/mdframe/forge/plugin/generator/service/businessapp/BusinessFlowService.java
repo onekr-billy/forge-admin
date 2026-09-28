@@ -342,7 +342,8 @@ public class BusinessFlowService {
                 formAssetCatalog::queryBusinessObject,
                 formAssetCatalog::toBusinessObjectVO,
                 formAssetCatalog::resolveBusinessFormSchema,
-                this::resolveTerminalBusinessFlowResult);
+                this::resolveTerminalBusinessFlowResult,
+                remoteCommandService);
     }
 
     /** 查询 Flowable 模型中需要发起人选择审批人的节点，供应用级流程启动页复用。 */
@@ -737,6 +738,17 @@ public class BusinessFlowService {
         }
         return TenantContextHolder.executeWithTenant(effectiveTenantId,
                 () -> startCoordinator.recover(effectiveTenantId, commandId));
+    }
+
+    /** 由恢复扫描器按可信快照回放远程任务命令，并补齐本地流程状态。 */
+    @Transactional(rollbackFor = Exception.class)
+    public BusinessFlowRuntimeVO recoverRemoteTaskCommand(Long tenantId, Long commandId) {
+        Long effectiveTenantId = requireTenantId(tenantId);
+        if (commandId == null) {
+            throw new BusinessException("流程远程任务命令ID不能为空");
+        }
+        return TenantContextHolder.executeWithTenant(effectiveTenantId,
+                () -> taskCommandCoordinator.recoverRemoteTaskCommand(effectiveTenantId, commandId));
     }
 
     /**
