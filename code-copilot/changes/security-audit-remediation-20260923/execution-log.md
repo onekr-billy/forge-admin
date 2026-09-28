@@ -848,7 +848,7 @@
 
 - 新增 `ApiPermissionCoverageVerifier`，在 `ApplicationRunner` 阶段读取 Spring MVC 全量 Controller 映射，展开一个 Handler 的所有路径和 HTTP 方法，并按 `METHOD path` 去重生成覆盖报告。
 - 仅跳过显式 `@ApiPermissionIgnore`、`@SaIgnore`、既有认证/开放网关专用链路、静态/健康检查和配置白名单；受保护路由必须能匹配 `sys_resource` API 资源。
-- 资源不存在和资源查询异常统一计入缺失；默认 `api-permission-coverage-fail-on-missing=true`，缺失时抛出启动异常，防止实例进入 ready。保留显式环境变量关闭阻断，仅用于受控灰度盘点，请求期仍由 `ApiPermissionInterceptor` fail-closed。
+- 资源不存在和资源查询异常统一计入缺失；启动门禁支持报告和阻断两种模式，请求期始终由 `ApiPermissionInterceptor` fail-closed。
 - 报告只记录方法、模板路径和 Handler 名，不记录用户权限、请求参数或数据库异常详情，并限制最多输出 100 条（可配置 1～1000）。
 - 动态认证配置转换同步支持覆盖检查的启用、阻断和报告上限字段。
 
@@ -1188,3 +1188,18 @@
 
 - 本机未安装 Docker CLI，未执行 `docker compose config` 或镜像构建；Compose 仅完成 YAML 解析和配置静态检查。
 - T4.1 的 SCA、Secret scan、SAST、镜像扫描及前端可用依赖审计替代方案仍未落地，任务保持未完成；不能用 SBOM 生成等价替代漏洞扫描。
+
+## 2026-09-28：API 权限覆盖门禁启动回归修复
+
+### 根因与修复
+
+- 启动日志显示 Controller 路由 963 条、已配置 API 资源仅覆盖 119 条，原实现却在存量资源补齐前默认启用严格阻断，导致 `ApiPermissionCoverageVerifier` 抛异常终止启动；这与 Spec 的“先生成覆盖报告，补齐资源后切 enforce”灰度顺序冲突。
+- `api-permission-coverage-fail-on-missing` 默认值调整为 `false`；启动仍扫描并以 WARN 输出待补齐清单，但不再因既有 844 条缺口阻止应用启动。完成资源补齐后，CI/生产通过 `FORGE_AUTH_API_PERMISSION_COVERAGE_FAIL_ON_MISSING=true` 显式开启严格门禁。
+- 该开关只影响启动门禁；请求期 `ApiPermissionInterceptor` 对未配置资源和查询异常仍返回 403，未放宽 fail-closed 安全边界。严格模式测试继续验证缺失路由会阻止启动。
+
+### 验证
+
+- `ApiPermissionCoverageVerifierTest`：4/4 通过，新增默认报告模式回归，并保留显式严格模式阻断覆盖。
+- 认证 Starter 全量测试：59/59 通过，失败 0、错误 0、跳过 0。
+- `mvn -q -B -f forge-server/pom.xml -pl forge-admin-server -am -DskipTests package`：Admin 聚合构建通过。
+- 首次定向测试因 Surefire 测试 JVM 未继承 Byte Buddy agent 导致 Mockito 初始化失败；改为通过 `-DargLine=-javaagent:...` 显式加载后，同一测试通过。该失败属于测试运行参数，不是产品代码失败。

@@ -78,10 +78,10 @@
 
 - 扫描范围：从 Spring MVC `RequestMappingHandlerMapping` 读取全部 Controller 映射，逐一展开一个 Handler 上的多路径与多 HTTP 方法，并按 `METHOD path` 去重；不再只检查第一个路径或第一个方法。
 - 豁免范围：仅跳过 `@ApiPermissionIgnore`、`@SaIgnore`、既有认证/开放网关专用链路和显式 `apiPermissionExcludePaths`；框架 `/error` 与静态/健康检查不作为业务权限资源。
-- 故障语义：资源不存在和资源查询异常都计入未覆盖；默认在 `ApplicationRunner` 阶段抛出异常，阻止应用进入 ready。`FORGE_AUTH_API_PERMISSION_COVERAGE_FAIL_ON_MISSING=false` 只用于受控灰度盘点，不改变请求期 fail-closed。
+- 故障语义：资源不存在和资源查询异常都计入未覆盖；存量补齐阶段默认输出报告但不阻止启动，完成资源补齐后由 CI/生产设置 `FORGE_AUTH_API_PERMISSION_COVERAGE_FAIL_ON_MISSING=true` 进入严格门禁。该开关不改变请求期 fail-closed。
 - 日志约束：报告只输出 HTTP 方法、模板路径和 Handler 名，不输出用户权限、请求参数或数据库异常详情；样本数量限制为 1～1000。
-- 实际结果：`ApiPermissionCoverageVerifierTest` 3/3，认证 Starter 依赖反应堆 16/16 模块成功且 `forge-starter-auth` 58/58 测试通过；首次沙箱内全量测试仅因 MockWebServer 无权绑定本机端口失败，沙箱外同命令复跑通过。Admin 聚合编译 46/46 成功。
-- 环境限制：未连接真实 MySQL 启动 Admin，尚未生成目标环境的实际缺失路由清单；默认门禁会在部署启动时阻止资源不完整或数据库查询失败的实例进入 ready。
+- 实际结果：`ApiPermissionCoverageVerifierTest` 4/4，认证 Starter 依赖反应堆成功且 `forge-starter-auth` 59/59 测试通过；首次测试 JVM 未显式加载 Byte Buddy agent 导致 Mockito 初始化失败，修正运行参数后复跑通过。Admin 聚合构建成功。
+- 环境限制：未连接真实 MySQL 启动 Admin；用户启动日志已生成目标环境覆盖基线（963 条受保护路由、119 条已配置、844 条待补齐）。存量补齐阶段保持报告模式，不能提前在该环境启用严格启动阻断。
 
 ## 1.9 2026-09-28 外部连接器租户与权限矩阵
 
@@ -599,3 +599,10 @@ rg -n "new Function|AsyncFunction|engine\.eval|StrictHostKeyChecking=no|fastjson
 - 部署配置：旧 MySQL/Redis 公共默认密码不得出现；Compose 缺少密码变量时必须拒绝展开。由于本机无 Docker CLI，本轮不声明 Compose 运行或镜像构建通过。
 - 静态格式：Shell、XML、JSON、YAML、SBOM 解析和 `git diff --check` 必须通过。
 - 剩余门禁：SCA、Secret scan、SAST、镜像扫描和 pnpm 审计替代工具须单独落地并产生可审查报告；SBOM 只提供组件清单，不代表无漏洞。
+
+## 11. 2026-09-28 API 权限覆盖门禁启动回归
+
+- 回归输入：数据库只覆盖 119/963 条 Controller 路由时，默认配置不得在 `ApplicationRunner` 阶段终止应用；必须保留完整缺口报告。
+- 严格模式：显式设置 `apiPermissionCoverageFailOnMissing=true` 后，任何缺失或查询失败路由仍必须抛出启动异常。
+- 请求期边界：报告模式只放宽启动门禁，`ApiPermissionInterceptor` 对未配置资源及缓存/数据库查询异常仍必须拒绝请求。
+- 自动化结果：`ApiPermissionCoverageVerifierTest` 4/4、认证 Starter 59/59 通过；Admin 聚合 `package -DskipTests` 通过。

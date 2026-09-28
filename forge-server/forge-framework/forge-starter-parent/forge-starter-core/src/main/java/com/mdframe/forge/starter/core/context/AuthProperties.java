@@ -34,9 +34,10 @@ public class AuthProperties {
 
     /**
      * 权限资源缺失或查询失败时是否阻止应用完成启动。
-     * 默认开启；仅允许在受控灰度盘点期间通过环境配置临时关闭。
+     * 默认关闭，先输出存量覆盖报告；完成资源补齐后由部署环境显式开启。
+     * 请求期未配置资源仍由 API 权限拦截器 fail-closed，不受此开关影响。
      */
-    private Boolean apiPermissionCoverageFailOnMissing = true;
+    private Boolean apiPermissionCoverageFailOnMissing = false;
 
     /**
      * 启动日志中最多输出的缺失路由数量，避免错误配置导致日志洪泛。

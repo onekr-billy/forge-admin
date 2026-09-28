@@ -82,9 +82,9 @@ public class ApiPermissionCoverageVerifier implements ApplicationRunner {
         }
 
         CoverageReport report = verifyCoverage();
-        logReport(report);
-        if (Boolean.TRUE.equals(authProperties.getApiPermissionCoverageFailOnMissing())
-                && !report.missingRoutes().isEmpty()) {
+        boolean failOnMissing = Boolean.TRUE.equals(authProperties.getApiPermissionCoverageFailOnMissing());
+        logReport(report, failOnMissing);
+        if (failOnMissing && !report.missingRoutes().isEmpty()) {
             throw new IllegalStateException("API权限资源覆盖检查失败，缺失或不可验证路由: "
                     + summarizeMissing(report.missingRoutes()));
         }
@@ -176,7 +176,7 @@ public class ApiPermissionCoverageVerifier implements ApplicationRunner {
         return requestMethods.stream().map(RequestMethod::name).sorted().toList();
     }
 
-    private void logReport(CoverageReport report) {
+    private void logReport(CoverageReport report, boolean failOnMissing) {
         if (report.missingRoutes().isEmpty()) {
             log.info("API权限资源覆盖检查通过: protected={}, configured={}, exempt={}",
                     report.protectedRouteCount(), report.configuredRouteCount(), report.exemptRouteCount());
@@ -187,7 +187,14 @@ public class ApiPermissionCoverageVerifier implements ApplicationRunner {
                 .limit(reportLimit)
                 .map(RouteCoverage::displayValue)
                 .toList();
-        log.error("API权限资源覆盖检查发现缺失或不可验证路由: protected={}, configured={}, exempt={}, missing={}, sample={}",
+        if (failOnMissing) {
+            log.error("API权限资源覆盖检查发现缺失或不可验证路由: protected={}, configured={}, exempt={}, missing={}, sample={}",
+                    report.protectedRouteCount(), report.configuredRouteCount(), report.exemptRouteCount(),
+                    report.missingRoutes().size(), sample);
+            return;
+        }
+        log.warn("API权限资源覆盖盘点发现待补齐路由（报告模式，不阻止启动；请求期仍默认拒绝）: "
+                        + "protected={}, configured={}, exempt={}, missing={}, sample={}",
                 report.protectedRouteCount(), report.configuredRouteCount(), report.exemptRouteCount(),
                 report.missingRoutes().size(), sample);
     }
