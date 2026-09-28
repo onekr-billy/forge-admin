@@ -23,6 +23,11 @@ final class BusinessFlowCommandIdentity {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("comment", StringUtils.defaultString(comment));
         payload.put("variables", variables == null ? Map.of() : variables);
+        return forTaskAction(action, tenantId, userId, taskId, payload);
+    }
+
+    static Credentials forTaskAction(String action, Long tenantId, Long userId, String taskId,
+                                     Map<String, Object> payload) {
         return create(action, tenantId, userId, taskId, payload);
     }
 

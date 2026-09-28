@@ -485,23 +485,41 @@ public class BusinessFlowRemoteCommandService {
     private void validateTaskRequest(BusinessFlowRemoteTaskRequest request) {
         if (request == null || request.getTenantId() == null || request.getTenantId() <= 0
                 || request.getOperatorUserId() == null || request.getOperatorUserId() <= 0
-                || request.getRecordId() == null
                 || !BusinessFlowRemoteTaskEnvelope.supports(request.getCommandType())
                 || StringUtils.isAnyBlank(request.getTaskId(), request.getProcessInstanceId(),
                 request.getBusinessKey(), request.getObjectCode(), request.getFlowModelKey(),
                 request.getIdempotencyKey(), request.getActionRequestDigest())) {
             throw new BusinessException("流程远程任务命令缺少可信业务身份");
         }
+        if (BusinessFlowRemoteTaskEnvelope.COMMAND_RESUBMIT.equals(request.getCommandType())
+                && request.getRecordId() == null) {
+            throw new BusinessException("流程重提远程命令缺少可信业务记录身份");
+        }
     }
 
     private FlowResult<Void> executeRemoteTask(FlowClient flowClient, BusinessFlowRemoteTaskRequest request) {
-        if (BusinessFlowRemoteTaskEnvelope.COMMAND_RESUBMIT.equals(request.getCommandType())) {
-            Map<String, Object> variables = request.getVariables() == null ? Map.of() : request.getVariables();
-            return flowClient.approve(
-                    request.getTaskId(), text(request.getOperatorUserId()), request.getComment(), null, variables,
+        Map<String, Object> variables = request.getVariables() == null ? Map.of() : request.getVariables();
+        String userId = text(request.getOperatorUserId());
+        return switch (request.getCommandType()) {
+            case BusinessFlowRemoteTaskEnvelope.COMMAND_APPROVE -> flowClient.approve(
+                    request.getTaskId(), userId, request.getComment(), request.getSignature(), variables,
+                    request.getTenantId(), request.getIdempotencyKey(), request.getActionRequestDigest(),
+                    request.getApprovalPointResults());
+            case BusinessFlowRemoteTaskEnvelope.COMMAND_REJECT -> flowClient.reject(
+                    request.getTaskId(), userId, request.getComment(), request.getSignature(),
                     request.getTenantId(), request.getIdempotencyKey(), request.getActionRequestDigest());
-        }
-        throw new BusinessException("不支持的流程远程任务命令");
+            case BusinessFlowRemoteTaskEnvelope.COMMAND_REJECT_TO_START -> flowClient.rejectToStart(
+                    request.getTaskId(), userId, request.getComment(), request.getSignature(),
+                    request.getTenantId(), request.getIdempotencyKey(), request.getActionRequestDigest());
+            case BusinessFlowRemoteTaskEnvelope.COMMAND_RETURN -> flowClient.returnTask(
+                    request.getTaskId(), userId, request.getComment(), request.getSignature(),
+                    StringUtils.trimToNull(request.getTargetActivityId()), request.getTenantId(),
+                    request.getIdempotencyKey(), request.getActionRequestDigest());
+            case BusinessFlowRemoteTaskEnvelope.COMMAND_RESUBMIT -> flowClient.approve(
+                    request.getTaskId(), userId, request.getComment(), null, variables,
+                    request.getTenantId(), request.getIdempotencyKey(), request.getActionRequestDigest());
+            default -> throw new BusinessException("不支持的流程远程任务命令");
+        };
     }
 
     private int safeMaxRetryCount() {

@@ -3,10 +3,12 @@ package com.mdframe.forge.plugin.generator.service.businessapp;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BusinessFlowRemoteTaskEnvelopeTest {
 
@@ -36,8 +38,25 @@ class BusinessFlowRemoteTaskEnvelopeTest {
         assertEquals(source.getTaskId(), restored.getTaskId());
         assertEquals(source.getProcessInstanceId(), restored.getProcessInstanceId());
         assertEquals(source.getActionRequestDigest(), restored.getActionRequestDigest());
+        assertEquals(source.getSignature(), restored.getSignature());
+        assertEquals(source.getTargetActivityId(), restored.getTargetActivityId());
+        assertEquals(source.getApprovalPointResults(), restored.getApprovalPointResults());
+        assertEquals(source.getSubmissionDigest(), restored.getSubmissionDigest());
         assertEquals(BusinessFlowRemoteTaskEnvelope.requestDigest(source),
                 BusinessFlowRemoteTaskEnvelope.requestDigest(restored));
+    }
+
+    @Test
+    void mapsEverySupportedBusinessTaskActionToPersistentCommand() {
+        assertEquals(BusinessFlowRemoteTaskEnvelope.COMMAND_APPROVE,
+                BusinessFlowRemoteTaskEnvelope.commandTypeForAction("approve"));
+        assertEquals(BusinessFlowRemoteTaskEnvelope.COMMAND_REJECT,
+                BusinessFlowRemoteTaskEnvelope.commandTypeForAction("reject"));
+        assertEquals(BusinessFlowRemoteTaskEnvelope.COMMAND_REJECT_TO_START,
+                BusinessFlowRemoteTaskEnvelope.commandTypeForAction("rejectToStart"));
+        assertEquals(BusinessFlowRemoteTaskEnvelope.COMMAND_RETURN,
+                BusinessFlowRemoteTaskEnvelope.commandTypeForAction("return"));
+        assertTrue(BusinessFlowRemoteTaskEnvelope.supports(BusinessFlowRemoteTaskEnvelope.COMMAND_RESUBMIT));
     }
 
     private BusinessFlowRemoteTaskRequest request(Map<String, Object> variables) {
@@ -52,9 +71,13 @@ class BusinessFlowRemoteTaskEnvelopeTest {
         request.setFlowModelKey("purchase_approval");
         request.setOperatorUserId(7L);
         request.setComment("修改后重提");
+        request.setSignature("signed");
+        request.setTargetActivityId("review-node");
         request.setVariables(variables);
+        request.setApprovalPointResults(List.of(Map.of("code", "risk", "checked", true)));
         request.setIdempotencyKey("flow:resubmit-42");
         request.setActionRequestDigest("a".repeat(64));
+        request.setSubmissionDigest("b".repeat(64));
         return request;
     }
 }

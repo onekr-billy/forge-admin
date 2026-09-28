@@ -13,8 +13,13 @@ import java.util.Set;
 /** 远程任务命令的稳定身份和不可变请求摘要。 */
 final class BusinessFlowRemoteTaskEnvelope {
 
+    static final String COMMAND_APPROVE = "APPROVE";
+    static final String COMMAND_REJECT = "REJECT";
+    static final String COMMAND_REJECT_TO_START = "REJECT_TO_START";
+    static final String COMMAND_RETURN = "RETURN";
     static final String COMMAND_RESUBMIT = "RESUBMIT";
-    private static final Set<String> SUPPORTED_COMMANDS = Set.of(COMMAND_RESUBMIT);
+    private static final Set<String> SUPPORTED_COMMANDS = Set.of(
+            COMMAND_APPROVE, COMMAND_REJECT, COMMAND_REJECT_TO_START, COMMAND_RETURN, COMMAND_RESUBMIT);
 
     private BusinessFlowRemoteTaskEnvelope() {
     }
@@ -42,6 +47,26 @@ final class BusinessFlowRemoteTaskEnvelope {
 
     static boolean supports(String commandType) {
         return SUPPORTED_COMMANDS.contains(StringUtils.trimToEmpty(commandType).toUpperCase(Locale.ROOT));
+    }
+
+    static String commandTypeForAction(String action) {
+        return switch (StringUtils.trimToEmpty(action).toLowerCase(Locale.ROOT)) {
+            case "approve" -> COMMAND_APPROVE;
+            case "reject" -> COMMAND_REJECT;
+            case "rejecttostart" -> COMMAND_REJECT_TO_START;
+            case "return" -> COMMAND_RETURN;
+            default -> throw new IllegalArgumentException("不支持的流程任务动作");
+        };
+    }
+
+    static String actionForCommandType(String commandType) {
+        return switch (StringUtils.trimToEmpty(commandType).toUpperCase(Locale.ROOT)) {
+            case COMMAND_APPROVE -> "approve";
+            case COMMAND_REJECT -> "reject";
+            case COMMAND_REJECT_TO_START -> "rejecttostart";
+            case COMMAND_RETURN -> "return";
+            default -> throw new IllegalArgumentException("不是可办理的流程任务命令");
+        };
     }
 
     private static String sha256(String value) {

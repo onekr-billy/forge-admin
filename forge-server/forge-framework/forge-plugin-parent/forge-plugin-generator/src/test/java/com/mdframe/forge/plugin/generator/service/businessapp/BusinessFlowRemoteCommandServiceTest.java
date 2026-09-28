@@ -11,6 +11,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -178,6 +179,88 @@ class BusinessFlowRemoteCommandServiceTest {
         command.setBusinessKey("purchase:other");
 
         assertThrows(RuntimeException.class, () -> service.restoreTask(command));
+    }
+
+    @Test
+    void replaysPersistedApprovalWithImmutableActionDetails() {
+        taskRequest.setCommandType(BusinessFlowRemoteTaskEnvelope.COMMAND_APPROVE);
+        taskRequest.setSignature("signed");
+        taskRequest.setApprovalPointResults(List.of(Map.of("code", "risk", "checked", true)));
+        AiBusinessFlowRemoteCommand pending = prepareTaskExecution();
+        when(flowClient.approve(
+                eq("task-42"), eq("7"), eq("修改后重提"), eq("signed"), eq(taskRequest.getVariables()),
+                eq(1L), eq("flow:resubmit-42"), eq("a".repeat(64)),
+                eq(taskRequest.getApprovalPointResults())))
+                .thenReturn(FlowResult.success(null));
+
+        service.executeTask(pending, flowClient);
+
+        verify(flowClient).approve(
+                eq("task-42"), eq("7"), eq("修改后重提"), eq("signed"), eq(taskRequest.getVariables()),
+                eq(1L), eq("flow:resubmit-42"), eq("a".repeat(64)),
+                eq(taskRequest.getApprovalPointResults()));
+    }
+
+    @Test
+    void replaysPersistedRejectAndRejectToStartCommands() {
+        taskRequest.setSignature("signed");
+        taskRequest.setCommandType(BusinessFlowRemoteTaskEnvelope.COMMAND_REJECT);
+        AiBusinessFlowRemoteCommand reject = prepareTaskExecution();
+        when(flowClient.reject(
+                eq("task-42"), eq("7"), eq("修改后重提"), eq("signed"),
+                eq(1L), eq("flow:resubmit-42"), eq("a".repeat(64))))
+                .thenReturn(FlowResult.success(null));
+
+        service.executeTask(reject, flowClient);
+
+        verify(flowClient).reject(
+                eq("task-42"), eq("7"), eq("修改后重提"), eq("signed"),
+                eq(1L), eq("flow:resubmit-42"), eq("a".repeat(64)));
+
+        taskRequest.setCommandType(BusinessFlowRemoteTaskEnvelope.COMMAND_REJECT_TO_START);
+        AiBusinessFlowRemoteCommand rejectToStart = prepareTaskExecution();
+        when(flowClient.rejectToStart(
+                eq("task-42"), eq("7"), eq("修改后重提"), eq("signed"),
+                eq(1L), eq("flow:resubmit-42"), eq("a".repeat(64))))
+                .thenReturn(FlowResult.success(null));
+
+        service.executeTask(rejectToStart, flowClient);
+
+        verify(flowClient).rejectToStart(
+                eq("task-42"), eq("7"), eq("修改后重提"), eq("signed"),
+                eq(1L), eq("flow:resubmit-42"), eq("a".repeat(64)));
+    }
+
+    @Test
+    void replaysPersistedReturnTarget() {
+        taskRequest.setCommandType(BusinessFlowRemoteTaskEnvelope.COMMAND_RETURN);
+        taskRequest.setSignature("signed");
+        taskRequest.setTargetActivityId("review-node");
+        AiBusinessFlowRemoteCommand pending = prepareTaskExecution();
+        when(flowClient.returnTask(
+                eq("task-42"), eq("7"), eq("修改后重提"), eq("signed"), eq("review-node"),
+                eq(1L), eq("flow:resubmit-42"), eq("a".repeat(64))))
+                .thenReturn(FlowResult.success(null));
+
+        service.executeTask(pending, flowClient);
+
+        verify(flowClient).returnTask(
+                eq("task-42"), eq("7"), eq("修改后重提"), eq("signed"), eq("review-node"),
+                eq(1L), eq("flow:resubmit-42"), eq("a".repeat(64)));
+    }
+
+    private AiBusinessFlowRemoteCommand prepareTaskExecution() {
+        AiBusinessFlowRemoteCommand pending = taskCommand(BusinessFlowRemoteCommandStatus.PENDING, null);
+        AiBusinessFlowRemoteCommand claimed = taskCommand(
+                BusinessFlowRemoteCommandStatus.PROCESSING, "worker-1");
+        AiBusinessFlowRemoteCommand succeeded = taskCommand(
+                BusinessFlowRemoteCommandStatus.REMOTE_SUCCEEDED, null);
+        when(mapper.claim(eq(1L), eq(20L), anyString(), any(LocalDateTime.class),
+                any(LocalDateTime.class), anyInt())).thenReturn(1);
+        when(mapper.selectByCommandId(1L, 20L)).thenReturn(claimed, succeeded);
+        when(mapper.markRemoteSucceeded(eq(claimed), eq("process-42"), any(LocalDateTime.class)))
+                .thenReturn(1);
+        return pending;
     }
 
     private AiBusinessFlowRemoteCommand command(

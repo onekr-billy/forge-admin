@@ -343,7 +343,8 @@ public class BusinessFlowService {
                 formAssetCatalog::toBusinessObjectVO,
                 formAssetCatalog::resolveBusinessFormSchema,
                 this::resolveTerminalBusinessFlowResult,
-                remoteCommandService);
+                remoteCommandService,
+                () -> transactionManager);
     }
 
     /** 查询 Flowable 模型中需要发起人选择审批人的节点，供应用级流程启动页复用。 */
@@ -562,7 +563,6 @@ public class BusinessFlowService {
      * 办理低代码业务待办。该入口在 Flowable 任务完成后同步业务流程实例和业务单据状态，
      * 避免低代码单据状态停留在发起时的 IN_PROCESS。
      */
-    @Transactional(rollbackFor = Exception.class)
     public BusinessFlowRuntimeVO completeBusinessTask(BusinessTaskActionDTO dto) {
         return taskCommandCoordinator.completeBusinessTask(dto);
     }
