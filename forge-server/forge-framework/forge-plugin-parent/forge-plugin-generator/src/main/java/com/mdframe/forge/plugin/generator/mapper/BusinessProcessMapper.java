@@ -33,9 +33,6 @@ public interface BusinessProcessMapper extends BaseMapper<AiBusinessProcess> {
     List<BusinessObjectProcessVO> selectBySubjectObjectCode(@Param("tenantId") Long tenantId,
                                                             @Param("objectCode") String objectCode);
 
-    List<AiBusinessProcess> selectActiveDraftsBySubjectObjectCode(@Param("tenantId") Long tenantId,
-                                                                  @Param("objectCode") String objectCode);
-
     AiBusinessProcess selectForPublish(@Param("tenantId") Long tenantId,
                                        @Param("applicationId") Long applicationId,
                                        @Param("id") Long id);

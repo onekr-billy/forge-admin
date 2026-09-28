@@ -8,12 +8,7 @@ import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationPub
 import com.mdframe.forge.plugin.generator.mapper.BusinessAppMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessExtensionMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessProcessMapper;
-import com.mdframe.forge.starter.core.context.ExecutionIdentity;
-import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.exception.BusinessException;
-import com.mdframe.forge.starter.core.session.LoginUser;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -28,27 +23,6 @@ import static org.mockito.Mockito.when;
 
 @DisplayName("BusinessApplicationAssetSelectionService")
 class BusinessApplicationAssetSelectionServiceTest {
-
-    private ExecutionIdentityContextHolder.Scope identityScope;
-
-    @BeforeEach
-    void setUpIdentity() {
-        LoginUser loginUser = new LoginUser();
-        loginUser.setUserId(101L);
-        loginUser.setTenantId(1L);
-        identityScope = ExecutionIdentityContextHolder.open(
-                new ExecutionIdentity(loginUser, "USER", 101L, null, 1L,
-                        "pc", "asset-selection-test", Set.of()));
-    }
-
-    @AfterEach
-    void clearIdentity() {
-        if (identityScope != null) {
-            identityScope.close();
-            identityScope = null;
-        }
-        ExecutionIdentityContextHolder.clear();
-    }
 
     @Test
     @DisplayName("default publish selection skips untested extension drafts")

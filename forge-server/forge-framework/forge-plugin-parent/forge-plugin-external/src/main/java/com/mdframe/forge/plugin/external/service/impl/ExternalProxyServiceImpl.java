@@ -88,7 +88,7 @@ public class ExternalProxyServiceImpl implements ExternalProxyService {
         ExternalApiDebugResult result = new ExternalApiDebugResult();
 
         try {
-            api = apiService.getRuntimeById(apiId);
+            api = apiService.getById(apiId);
             if (api == null || api.getApiStatus() != 1) {
                 throw new BusinessException("接口不存在或已停用");
             }
@@ -190,11 +190,7 @@ public class ExternalProxyServiceImpl implements ExternalProxyService {
     private Object transformResponse(ExternalApi api, Object originalData) {
         if (api.getResponseTransformEnabled() != null && api.getResponseTransformEnabled()
                 && api.getResponseTransformScript() != null && !api.getResponseTransformScript().isEmpty()) {
-            DataAdapter adapter = adapterFactory.getRequiredAdapter("JsonPath");
-            if (!adapter.validateConfig(api.getResponseTransformScript())) {
-                return adapterFactory.getRequiredAdapter("Script")
-                        .transform(originalData, api.getResponseTransformScript());
-            }
+            DataAdapter adapter = adapterFactory.getAdapter("Script");
             return adapter.transform(originalData, api.getResponseTransformScript());
         }
         return originalData;

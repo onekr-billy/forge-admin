@@ -5,9 +5,10 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessFlowInstanceLi
 import com.mdframe.forge.plugin.generator.enums.BusinessDocumentFlowStatus;
 import com.mdframe.forge.plugin.generator.mapper.BusinessFlowInstanceLinkMapper;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
+import com.mdframe.forge.starter.core.session.LoginUser;
+import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.flow.entity.FlowEntry;
 import com.mdframe.forge.starter.flow.entity.FlowEntryFieldMapping;
-import com.mdframe.forge.starter.flow.security.FlowRuntimeIdentity;
 import com.mdframe.forge.starter.flow.service.FlowBusinessObjectRuntimeAdapter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,8 +36,6 @@ public class FlowBusinessObjectRuntimeAdapterImpl implements FlowBusinessObjectR
     public BusinessRecordCreateResult createBusinessRecord(FlowEntry entry,
                                                            List<FlowEntryFieldMapping> mappings,
                                                            Map<String, Object> formData) {
-        FlowRuntimeIdentity.Actor actor = FlowRuntimeIdentity.requireActor();
-        requireEntryTenant(entry, actor.tenantId());
         String configKey = firstText(entry.getConfigKey(), entry.getObjectCode());
         if (!StringUtils.hasText(configKey)) {
             throw new RuntimeException("业务对象入口缺少 configKey/objectCode");
@@ -77,17 +76,15 @@ public class FlowBusinessObjectRuntimeAdapterImpl implements FlowBusinessObjectR
         if (record == null || record.getRecordId() == null || !StringUtils.hasText(processInstanceId)) {
             return;
         }
-        FlowRuntimeIdentity.Actor actor = FlowRuntimeIdentity.requireActor();
-        requireEntryTenant(entry, actor.tenantId());
         AiBusinessFlowInstanceLink link = new AiBusinessFlowInstanceLink();
-        link.setTenantId(actor.tenantId());
+        link.setTenantId(resolveTenantId());
         link.setObjectCode(firstText(record.getObjectCode(), entry.getObjectCode(), entry.getConfigKey()));
         link.setRecordId(record.getRecordId());
         link.setBusinessKey(firstText(record.getBusinessKey(), link.getObjectCode() + ":" + record.getRecordId()));
         link.setFlowModelKey(entry.getModelKey());
         link.setProcessInstanceId(processInstanceId);
         link.setFlowStatus(BusinessDocumentFlowStatus.RUNNING.getCode());
-        link.setStartUserId(actor.userId());
+        link.setStartUserId(resolveUserId());
         link.setStartTime(LocalDateTime.now());
         link.setVariablesSnapshot(toJson(variables));
         flowInstanceLinkMapper.insert(link);
@@ -130,9 +127,21 @@ public class FlowBusinessObjectRuntimeAdapterImpl implements FlowBusinessObjectR
         }
     }
 
-    private void requireEntryTenant(FlowEntry entry, Long tenantId) {
-        if (entry == null || entry.getTenantId() == null || !tenantId.equals(entry.getTenantId())) {
-            throw new IllegalStateException("FLOW_ENTRY_NOT_FOUND");
+    private Long resolveTenantId() {
+        try {
+            Long tenantId = SessionHelper.getTenantId();
+            return tenantId == null ? 1L : tenantId;
+        } catch (Exception e) {
+            return 1L;
+        }
+    }
+
+    private Long resolveUserId() {
+        try {
+            LoginUser loginUser = SessionHelper.getLoginUser();
+            return loginUser == null ? null : loginUser.getUserId();
+        } catch (Exception e) {
+            return null;
         }
     }
 

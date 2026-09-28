@@ -243,7 +243,7 @@ final class BusinessDocumentNoRuleEngine {
     }
 
     private String buildSequenceKey(AiBusinessDocumentConfig config, String template) {
-        String tenantId = String.valueOf(requireTenantId(config.getTenantId()));
+        String tenantId = config.getTenantId() == null ? String.valueOf(resolveTenantId()) : String.valueOf(config.getTenantId());
         String suiteCode = StringUtils.defaultIfBlank(config.getSuiteCode(), "SUITE");
         String objectCode = StringUtils.defaultIfBlank(config.getObjectCode(), "OBJECT");
         String period = resolveSequencePeriod(template);
@@ -279,22 +279,13 @@ final class BusinessDocumentNoRuleEngine {
         }
     }
 
-    private Long requireTenantId(Long tenantId) {
-        if (tenantId != null) {
-            if (tenantId <= 0) {
-                throw new BusinessException("生成业务单据编号缺少可信租户上下文");
-            }
-            return tenantId;
-        }
+    private Long resolveTenantId() {
         try {
-            tenantId = SessionHelper.getTenantId();
+            Long tenantId = SessionHelper.getTenantId();
+            return tenantId != null ? tenantId : 1L;
         } catch (Exception e) {
-            tenantId = null;
+            return 1L;
         }
-        if (tenantId == null || tenantId <= 0) {
-            throw new BusinessException("生成业务单据编号缺少可信租户上下文");
-        }
-        return tenantId;
     }
 
     private Object readSampleValue(Map<String, Object> sampleData, String fieldCode) {

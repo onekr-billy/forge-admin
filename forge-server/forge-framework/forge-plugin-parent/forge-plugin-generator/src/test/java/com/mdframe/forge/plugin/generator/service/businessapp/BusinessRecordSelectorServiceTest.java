@@ -8,13 +8,8 @@ import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessRecordSelector
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessRecordSelectorResultVO;
-import com.mdframe.forge.starter.core.context.ExecutionIdentity;
-import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.domain.PageQuery;
 import com.mdframe.forge.starter.core.exception.BusinessException;
-import com.mdframe.forge.starter.core.session.LoginUser;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -23,7 +18,6 @@ import org.mockito.Mockito;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -37,8 +31,6 @@ import static org.mockito.Mockito.when;
 @DisplayName("BusinessRecordSelectorService")
 class BusinessRecordSelectorServiceTest {
 
-    private ExecutionIdentityContextHolder.Scope identityScope;
-
     private final BusinessObjectMapper businessObjectMapper = Mockito.mock(BusinessObjectMapper.class);
     private final DynamicCrudService dynamicCrudService = Mockito.mock(DynamicCrudService.class);
     private final BusinessPermissionService permissionService = Mockito.mock(BusinessPermissionService.class);
@@ -46,25 +38,6 @@ class BusinessRecordSelectorServiceTest {
             businessObjectMapper,
             dynamicCrudService,
             permissionService);
-
-    @BeforeEach
-    void setUpIdentity() {
-        LoginUser loginUser = new LoginUser();
-        loginUser.setUserId(7L);
-        loginUser.setTenantId(1L);
-        identityScope = ExecutionIdentityContextHolder.open(
-                new ExecutionIdentity(loginUser, "USER", 7L, null, 1L,
-                        "pc", "record-selector-test", Set.of()));
-    }
-
-    @AfterEach
-    void clearIdentity() {
-        if (identityScope != null) {
-            identityScope.close();
-            identityScope = null;
-        }
-        ExecutionIdentityContextHolder.clear();
-    }
 
     @Test
     @DisplayName("query projects raw record to allowed selector fields only")

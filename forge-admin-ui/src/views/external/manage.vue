@@ -165,7 +165,7 @@
               <div class="adv-row">
                 <div class="adv-switch">
                   <n-switch v-model:value="formData.responseTransformEnabled" size="small" />
-                  <span>启用响应字段映射</span>
+                  <span>启用响应转换</span>
                 </div>
               </div>
               <n-input
@@ -173,12 +173,9 @@
                 v-model:value="formData.responseTransformScript"
                 type="textarea"
                 size="small"
-                :rows="7"
-                placeholder="仅支持字段映射 JSON，例如：{&quot;version&quot;:&quot;FIELD_MAP_V1&quot;,&quot;sourcePath&quot;:&quot;data.records&quot;,&quot;fieldMapping&quot;:{&quot;id&quot;:&quot;id&quot;,&quot;name&quot;:&quot;profile.name&quot;},&quot;targetPath&quot;:&quot;records&quot;}"
+                :rows="4"
+                placeholder="JavaScript 转换脚本，如 function transform(response) { return response.data }"
               />
-              <div v-if="formData.responseTransformEnabled" class="secondary-text">
-                仅支持 FIELD_MAP_V1 白名单字段映射；不执行 JavaScript。fieldMapping 使用“目标字段: 源字段路径”。
-              </div>
               <div class="adv-row">
                 <div class="adv-switch">
                   <n-switch v-model:value="formData.rateLimitEnabled" size="small" />
@@ -404,8 +401,8 @@
 </template>
 
 <script>
-import { useExternalManage } from './composables/useExternalManage'
 import { externalManageLocalComponents } from './externalManageLocalComponents'
+import { useExternalManage } from './composables/useExternalManage'
 
 export default {
   name: 'ExternalManage',
@@ -413,11 +410,11 @@ export default {
     ...externalManageLocalComponents,
   },
   props: {
-    initialView: {
-      type: String,
-      default: 'system',
-    },
+  initialView: {
+    type: String,
+    default: 'system',
   },
+},
   setup(props, { emit }) {
     return useExternalManage(props, emit)
   },

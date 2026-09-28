@@ -16,7 +16,6 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.mockito.Mockito.mock;
 
 class DataQueryRuntimeCacheTest {
@@ -42,25 +41,6 @@ class DataQueryRuntimeCacheTest {
             assertEquals(firstKey, secondKey);
             assertFalse(firstKey.contains("13800138000"));
             assertFalse(firstKey.contains("P2026081001"));
-        }
-    }
-
-    @Test
-    void shouldIsolateCacheEntriesByPageNumberAndPageSize() {
-        DataDataset dataset = new DataDataset();
-        dataset.setId(30L);
-        dataset.setCacheEnabled(1);
-        DataDatasetQueryDTO query = query(Map.of("status", "ACTIVE"));
-
-        try (ExecutionIdentityContextHolder.Scope ignored = ExecutionIdentityContextHolder.open(identity())) {
-            String firstPage = cache.buildKey(dataset, query, List.of("memberName"), 1, 20);
-            String secondPage = cache.buildKey(dataset, query, List.of("memberName"), 2, 20);
-            String largerPage = cache.buildKey(dataset, query, List.of("memberName"), 1, 50);
-
-            assertNotEquals(firstPage, secondPage);
-            assertNotEquals(firstPage, largerPage);
-            assertNotEquals(secondPage, largerPage);
-            assertEquals(firstPage, cache.buildKey(dataset, query, List.of("memberName"), 1, 20));
         }
     }
 

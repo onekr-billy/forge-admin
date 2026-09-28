@@ -14,7 +14,6 @@ import com.qcloud.cos.exception.CosClientException;
 import com.qcloud.cos.http.HttpMethodName;
 import com.qcloud.cos.model.COSObject;
 import com.qcloud.cos.model.COSObjectInputStream;
-import com.qcloud.cos.model.AbortMultipartUploadRequest;
 import com.qcloud.cos.model.CompleteMultipartUploadRequest;
 import com.qcloud.cos.model.CreateBucketRequest;
 import com.qcloud.cos.model.InitiateMultipartUploadRequest;
@@ -217,12 +216,6 @@ public class TencentCosFileStorage implements FileStorage {
                 .isPrivate(false)
                 .downloadCount(0)
                 .build();
-    }
-
-    @Override
-    public void abortMultipartUpload(String uploadId) {
-        String[] parts = parseUploadId(uploadId);
-        cosClient.abortMultipartUpload(new AbortMultipartUploadRequest(parts[1], parts[2], parts[0]));
     }
 
     @Override

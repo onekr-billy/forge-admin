@@ -148,13 +148,6 @@ public interface FlowTaskService {
                    String targetActivityId);
 
     /**
-     * 带可信租户与远程幂等凭证的退回入口。
-     */
-    void returnTask(String taskId, String userId, String comment, String signature,
-                    String targetActivityId, Long tenantId,
-                    String idempotencyKey, String requestDigest);
-
-    /**
      * 由当前处理人、任务拥有人或流程发起人改派任务。
      */
     void reassignByInitiator(String taskId, String userId, String targetUserId, String reason);
@@ -206,10 +199,6 @@ public interface FlowTaskService {
      * 撤回流程
      */
     void withdraw(String processInstanceId, String userId);
-
-    /** 带可信租户与远程幂等凭证的流程撤回。 */
-    void withdraw(String processInstanceId, String userId, String comment, Long tenantId,
-                  String idempotencyKey, String requestDigest);
 
     /**
      * 获取任务详情

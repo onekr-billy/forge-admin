@@ -1,7 +1,6 @@
 package com.mdframe.forge.plugin.capability.secureaction.catalog;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.mdframe.forge.plugin.capability.execution.SecureActionDescriptor;
 import com.mdframe.forge.starter.core.context.ExecutionIdentity;
 import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.exception.BusinessException;

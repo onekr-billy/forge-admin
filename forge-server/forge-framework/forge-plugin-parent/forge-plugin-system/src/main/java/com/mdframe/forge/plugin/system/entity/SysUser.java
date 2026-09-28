@@ -79,17 +79,6 @@ public class SysUser extends TenantEntity {
     private String password;
 
     /**
-     * 密码凭证版本；每次修改或重置密码时原子递增。
-     */
-    private Long passwordVersion;
-
-    /**
-     * 最近一次密码变更时间。
-     */
-    @JsonIgnore
-    private LocalDateTime passwordChangedTime;
-
-    /**
      * 密码盐值
      */
     @JsonIgnore

@@ -8,8 +8,6 @@ import com.mdframe.forge.starter.core.context.ExecutionIdentity;
 import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.LoginUser;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -27,26 +25,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class BusinessApplicationRuntimeServiceTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private ExecutionIdentityContextHolder.Scope identityScope;
-
-    @BeforeEach
-    void setUpIdentity() {
-        LoginUser loginUser = new LoginUser();
-        loginUser.setUserId(7L);
-        loginUser.setTenantId(1L);
-        identityScope = ExecutionIdentityContextHolder.open(
-                new ExecutionIdentity(loginUser, "USER", 7L, null, 1L,
-                        "pc", "application-runtime-test", Set.of()));
-    }
-
-    @AfterEach
-    void clearIdentity() {
-        if (identityScope != null) {
-            identityScope.close();
-            identityScope = null;
-        }
-        ExecutionIdentityContextHolder.clear();
-    }
 
     @Test
     @DisplayName("normal runtime reads the immutable published version")

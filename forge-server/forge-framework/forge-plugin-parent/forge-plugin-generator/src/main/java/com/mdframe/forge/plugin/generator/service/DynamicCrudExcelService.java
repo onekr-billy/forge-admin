@@ -85,25 +85,21 @@ public class DynamicCrudExcelService {
     private final IDataScopeService dataScopeService;
 
     public DynamicCrudExportResult exportExcel(String configKey, DynamicCrudQuery query, HttpServletResponse response) {
-        ExportActor actor = requireExportActor();
         AiCrudConfig config = dynamicCrudService.getRuntimeConfig(configKey);
         List<DynamicCrudExcelColumn> columns = resolveExportColumns(config);
         if (columns.isEmpty()) {
             throw new BusinessException("没有可导出的字段");
         }
 
-        int threshold = readPositiveIntConfig(actor.tenantId(),
-                CONFIG_ASYNC_THRESHOLD, DEFAULT_ASYNC_THRESHOLD, 1, 1_000_000);
+        int threshold = readPositiveIntConfig(CONFIG_ASYNC_THRESHOLD, DEFAULT_ASYNC_THRESHOLD, 1, 1_000_000);
         DataScopeContext dataScopeContext = captureDataScopeContext();
         long totalCount = dynamicCrudService.countExportRows(configKey, query, dataScopeContext);
         if (totalCount > threshold) {
-            int batchSize = readPositiveIntConfig(actor.tenantId(),
-                    CONFIG_BATCH_SIZE, DEFAULT_EXPORT_BATCH_SIZE, 100, 5000);
-            int keepHours = readPositiveIntConfig(actor.tenantId(),
-                    CONFIG_FILE_KEEP_HOURS, DEFAULT_FILE_KEEP_HOURS, 1, 720);
-            AiCrudExportTask task = createExportTask(config, query, totalCount, keepHours, actor);
+            int batchSize = readPositiveIntConfig(CONFIG_BATCH_SIZE, DEFAULT_EXPORT_BATCH_SIZE, 100, 5000);
+            int keepHours = readPositiveIntConfig(CONFIG_FILE_KEEP_HOURS, DEFAULT_FILE_KEEP_HOURS, 1, 720);
+            AiCrudExportTask task = createExportTask(config, query, totalCount, keepHours);
             ExportExecutionContext context = new ExportExecutionContext(
-                    task.getId(), actor.tenantId(), actor.userId(), actor.mainOrgId(),
+                    task.getId(), resolveTenantId(), SessionHelper.getUserId(), SessionHelper.getMainOrgId(),
                     dataScopeContext, totalCount, batchSize, keepHours);
             asyncExportWorker.getObject().executeAsync(task.getId(), configKey, query, context);
             return DynamicCrudExportResult.async(task.getId(), totalCount, threshold);
@@ -121,28 +117,25 @@ public class DynamicCrudExcelService {
     }
 
     public void downloadImportTemplate(String configKey, HttpServletResponse response) {
-        Long tenantId = requireTenantId();
         AiCrudConfig config = dynamicCrudService.getRuntimeConfig(configKey);
         List<DynamicCrudExcelColumn> columns = resolveImportColumns(config);
         if (columns.isEmpty()) {
             throw new BusinessException("没有可导入的字段");
         }
-        writeImportTemplateWorkbook(response, buildFileName(config, "导入模板"), columns, tenantId);
+        writeImportTemplateWorkbook(response, buildFileName(config, "导入模板"), columns);
     }
 
     public Page<AiCrudExportTask> selectExportTaskPage(String configKey, PageQuery pageQuery) {
-        ExportActor actor = requireExportActor();
         return exportTaskMapper.selectTaskPage(
                 pageQuery.toPage(),
-                actor.tenantId(),
-                actor.userId(),
+                resolveTenantId(),
+                SessionHelper.getUserId(),
                 configKey
         );
     }
 
     public AiCrudExportTask selectExportTask(String configKey, Long taskId) {
-        ExportActor actor = requireExportActor();
-        AiCrudExportTask task = exportTaskMapper.selectTaskById(actor.tenantId(), actor.userId(), taskId);
+        AiCrudExportTask task = exportTaskMapper.selectTaskById(resolveTenantId(), SessionHelper.getUserId(), taskId);
         if (task == null || !StringUtils.equals(task.getConfigKey(), configKey)) {
             throw new BusinessException("导出任务不存在");
         }
@@ -153,7 +146,6 @@ public class DynamicCrudExcelService {
                                 String configKey,
                                 DynamicCrudQuery query,
                                 ExportExecutionContext context) {
-        validateExportContext(taskId, context);
         TenantContextHolder.executeWithTenant(context.tenantId(), () ->
                 doExecuteAsyncExportTask(taskId, configKey, query, context));
     }
@@ -162,7 +154,7 @@ public class DynamicCrudExcelService {
                                           String configKey,
                                           DynamicCrudQuery query,
                                           ExportExecutionContext context) {
-        AiCrudExportTask task = exportTaskMapper.selectTaskById(context.tenantId(), context.userId(), taskId);
+        AiCrudExportTask task = exportTaskMapper.selectById(taskId);
         if (task == null) {
             log.warn("[DynamicCrudExcelService] 异步导出任务不存在, taskId={}", taskId);
             return;
@@ -223,7 +215,6 @@ public class DynamicCrudExcelService {
             throw new BusinessException("导入文件不能为空");
         }
 
-        requireTenantId();
         AiCrudConfig config = dynamicCrudService.getRuntimeConfig(configKey);
         List<DynamicCrudExcelColumn> columns = resolveImportColumns(config);
         if (columns.isEmpty()) {
@@ -517,8 +508,7 @@ public class DynamicCrudExcelService {
 
     private void writeImportTemplateWorkbook(HttpServletResponse response,
                                              String fileName,
-                                             List<DynamicCrudExcelColumn> columns,
-                                             Long tenantId) {
+                                             List<DynamicCrudExcelColumn> columns) {
         try {
             response.setContentType(XLSX_MIME);
             response.setCharacterEncoding(StandardCharsets.UTF_8.name());
@@ -529,7 +519,7 @@ public class DynamicCrudExcelService {
                     response.getOutputStream(),
                     "导入数据",
                     columns.stream()
-                            .map(column -> excelValueAdapter.toImportTemplateColumn(column, tenantId))
+                            .map(column -> excelValueAdapter.toImportTemplateColumn(column, resolveTenantId()))
                             .toList()
             );
         } catch (IOException e) {
@@ -580,10 +570,9 @@ public class DynamicCrudExcelService {
     private AiCrudExportTask createExportTask(AiCrudConfig config,
                                               DynamicCrudQuery query,
                                               long totalCount,
-                                              int keepHours,
-                                              ExportActor actor) {
+                                              int keepHours) {
         AiCrudExportTask task = new AiCrudExportTask();
-        task.setTenantId(actor.tenantId());
+        task.setTenantId(resolveTenantId());
         task.setConfigKey(config.getConfigKey());
         task.setExportName(StringUtils.defaultIfBlank(config.getAppName(),
                 StringUtils.defaultIfBlank(config.getTableComment(), config.getConfigKey())));
@@ -594,9 +583,9 @@ public class DynamicCrudExcelService {
         task.setProgress(0);
         task.setQueryParams(writeQueryParams(query));
         task.setExpireTime(LocalDateTime.now().plusHours(keepHours));
-        task.setCreateBy(actor.userId());
-        task.setCreateDept(actor.mainOrgId());
-        task.setUpdateBy(actor.userId());
+        task.setCreateBy(SessionHelper.getUserId());
+        task.setCreateDept(SessionHelper.getMainOrgId());
+        task.setUpdateBy(SessionHelper.getUserId());
         exportTaskMapper.insert(task);
         return task;
     }
@@ -636,10 +625,9 @@ public class DynamicCrudExcelService {
         }
     }
 
-    private int readPositiveIntConfig(
-            Long tenantId, String configKey, int defaultValue, int minValue, int maxValue) {
+    private int readPositiveIntConfig(String configKey, int defaultValue, int minValue, int maxValue) {
         try {
-            String value = exportTaskMapper.selectConfigValue(tenantId, configKey);
+            String value = exportTaskMapper.selectConfigValue(resolveTenantId(), configKey);
             if (StringUtils.isBlank(value)) {
                 return defaultValue;
             }
@@ -651,44 +639,13 @@ public class DynamicCrudExcelService {
         }
     }
 
-    private Long requireTenantId() {
+    private Long resolveTenantId() {
         Long tenantId = TenantContextHolder.getTenantId();
-        if (tenantId == null) {
-            try {
-                tenantId = SessionHelper.getTenantId();
-            } catch (Exception e) {
-                tenantId = null;
-            }
+        if (tenantId != null) {
+            return tenantId;
         }
-        if (tenantId == null || tenantId <= 0 || TenantContextHolder.isIgnore()) {
-            throw new BusinessException("动态导入导出缺少可信租户上下文");
-        }
-        return tenantId;
-    }
-
-    private ExportActor requireExportActor() {
-        Long userId;
-        Long mainOrgId;
-        try {
-            userId = SessionHelper.getUserId();
-            mainOrgId = SessionHelper.getMainOrgId();
-        } catch (Exception e) {
-            userId = null;
-            mainOrgId = null;
-        }
-        if (userId == null || userId <= 0) {
-            throw new BusinessException("动态导出缺少可信用户上下文");
-        }
-        return new ExportActor(requireTenantId(), userId, mainOrgId);
-    }
-
-    private void validateExportContext(Long taskId, ExportExecutionContext context) {
-        if (taskId == null || taskId <= 0 || context == null
-                || !taskId.equals(context.taskId())
-                || context.tenantId() == null || context.tenantId() <= 0
-                || context.userId() == null || context.userId() <= 0) {
-            throw new BusinessException("异步导出任务缺少可信执行上下文");
-        }
+        tenantId = SessionHelper.getTenantId();
+        return tenantId != null ? tenantId : 1L;
     }
 
     private JsonNode readArray(String json, String fieldName) {
@@ -844,9 +801,6 @@ public class DynamicCrudExcelService {
                                          long totalCount,
                                          int batchSize,
                                          int keepHours) {
-    }
-
-    private record ExportActor(Long tenantId, Long userId, Long mainOrgId) {
     }
 
     @Data

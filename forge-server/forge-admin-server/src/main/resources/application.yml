@@ -29,7 +29,7 @@ server:
 # 日志配置
 logging:
   level:
-    com.mdframe.forge: ${FORGE_LOG_LEVEL:info}
+    com.forge: info
     org.springframework: error
     org.mybatis.spring.mapper: error
     com.mdframe.forge.plugin.ai.client.AiClientImpl: INFO
@@ -151,51 +151,21 @@ sms:
   config-type: interface
 forge:
   auth:
-    # API 资源采用显式配置策略；默认不要求全部 Controller 都配置 resource_type=4 资源。
-    # 只有需要全量覆盖门禁的部署才显式开启盘点与缺失阻断。
-    api-permission-coverage-enabled: ${FORGE_AUTH_API_PERMISSION_COVERAGE_ENABLED:false}
-    api-permission-coverage-fail-on-missing: ${FORGE_AUTH_API_PERMISSION_COVERAGE_FAIL_ON_MISSING:false}
-    api-permission-coverage-report-limit: ${FORGE_AUTH_API_PERMISSION_COVERAGE_REPORT_LIMIT:100}
     # 存量机密客户端全部升级为 BCrypt 后关闭。
     enable-legacy-client-secret-read: ${FORGE_AUTH_LEGACY_CLIENT_SECRET_READ_ENABLED:true}
-    # 用户主动改密后是否保留发起改密的当前会话；找回密码和管理员重置始终全部吊销。
-    keep-current-session-after-password-change: ${FORGE_AUTH_KEEP_CURRENT_SESSION_AFTER_PASSWORD_CHANGE:false}
   captcha:
     # 仅 dev/local Profile 可生效；生产即使误配为 true 也不回显
     dev-echo-code: ${FORGE_CAPTCHA_DEV_ECHO_CODE:false}
     # 生产必须注入稳定的 HMAC 挑战密钥，禁止写入仓库
     challenge-secret: ${FORGE_CAPTCHA_CHALLENGE_SECRET:}
-    # 短信/邮件验证码按目标、来源 IP、设备和租户分别执行自然日配额
-    daily-target-limit: ${FORGE_CAPTCHA_DAILY_TARGET_LIMIT:10}
-    daily-ip-limit: ${FORGE_CAPTCHA_DAILY_IP_LIMIT:50}
-    daily-device-limit: ${FORGE_CAPTCHA_DAILY_DEVICE_LIMIT:30}
-    daily-tenant-limit: ${FORGE_CAPTCHA_DAILY_TENANT_LIMIT:500}
-    # 同一短信/邮箱目标在失败窗口内达到阈值后短时锁定
-    verification-max-failures: ${FORGE_CAPTCHA_VERIFICATION_MAX_FAILURES:5}
-    verification-failure-window: ${FORGE_CAPTCHA_VERIFICATION_FAILURE_WINDOW:10m}
-    verification-lock-duration: ${FORGE_CAPTCHA_VERIFICATION_LOCK_DURATION:10m}
   flow:
     timeout:
       time-zone: ${FORGE_FLOW_TIMEOUT_TIME_ZONE:Asia/Shanghai}
-    notify-outbox:
-      # 通知在事务提交后立即异步发送；定时器只补偿失败和超时租约。
-      scan-interval-ms: ${FORGE_FLOW_NOTIFY_OUTBOX_SCAN_INTERVAL_MS:30000}
-    projection-outbox:
-      # 流程镜像先在事件线程即时更新；定时器只补偿失败和中断记录。
-      scan-interval-ms: ${FORGE_FLOW_PROJECTION_OUTBOX_SCAN_INTERVAL_MS:30000}
     job:
       remote:
         enabled: ${FORGE_FLOW_JOB_REMOTE_ENABLED:false}
         url: ${FORGE_FLOW_JOB_REMOTE_URL:http://127.0.0.1:8081}
         token: ${FORGE_FLOW_JOB_REMOTE_TOKEN:}
-  data:
-    jdbc-security:
-      # 临时 JDBC 测试默认无可访问主机；按精确主机名/IP显式配置，并单独决定是否允许私网。
-      allowed-hosts: ${FORGE_DATA_JDBC_ALLOWED_HOSTS:}
-      allowed-ports: ${FORGE_DATA_JDBC_ALLOWED_PORTS:3306,5432,1521,1433}
-      allow-private-addresses: ${FORGE_DATA_JDBC_ALLOW_PRIVATE:false}
-      connection-timeout: ${FORGE_DATA_JDBC_CONNECTION_TIMEOUT:3s}
-      query-timeout: ${FORGE_DATA_JDBC_QUERY_TIMEOUT:3s}
   job:
     open-api:
       enabled: ${FORGE_JOB_OPEN_API_ENABLED:false}
@@ -208,7 +178,7 @@ forge:
       enabled: ${FORGE_CAPABILITY_SECURE_ACTIONS_ENABLED:${FORGE_CAPABILITY_OPEN_GATEWAY_ENABLED:${FORGE_MCP_ENABLED:false}}}
     flow-actions:
       # 开放已发布业务对象的 SUBMIT/START/APPROVE/REJECT 受控流程能力
-      enabled: ${FORGE_CAPABILITY_FLOW_ACTIONS_ENABLED:${FORGE_CAPABILITY_OPEN_GATEWAY_ENABLED:${FORGE_MCP_ENABLED:false}}}
+      enabled: ${FORGE_CAPABILITY_FLOW_ACTIONS_ENABLED:${FORGE_CAPABILITY_OPEN_GATEWAY_ENABLED:${FORGE_MCP_ENABLED:true}}}
     high-risk:
       # HIGH 动作默认关闭；启用前必须通过环境变量提供版本化 256-bit KEK
       enabled: ${FORGE_CAPABILITY_HIGH_RISK_ENABLED:false}
@@ -243,7 +213,7 @@ forge:
           organization-claim: ${FORGE_CAPABILITY_OIDC_ORG_CLAIM:forge_org_id}
     open-gateway:
       # 统一能力开放网关，默认关闭（失败关闭）；防重放窗口/nonce/幂等锁参数复用 forge.openapi.security.*
-      enabled: ${FORGE_CAPABILITY_OPEN_GATEWAY_ENABLED:false}
+      enabled: ${FORGE_CAPABILITY_OPEN_GATEWAY_ENABLED:true}
       # 读/写能力限流：每分钟每客户端许可数
       read-permits-per-minute: ${FORGE_CAPABILITY_OPEN_GATEWAY_READ_PERMITS:120}
       write-permits-per-minute: ${FORGE_CAPABILITY_OPEN_GATEWAY_WRITE_PERMITS:20}
@@ -274,29 +244,9 @@ forge:
       ttl-millis: 1800000
       cleanup-interval-millis: 60000
   business:
-    event-outbox:
-      # 主投递通道：业务提交后异步投递，保留秒级延迟。
-      scan-interval-ms: ${FORGE_BUSINESS_EVENT_OUTBOX_SCAN_INTERVAL_MS:5000}
-    flow-callback-inbox:
-      # 回调会在到达时立即消费；这里只恢复失败记录和超时租约。
-      scan-interval-ms: ${FORGE_BUSINESS_FLOW_CALLBACK_INBOX_SCAN_INTERVAL_MS:30000}
-    flow-remote-command:
-      # 远程命令由请求线程立即执行；这里只接管远端成功、本地落库失败等异常状态。
-      scan-interval-ms: ${FORGE_BUSINESS_FLOW_REMOTE_COMMAND_SCAN_INTERVAL_MS:30000}
-    flow-status-sync:
-      # 仅用于终态回调彻底丢失后的主动对账，不参与正常流程状态更新。
-      scan-interval-ms: ${FORGE_BUSINESS_FLOW_STATUS_SYNC_SCAN_INTERVAL_MS:60000}
-      running-interval-seconds: ${FORGE_BUSINESS_FLOW_STATUS_SYNC_RUNNING_INTERVAL_SECONDS:300}
-    trigger-recovery:
-      # 只恢复可安全重放的失败触发器；正常业务事件由 event-outbox 投递。
-      scan-interval-ms: ${FORGE_BUSINESS_TRIGGER_RECOVERY_SCAN_INTERVAL_MS:60000}
     datasource:
       enabled: true
       tenant-routing-enabled-default: true
-  lowcode:
-    publish-task:
-      # 在线发布由请求线程同步推进；扫描器只恢复中断、失败或过期租约。
-      scan-interval-ms: ${FORGE_LOWCODE_PUBLISH_TASK_SCAN_INTERVAL_MS:30000}
 
 management:
   metrics:

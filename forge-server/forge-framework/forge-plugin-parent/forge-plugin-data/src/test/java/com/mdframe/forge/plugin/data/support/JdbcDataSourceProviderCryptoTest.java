@@ -32,7 +32,7 @@ class JdbcDataSourceProviderCryptoTest {
             public String reencrypt(String ciphertext, String legacyAlgorithm) {
                 return ciphertext;
             }
-        }, org.mockito.Mockito.mock(JdbcConnectionSecurityPolicy.class));
+        });
         DataConnection connection = new DataConnection();
         connection.setId(10L);
         connection.setDbType("mysql");

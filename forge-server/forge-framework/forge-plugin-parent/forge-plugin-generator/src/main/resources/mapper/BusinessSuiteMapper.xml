@@ -129,16 +129,6 @@
         LIMIT 1
     </select>
 
-    <select id="selectBySuiteId" resultMap="BaseResultMap">
-        SELECT
-        <include refid="Base_Columns"/>
-        FROM ai_business_suite
-        WHERE tenant_id = #{tenantId}
-          AND del_flag = '0'
-          AND id = #{id}
-        LIMIT 1
-    </select>
-
     <select id="selectBySuiteCode" resultMap="BaseResultMap">
         SELECT
         <include refid="Base_Columns"/>

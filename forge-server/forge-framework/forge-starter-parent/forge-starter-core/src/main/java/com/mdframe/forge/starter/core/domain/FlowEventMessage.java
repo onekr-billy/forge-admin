@@ -1,6 +1,5 @@
 package com.mdframe.forge.starter.core.domain;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -14,7 +13,7 @@ import java.util.Map;
 /**
  * 流程事件消息 DTO
  *
- * <p>用于 Redis Stream（兼容 Pub/Sub）和 HTTP Webhook 回调的统一消息体。</p>
+ * <p>用于 Redis Pub/Sub 和 HTTP Webhook 两种回调方式的统一消息体。</p>
  *
  * <h3>事件类型（eventType）说明</h3>
  * <ul>
@@ -51,15 +50,6 @@ public class FlowEventMessage implements Serializable {
      * 事件类型，见上方常量
      */
     private String eventType;
-
-    /** Outbox 生成的稳定事件 ID，供下游幂等去重。 */
-    private String eventId;
-
-    /** 事件协议版本。 */
-    private Integer eventVersion;
-
-    /** Outbox 持久化序号，同一数据库内单调递增。 */
-    private Long eventSequence;
 
     /**
      * 事件发生时间
@@ -169,7 +159,6 @@ public class FlowEventMessage implements Serializable {
     /**
      * 返回类型安全的枚举值，便于 switch/比较，未知类型返回 null
      */
-    @JsonIgnore
     public FlowEventType getEventTypeEnum() {
         return FlowEventType.of(eventType);
     }

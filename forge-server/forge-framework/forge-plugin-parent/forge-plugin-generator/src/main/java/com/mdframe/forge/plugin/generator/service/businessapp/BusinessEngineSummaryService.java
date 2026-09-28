@@ -2,7 +2,6 @@ package com.mdframe.forge.plugin.generator.service.businessapp;
 
 import com.mdframe.forge.plugin.generator.mapper.BusinessBindingMapper;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessEngineSummaryVO;
-import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,7 +27,7 @@ public class BusinessEngineSummaryService {
      * @return 引擎汇总列表
      */
     public List<BusinessEngineSummaryVO> summary() {
-        Long tenantId = requireTenantId();
+        Long tenantId = resolveTenantId();
 
         List<BusinessEngineSummaryVO> result = new ArrayList<>();
 
@@ -91,16 +90,13 @@ public class BusinessEngineSummaryService {
         return vo;
     }
 
-    private Long requireTenantId() {
+    private Long resolveTenantId() {
         Long tenantId;
         try {
             tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
             tenantId = null;
         }
-        if (tenantId == null || tenantId <= 0) {
-            throw new BusinessException("业务引擎汇总缺少可信租户上下文");
-        }
-        return tenantId;
+        return tenantId != null ? tenantId : 1L;
     }
 }

@@ -2,16 +2,8 @@ package com.mdframe.forge.plugin.generator.service.businessapp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mdframe.forge.plugin.generator.constant.BusinessApplicationPublishStep;
-import com.mdframe.forge.plugin.generator.mapper.BusinessBindingMapper;
-import com.mdframe.forge.plugin.generator.mapper.BusinessExtensionMapper;
-import com.mdframe.forge.plugin.generator.mapper.BusinessExtensionVersionMapper;
-import com.mdframe.forge.plugin.generator.mapper.BusinessProcessMapper;
 import com.mdframe.forge.plugin.generator.service.businessprocess.BusinessProcessSnapshot;
-import com.mdframe.forge.plugin.generator.service.printing.PrintApplicationSnapshotContributor;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationAssetSelectionVO;
-import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
-import com.mdframe.forge.starter.core.exception.BusinessException;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -20,18 +12,10 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verifyNoInteractions;
 
 @DisplayName("BusinessApplication Phase 5 security contract")
 class BusinessApplicationPhaseFiveSecurityTest {
-
-    @AfterEach
-    void clearIdentity() {
-        ExecutionIdentityContextHolder.clear();
-    }
 
     @Test
     @DisplayName("snapshot recursively removes sensitive keys before hashing")
@@ -110,30 +94,5 @@ class BusinessApplicationPhaseFiveSecurityTest {
         assertEquals("PUBLISHED", objects.get(0).get("designStatus"));
         assertEquals("9001", objects.get(0).get("publishedDesignVersionId"));
         assertEquals("DRAFT", objects.get(1).get("designStatus"));
-    }
-
-    @Test
-    @DisplayName("snapshot preparation rejects a missing tenant before asset reads")
-    void snapshotPreparationRejectsMissingTenantBeforeReads() {
-        BusinessApplicationService applicationService = mock(BusinessApplicationService.class);
-        BusinessApplicationObjectService objectService = mock(BusinessApplicationObjectService.class);
-        BusinessAppService appService = mock(BusinessAppService.class);
-        BusinessBindingMapper bindingMapper = mock(BusinessBindingMapper.class);
-        BusinessExtensionMapper extensionMapper = mock(BusinessExtensionMapper.class);
-        BusinessExtensionVersionMapper versionMapper = mock(BusinessExtensionVersionMapper.class);
-        BusinessPermissionService permissionService = mock(BusinessPermissionService.class);
-        BusinessProcessMapper processMapper = mock(BusinessProcessMapper.class);
-        PrintApplicationSnapshotContributor printSnapshots = mock(PrintApplicationSnapshotContributor.class);
-        BusinessApplicationSnapshotService service = new BusinessApplicationSnapshotService(
-                new ObjectMapper(), applicationService, objectService, appService,
-                bindingMapper, extensionMapper, versionMapper, permissionService,
-                processMapper, printSnapshots);
-
-        BusinessException error = assertThrows(BusinessException.class,
-                () -> service.prepare(10L, new BusinessApplicationAssetSelectionVO()));
-
-        assertEquals("应用发布快照缺少可信租户上下文", error.getMessage());
-        verifyNoInteractions(applicationService, objectService, appService, bindingMapper,
-                extensionMapper, versionMapper, permissionService, processMapper, printSnapshots);
     }
 }

@@ -5,13 +5,6 @@ import com.mdframe.forge.plugin.generator.constant.BusinessApplicationPublishSta
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessApplicationVersion;
 import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationVersionMapper;
-import com.mdframe.forge.plugin.generator.service.printing.PrintApplicationVersionGuard;
-import com.mdframe.forge.starter.core.context.ExecutionIdentity;
-import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
-import com.mdframe.forge.starter.core.exception.BusinessException;
-import com.mdframe.forge.starter.core.session.LoginUser;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -19,38 +12,12 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.time.LocalDateTime;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verifyNoInteractions;
 
 @DisplayName("BusinessApplicationVersionService")
 class BusinessApplicationVersionServiceTest {
-
-    private ExecutionIdentityContextHolder.Scope identityScope;
-
-    @BeforeEach
-    void setUpIdentity() {
-        LoginUser user = new LoginUser();
-        user.setTenantId(1L);
-        user.setUserId(101L);
-        user.setUsername("publisher");
-        user.setActiveOrgId(201L);
-        identityScope = ExecutionIdentityContextHolder.open(new ExecutionIdentity(
-                user, "USER", 101L, null, 301L,
-                "application_version_test", "token-app-version", Set.of()));
-    }
-
-    @AfterEach
-    void clearIdentity() {
-        if (identityScope != null) {
-            identityScope.close();
-        }
-        ExecutionIdentityContextHolder.clear();
-    }
 
     @Test
     @DisplayName("幂等提交已有版本时仍将应用状态收敛为已发布")
@@ -83,46 +50,6 @@ class BusinessApplicationVersionServiceTest {
 
         assertEquals(99L, result.getId());
         assertEquals(3, markedVersion.get());
-    }
-
-    @Test
-    @DisplayName("缺少可信身份时在版本锁与数据库读取前拒绝提交")
-    void missingIdentityRejectsCommitBeforeSideEffects() throws Exception {
-        identityScope.close();
-        identityScope = null;
-        BusinessApplicationVersionMapper versionMapper = mock(BusinessApplicationVersionMapper.class);
-        BusinessApplicationMapper applicationMapper = mock(BusinessApplicationMapper.class);
-        PrintApplicationVersionGuard guard = mock(PrintApplicationVersionGuard.class);
-        BusinessApplicationVersionService service = new BusinessApplicationVersionService(
-                null, applicationMapper, null, guard);
-        setBaseMapper(service, versionMapper);
-        BusinessApplicationSnapshotService.SnapshotBundle snapshot
-                = new BusinessApplicationSnapshotService.SnapshotBundle("{}", "same-hash", Map.of());
-
-        BusinessException error = assertThrows(BusinessException.class, () -> service.commitImmutable(
-                10L, 3, snapshot, BusinessApplicationPublishStatus.PUBLISHED.getCode(), null, "发布"));
-
-        assertEquals("应用版本操作缺少可信租户上下文", error.getMessage());
-        verifyNoInteractions(versionMapper, applicationMapper, guard);
-    }
-
-    @Test
-    @DisplayName("缺少租户时在应用详情读取前拒绝版本查询")
-    void missingTenantRejectsDetailBeforeApplicationLookup() throws Exception {
-        identityScope.close();
-        identityScope = null;
-        BusinessApplicationService applicationService = mock(BusinessApplicationService.class);
-        BusinessApplicationVersionMapper versionMapper = mock(BusinessApplicationVersionMapper.class);
-        BusinessApplicationVersionService service = new BusinessApplicationVersionService(
-                applicationService, mock(BusinessApplicationMapper.class), null,
-                mock(PrintApplicationVersionGuard.class));
-        setBaseMapper(service, versionMapper);
-
-        BusinessException error = assertThrows(BusinessException.class,
-                () -> service.detail(10L, 3));
-
-        assertEquals("应用版本操作缺少可信租户上下文", error.getMessage());
-        verifyNoInteractions(applicationService, versionMapper);
     }
 
     private static void setBaseMapper(Object service, Object mapper) throws Exception {

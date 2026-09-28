@@ -13,10 +13,6 @@ import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectTableFieldMappingVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectTableMappingVO;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessValidationVO;
-import com.mdframe.forge.starter.core.context.ExecutionIdentity;
-import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
-import com.mdframe.forge.starter.core.session.LoginUser;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,7 +21,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -59,16 +54,9 @@ class BusinessApplicationReadinessServiceTest {
 
     private BusinessApplicationReadinessService service;
     private BusinessApplicationObjectVO object;
-    private ExecutionIdentityContextHolder.Scope identityScope;
 
     @BeforeEach
     void setUp() {
-        LoginUser loginUser = new LoginUser();
-        loginUser.setUserId(101L);
-        loginUser.setTenantId(1L);
-        identityScope = ExecutionIdentityContextHolder.open(
-                new ExecutionIdentity(loginUser, "USER", 101L, null, 1L,
-                        "pc", "readiness-test", Set.of()));
         service = new BusinessApplicationReadinessService(
                 applicationService, selectionService, objectPublishService, permissionService,
                 bindingMapper, pageDependencyInspector, tableMappingService,
@@ -89,15 +77,6 @@ class BusinessApplicationReadinessServiceTest {
                 .thenReturn(new BusinessApplicationPageDependencyInspector.InspectionResult(false, List.of()));
         when(permissionService.documentActionSummaries(anyList())).thenReturn(List.of());
         // object.designStatus=PUBLISHED：应用门禁不加载对象设计上下文
-    }
-
-    @AfterEach
-    void clearIdentity() {
-        if (identityScope != null) {
-            identityScope.close();
-            identityScope = null;
-        }
-        ExecutionIdentityContextHolder.clear();
     }
 
     @Test

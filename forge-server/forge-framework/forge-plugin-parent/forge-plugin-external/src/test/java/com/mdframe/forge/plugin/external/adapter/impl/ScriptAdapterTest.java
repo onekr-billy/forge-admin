@@ -3,20 +3,20 @@ package com.mdframe.forge.plugin.external.adapter.impl;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import javax.script.ScriptEngineManager;
+
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ScriptAdapterTest {
 
     @Test
-    void shouldRejectLegacyScriptWithoutExecutingIt() {
-        ScriptAdapter adapter = new ScriptAdapter();
+    void shouldReturnBusinessErrorWhenEngineIsUnavailable() {
+        ScriptEngineManager manager = mock(ScriptEngineManager.class);
+        when(manager.getEngineByName("javascript")).thenReturn(null);
+        ScriptAdapter adapter = new ScriptAdapter(manager);
 
-        BusinessException error = assertThrows(BusinessException.class,
-                () -> adapter.transform("data", "java.lang.Runtime.getRuntime().exec('id')"));
-
-        assertEquals(ScriptAdapter.MIGRATION_MESSAGE, error.getMessage());
-        assertFalse(adapter.validateConfig("result = response"));
+        assertThrows(BusinessException.class, () -> adapter.transform("data", "result = response"));
     }
 }

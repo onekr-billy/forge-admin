@@ -265,19 +265,6 @@ public class RustfsFileStorage implements FileStorage {
             throw new RuntimeException("完成分片上传失败", e);
         }
     }
-
-    @Override
-    public void abortMultipartUpload(String uploadId) {
-        String[] parts = uploadId.split("\\|", 3);
-        if (parts.length != 3) {
-            throw new IllegalArgumentException("无效的 uploadId 格式");
-        }
-        s3Client.abortMultipartUpload(AbortMultipartUploadRequest.builder()
-                .uploadId(parts[0])
-                .bucket(parts[1])
-                .key(parts[2])
-                .build());
-    }
     
     @Override
     public InputStream download(String fileId) {

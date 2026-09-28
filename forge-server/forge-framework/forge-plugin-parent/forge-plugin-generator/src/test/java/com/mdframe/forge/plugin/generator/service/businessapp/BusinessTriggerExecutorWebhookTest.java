@@ -25,7 +25,6 @@ class BusinessTriggerExecutorWebhookTest {
     @DisplayName("WEBHOOK 转换为 CALL_API 步骤并记录成功日志")
     void delegatesWebhookToCallApiExecutor() {
         BusinessTriggerService triggerService = mock(BusinessTriggerService.class);
-        when(triggerService.tryClaimExecution(any())).thenReturn(true);
         CallApiActionStepExecutor callApiExecutor = mock(CallApiActionStepExecutor.class);
         BusinessActionStepResultVO stepResult = new BusinessActionStepResultVO();
         stepResult.setStatus("SUCCESS");
@@ -53,7 +52,7 @@ class BusinessTriggerExecutorWebhookTest {
         assertEquals("SKU-1", contextCaptor.getValue().getRecordData().get("skuCode"));
 
         ArgumentCaptor<AiBusinessTriggerLog> logCaptor = ArgumentCaptor.forClass(AiBusinessTriggerLog.class);
-        verify(triggerService).updateExecutionLog(logCaptor.capture());
+        verify(triggerService).saveExecutionLog(logCaptor.capture());
         assertEquals("SUCCESS", logCaptor.getValue().getExecuteStatus());
         verify(triggerService).incrementExecuteCount(10L);
     }
@@ -62,7 +61,6 @@ class BusinessTriggerExecutorWebhookTest {
     @DisplayName("记录后继续的外围失败保留 FAILED 触发器状态")
     void recordsContinuedFailureAsFailed() {
         BusinessTriggerService triggerService = mock(BusinessTriggerService.class);
-        when(triggerService.tryClaimExecution(any())).thenReturn(true);
         CallApiActionStepExecutor callApiExecutor = mock(CallApiActionStepExecutor.class);
         BusinessActionStepResultVO stepResult = new BusinessActionStepResultVO();
         stepResult.setStatus("FAILED");
@@ -87,7 +85,7 @@ class BusinessTriggerExecutorWebhookTest {
         executor.executeTrigger(trigger, event());
 
         ArgumentCaptor<AiBusinessTriggerLog> logCaptor = ArgumentCaptor.forClass(AiBusinessTriggerLog.class);
-        verify(triggerService).updateExecutionLog(logCaptor.capture());
+        verify(triggerService).saveExecutionLog(logCaptor.capture());
         assertEquals("FAILED", logCaptor.getValue().getExecuteStatus());
         assertEquals("外围系统不可用", logCaptor.getValue().getErrorMessage());
     }
@@ -109,7 +107,7 @@ class BusinessTriggerExecutorWebhookTest {
     }
 
     private BusinessEvent event() {
-        return BusinessEventEnvelope.stamp(BusinessEvent.builder()
+        return BusinessEvent.builder()
                 .eventType(BusinessEvent.STATUS_CHANGED)
                 .objectCode("presale_order")
                 .recordId("100")
@@ -117,6 +115,6 @@ class BusinessTriggerExecutorWebhookTest {
                 .operatorId(8L)
                 .operatorName("operator")
                 .tenantId(1L)
-                .build(), BusinessEventEnvelope.SOURCE_DYNAMIC_CRUD);
+                .build();
     }
 }

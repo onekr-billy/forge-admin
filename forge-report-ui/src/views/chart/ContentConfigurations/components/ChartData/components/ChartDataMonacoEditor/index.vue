@@ -1,8 +1,12 @@
 <template>
   <template v-if="targetData.filter">
     <n-card>
-      <p><span class="func-keyword">数据选择器</span></p>
-      <n-code :code="targetData.filter" language="text"></n-code>
+      <p><span class="func-keyword">function</span>&nbsp;&nbsp;filter(data, res)&nbsp;&nbsp;{</p>
+      <!-- 函数体 -->
+      <div class="go-ml-4">
+        <n-code :code="targetData.filter" language="typescript"></n-code>
+      </div>
+      <p>}</p>
       <template #footer>
         <n-space justify="end">
           <n-button type="primary" tertiary size="small" @click="addFilter">
@@ -34,7 +38,7 @@
     <n-card :bordered="false" role="dialog" size="small" aria-modal="true" style="width: 1000px; height: 600px">
       <template #header>
         <n-space>
-          <n-text>受限数据选择器</n-text>
+          <n-text>过滤器函数编辑器</n-text>
         </n-space>
       </template>
       <template #header-extra> </template>
@@ -42,8 +46,11 @@
         <n-space justify="space-between">
           <div>
             <n-space vertical>
-              <n-tag type="info">仅允许 data/res 字段路径</n-tag>
-              <monaco-editor v-model:modelValue="filter" width="460px" height="380px" language="text" />
+              <n-tag type="info">
+                <span class="func-keyword">function</span>&nbsp;&nbsp;filter(data, res)&nbsp;&nbsp;{
+              </n-tag>
+              <monaco-editor v-model:modelValue="filter" width="460px" height="380px" language="javascript" />
+              <n-tag type="info">}</n-tag>
             </n-space>
           </div>
           <n-divider vertical style="height: 480px" />
@@ -80,7 +87,7 @@
               </template>
               规则
             </n-tag>
-            <n-text class="go-ml-2" depth="2">示例：return data 或 return res.data.items；不执行 JavaScript</n-text>
+            <n-text class="go-ml-2" depth="2">过滤器默认处理接口返回值的「data」字段</n-text>
           </div>
 
           <n-space>
@@ -98,8 +105,7 @@ import { ref, computed, watch, toRef, toRefs, toRaw, reactive } from 'vue'
 import { useTargetData } from '../../../hooks/useTargetData.hook'
 import { MonacoEditor } from '@/components/Pages/MonacoEditor'
 import { icon } from '@/plugins'
-import { goDialog, toString } from '@/utils'
-import { evaluateRestrictedDataSelector } from '@/utils/safeExpression'
+import { assertSafeFilterScript, goDialog, toString } from '@/utils'
 import { customizeHttp } from '@/api/http'
 import cloneDeep from 'lodash/cloneDeep'
 
@@ -140,8 +146,10 @@ const fetchTargetData = async () => {
 // 过滤结果
 const filterRes = computed(() => {
   try {
+    assertSafeFilterScript(filter.value)
+    const fn = new Function('data', 'res', filter.value)
     const response = cloneDeep(sourceData.value)
-    const res = evaluateRestrictedDataSelector(filter.value, response?.data, response)
+    const res = fn(response?.data, response)
     // eslint-disable-next-line vue/no-side-effects-in-computed-properties
     errorFlag.value = false
     return toString(res)

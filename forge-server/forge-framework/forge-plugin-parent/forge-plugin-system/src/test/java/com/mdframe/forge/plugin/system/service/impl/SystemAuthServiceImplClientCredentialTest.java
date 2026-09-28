@@ -1,9 +1,7 @@
 package com.mdframe.forge.plugin.system.service.impl;
 
-import cn.dev33.satoken.stp.SaLoginModel;
 import com.mdframe.forge.plugin.system.entity.SysClient;
 import com.mdframe.forge.plugin.system.service.IClientService;
-import com.mdframe.forge.plugin.system.service.PasswordPolicyService;
 import com.mdframe.forge.starter.core.context.AuthProperties;
 import org.junit.jupiter.api.Test;
 
@@ -109,28 +107,12 @@ class SystemAuthServiceImplClientCredentialTest {
                 .hasMessage("目标客户端不支持SSO");
     }
 
-    @Test
-    void shouldApplyClientTokenPolicyToOneLoginModelWithoutChangingGlobalConfig() {
-        SysClient client = client("web", "web-app", "none");
-        client.setTokenTimeout(7200L);
-        client.setTokenActivityTimeout(900L);
-        client.setShareToken(false);
-
-        SaLoginModel model = authService(clientService(client, false, false, new AtomicInteger()), true)
-                .buildClientLoginModel(client, "pc");
-
-        assertThat(model.getDevice()).isEqualTo("pc");
-        assertThat(model.getTimeout()).isEqualTo(7200L);
-        assertThat(model.getActiveTimeout()).isEqualTo(900L);
-        assertThat(model.getToken()).hasSize(64);
-    }
-
     private SystemAuthServiceImpl authService(IClientService clientService, boolean clientValidationEnabled) {
         AuthProperties authProperties = new AuthProperties();
         authProperties.setEnableClientValidation(clientValidationEnabled);
         return new SystemAuthServiceImpl(
                 null, null, null, null, null, authProperties, null,
-                clientService, null, null, null, null, null, null, new PasswordPolicyService(null));
+                clientService, null, null, null, null, null, null);
     }
 
     private IClientService clientService(SysClient client, boolean requiresSecret,

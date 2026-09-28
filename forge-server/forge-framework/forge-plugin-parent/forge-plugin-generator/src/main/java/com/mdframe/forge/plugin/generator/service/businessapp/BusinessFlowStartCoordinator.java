@@ -7,7 +7,6 @@ import com.mdframe.forge.flow.client.FlowResult;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessBinding;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessDocumentConfig;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessFlowInstanceLink;
-import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessFlowRemoteCommand;
 import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfig;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowStartDTO;
 import com.mdframe.forge.plugin.generator.enums.BusinessDocumentFlowStatus;
@@ -47,7 +46,6 @@ final class BusinessFlowStartCoordinator {
     private final BusinessFlowFormAssetAssembler formAssetAssembler;
     private final BusinessFlowStatusRepairService statusRepairService;
     private final BusinessFlowStatusTransitionService statusTransitionService;
-    private final BusinessFlowRemoteCommandService remoteCommandService;
     private final ObjectProvider<RedissonClient> redissonClientProvider;
     private final Supplier<Long> userIdSupplier;
     private final Supplier<Long> activeOrgIdSupplier;
@@ -70,29 +68,6 @@ final class BusinessFlowStartCoordinator {
             Supplier<Long> userIdSupplier,
             Supplier<Long> activeOrgIdSupplier,
             Supplier<String> usernameSupplier) {
-        this(flowClientSupplier, flowInstanceLinkMapper, documentConfigService, documentRuntimeService,
-                dynamicCrudService, runtimeContextResolver, runtimeConfigResolver, bindingResolver,
-                formAssetAssembler, statusRepairService, statusTransitionService, redissonClientProvider,
-                userIdSupplier, activeOrgIdSupplier, usernameSupplier, null);
-    }
-
-    BusinessFlowStartCoordinator(
-            Supplier<FlowClient> flowClientSupplier,
-            BusinessFlowInstanceLinkMapper flowInstanceLinkMapper,
-            BusinessDocumentConfigService documentConfigService,
-            BusinessDocumentRuntimeService documentRuntimeService,
-            DynamicCrudService dynamicCrudService,
-            BusinessFlowRuntimeContextResolver runtimeContextResolver,
-            BusinessRuntimeConfigResolver runtimeConfigResolver,
-            BusinessFlowBindingResolver bindingResolver,
-            BusinessFlowFormAssetAssembler formAssetAssembler,
-            BusinessFlowStatusRepairService statusRepairService,
-            BusinessFlowStatusTransitionService statusTransitionService,
-            ObjectProvider<RedissonClient> redissonClientProvider,
-            Supplier<Long> userIdSupplier,
-            Supplier<Long> activeOrgIdSupplier,
-            Supplier<String> usernameSupplier,
-            BusinessFlowRemoteCommandService remoteCommandService) {
         this.flowClientSupplier = flowClientSupplier;
         this.flowInstanceLinkMapper = flowInstanceLinkMapper;
         this.documentConfigService = documentConfigService;
@@ -104,7 +79,6 @@ final class BusinessFlowStartCoordinator {
         this.formAssetAssembler = formAssetAssembler;
         this.statusRepairService = statusRepairService;
         this.statusTransitionService = statusTransitionService;
-        this.remoteCommandService = remoteCommandService;
         this.redissonClientProvider = redissonClientProvider;
         this.userIdSupplier = userIdSupplier;
         this.activeOrgIdSupplier = activeOrgIdSupplier;
@@ -142,7 +116,7 @@ final class BusinessFlowStartCoordinator {
         String businessKey = buildBusinessKey(context.objectCode(), dto.getRecordId());
         return lockManager.execute(tenantId, businessKey, redissonClientProvider,
                 () -> startLocked(flowClient, dto, checkPermission, starterUserId, starterUserName,
-                        tenantId, context, recordData, businessKey, stableBusinessKey, allowDraftRuntime));
+                        tenantId, context, recordData, businessKey, stableBusinessKey));
     }
 
     private BusinessFlowRuntimeVO startLocked(FlowClient flowClient,
@@ -154,8 +128,7 @@ final class BusinessFlowStartCoordinator {
                                               FlowStartContext context,
                                               Map<String, Object> recordData,
                                               String businessKey,
-                                              boolean stableBusinessKey,
-                                              boolean allowDraftRuntime) {
+                                              boolean stableBusinessKey) {
         AiBusinessBinding binding = bindingResolver.selectForStart(
                 tenantId, context.objectCode(), context.requestedObjectCode());
         JSONObject bindingConfig = binding == null
@@ -218,122 +191,7 @@ final class BusinessFlowStartCoordinator {
                 userName,
                 formAssetAssembler.resolveRuntimeCrudObjectName(null, context.runtimeConfig()));
         Long userId = starterUserId != null ? starterUserId : userIdSupplier.get();
-        if (remoteCommandService == null) {
-            return startWithoutRecoveryJournal(
-                    flowClient, dto, tenantId, context, bindingConfig, latestLink, businessKey,
-                    flowBusinessKey, flowModelKey, title, flowVariables, userId, userName, stableBusinessKey);
-        }
-
-        BusinessFlowRemoteStartRequest remoteRequest = createRemoteRequest(
-                tenantId, context, dto, businessKey, flowBusinessKey, flowModelKey,
-                title, flowVariables, userId, userName, stableBusinessKey, allowDraftRuntime);
-        AiBusinessFlowRemoteCommand command = remoteCommandService.prepareStart(remoteRequest);
-        AiBusinessFlowRemoteCommand executed = remoteCommandService.executeStart(command, flowClient);
-        return persistRecoveredStart(executed, remoteRequest, context, bindingConfig, latestLink);
-    }
-
-    private void validateRequest(BusinessFlowStartDTO dto) {
-        if (dto == null) {
-            throw new BusinessException("发起主流程参数不能为空");
-        }
-        if (StringUtils.isBlank(dto.getObjectCode())) {
-            throw new BusinessException("业务对象编码不能为空");
-        }
-        if (dto.getRecordId() == null) {
-            throw new BusinessException("请先保存记录后再发起主流程");
-        }
-    }
-
-    BusinessFlowRuntimeVO recover(Long tenantId, Long commandId) {
-        if (remoteCommandService == null) {
-            throw new BusinessException("流程远程命令恢复服务未配置");
-        }
-        AiBusinessFlowRemoteCommand command = remoteCommandService.requireCommand(tenantId, commandId);
-        BusinessFlowRemoteStartRequest request = remoteCommandService.restore(command);
-        FlowClient flowClient = flowClientSupplier.get();
-        if (flowClient == null) {
-            throw new BusinessException("流程服务未配置，无法恢复主流程");
-        }
-        return lockManager.execute(tenantId, request.getBusinessKey(), redissonClientProvider,
-                () -> recoverLocked(flowClient, command, request));
-    }
-
-    private BusinessFlowRuntimeVO recoverLocked(FlowClient flowClient,
-                                                AiBusinessFlowRemoteCommand command,
-                                                BusinessFlowRemoteStartRequest request) {
-        AiBusinessFlowInstanceLink existing = findProcessLink(request.getTenantId(), command.getProcessInstanceId());
-        if (existing != null) {
-            remoteCommandService.completeAfterCommit(command);
-            return toRuntimeVO(existing, "流程启动本地状态已恢复");
-        }
-        AiBusinessFlowRemoteCommand executed = remoteCommandService.executeStart(command, flowClient);
-        existing = findProcessLink(request.getTenantId(), executed.getProcessInstanceId());
-        if (existing != null) {
-            remoteCommandService.completeAfterCommit(executed);
-            return toRuntimeVO(existing, "流程启动本地状态已恢复");
-        }
-
-        FlowStartContext context = resolveFlowStartContext(
-                request.getTenantId(), request.getObjectCode(), request.isAllowDraftRuntime());
-        Map<String, Object> recordData = request.isAllowDraftRuntime()
-                ? dynamicCrudService.selectByIdAllowDraft(context.configKey(), request.getRecordId())
-                : dynamicCrudService.selectById(context.configKey(), request.getRecordId());
-        if (recordData == null) {
-            throw new BusinessException("流程启动恢复失败：业务记录不存在或不可见");
-        }
-        AiBusinessFlowInstanceLink latestLink = flowInstanceLinkMapper.selectLatestByBusinessKey(
-                request.getTenantId(), request.getBusinessKey());
-        if (isRunningFlowLink(latestLink)) {
-            throw new BusinessException("流程启动恢复冲突：本地已关联其他运行中流程");
-        }
-        AiBusinessBinding binding = bindingResolver.selectForStart(
-                request.getTenantId(), context.objectCode(), context.requestedObjectCode());
-        JSONObject bindingConfig = binding == null
-                ? new JSONObject() : readBindingConfig(binding.getBindingConfig());
-        return persistRecoveredStart(executed, request, context, bindingConfig, latestLink);
-    }
-
-    private BusinessFlowRuntimeVO persistRecoveredStart(
-            AiBusinessFlowRemoteCommand command,
-            BusinessFlowRemoteStartRequest request,
-            FlowStartContext context,
-            JSONObject bindingConfig,
-            AiBusinessFlowInstanceLink latestLink) {
-        BusinessFlowStartDTO dto = restoreDto(request);
-        try {
-            AiBusinessFlowInstanceLink link = createLink(
-                    request.getTenantId(), request.getObjectCode(), dto, request.getBusinessKey(),
-                    request.getFlowModelKey(), command.getProcessInstanceId(), request.getStarterUserId(),
-                    latestLink, request.getVariables());
-            int inserted = flowInstanceLinkMapper.insert(link);
-            if (inserted != 1) {
-                throw new BusinessException("流程实例本地关联持久化失败");
-            }
-            writeRunningStatus(request.getTenantId(), context, bindingConfig, dto);
-            remoteCommandService.completeAfterCommit(command);
-            return toRuntimeVO(link, "流程已发起");
-        } catch (RuntimeException failure) {
-            remoteCommandService.recordRecoveryFailure(command.getTenantId(), command.getId(), failure);
-            throw failure;
-        }
-    }
-
-    private BusinessFlowRuntimeVO startWithoutRecoveryJournal(
-            FlowClient flowClient,
-            BusinessFlowStartDTO dto,
-            Long tenantId,
-            FlowStartContext context,
-            JSONObject bindingConfig,
-            AiBusinessFlowInstanceLink latestLink,
-            String businessKey,
-            String flowBusinessKey,
-            String flowModelKey,
-            String title,
-            Map<String, Object> flowVariables,
-            Long userId,
-            String userName,
-            boolean delegated) {
-        FlowResult<String> result = delegated
+        FlowResult<String> result = stableBusinessKey
                 ? flowClient.startProcessForDelegatedUser(
                         flowModelKey, flowBusinessKey, context.objectCode(), title, flowVariables)
                 : flowClient.startProcess(
@@ -346,56 +204,21 @@ final class BusinessFlowStartCoordinator {
         AiBusinessFlowInstanceLink link = createLink(
                 tenantId, context.objectCode(), dto, businessKey, flowModelKey,
                 result.getData(), userId, latestLink, flowVariables);
-        if (flowInstanceLinkMapper.insert(link) != 1) {
-            throw new BusinessException("流程实例本地关联持久化失败");
-        }
+        flowInstanceLinkMapper.insert(link);
         writeRunningStatus(tenantId, context, bindingConfig, dto);
         return toRuntimeVO(link, "流程已发起");
     }
 
-    private BusinessFlowRemoteStartRequest createRemoteRequest(
-            Long tenantId,
-            FlowStartContext context,
-            BusinessFlowStartDTO dto,
-            String businessKey,
-            String flowBusinessKey,
-            String flowModelKey,
-            String title,
-            Map<String, Object> flowVariables,
-            Long userId,
-            String userName,
-            boolean delegated,
-            boolean allowDraftRuntime) {
-        BusinessFlowRemoteStartRequest request = new BusinessFlowRemoteStartRequest();
-        request.setTenantId(tenantId);
-        request.setObjectCode(context.objectCode());
-        request.setConfigKey(context.configKey());
-        request.setRecordId(dto.getRecordId());
-        request.setBusinessKey(businessKey);
-        request.setFlowBusinessKey(flowBusinessKey);
-        request.setFlowModelKey(flowModelKey);
-        request.setTitle(title);
-        request.setVariables(new java.util.LinkedHashMap<>(flowVariables));
-        request.setStarterUserId(userId);
-        request.setStarterUserName(userName);
-        request.setDelegated(delegated);
-        request.setAllowDraftRuntime(allowDraftRuntime);
-        return request;
-    }
-
-    private BusinessFlowStartDTO restoreDto(BusinessFlowRemoteStartRequest request) {
-        BusinessFlowStartDTO dto = new BusinessFlowStartDTO();
-        dto.setObjectCode(request.getObjectCode());
-        dto.setRecordId(request.getRecordId());
-        dto.setFlowModelKey(request.getFlowModelKey());
-        dto.setTitle(request.getTitle());
-        dto.setVariables(new java.util.LinkedHashMap<>(request.getVariables()));
-        return dto;
-    }
-
-    private AiBusinessFlowInstanceLink findProcessLink(Long tenantId, String processInstanceId) {
-        return StringUtils.isBlank(processInstanceId)
-                ? null : flowInstanceLinkMapper.selectByProcessInstanceId(tenantId, processInstanceId);
+    private void validateRequest(BusinessFlowStartDTO dto) {
+        if (dto == null) {
+            throw new BusinessException("发起主流程参数不能为空");
+        }
+        if (StringUtils.isBlank(dto.getObjectCode())) {
+            throw new BusinessException("业务对象编码不能为空");
+        }
+        if (dto.getRecordId() == null) {
+            throw new BusinessException("请先保存记录后再发起主流程");
+        }
     }
 
     private FlowStartContext resolveFlowStartContext(

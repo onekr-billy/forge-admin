@@ -5,14 +5,12 @@ import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowBindingDTO
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowCallbackDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowResubmitDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowStartDTO;
-import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowStatusReplayDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowWithdrawDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessTaskActionDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessTaskFormContextQueryDTO;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessTaskFormSaveDTO;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowService;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowStatusFieldService;
-import com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowStatusReconciliationService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFieldVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessBindingSummaryVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFlowBindingVO;
@@ -23,10 +21,6 @@ import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
 import com.mdframe.forge.starter.core.annotation.log.OperationLog;
 import com.mdframe.forge.starter.core.domain.OperationType;
 import com.mdframe.forge.starter.core.domain.RespInfo;
-import com.mdframe.forge.starter.core.exception.BusinessException;
-import com.mdframe.forge.starter.core.session.LoginUser;
-import com.mdframe.forge.starter.core.session.SessionHelper;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -54,7 +48,6 @@ public class BusinessFlowController {
 
     private final BusinessFlowService flowService;
     private final BusinessFlowStatusFieldService flowStatusFieldService;
-    private final BusinessFlowStatusReconciliationService statusReconciliationService;
 
     @GetMapping("/binding/{objectCode}")
     @SaCheckPermission("ai:businessFlow:config")
@@ -164,21 +157,6 @@ public class BusinessFlowController {
     public RespInfo<BusinessFlowRuntimeVO> status(@PathVariable String objectCode,
                                                  @PathVariable Long recordId) {
         return RespInfo.success(flowService.getFlowStatus(objectCode, recordId));
-    }
-
-    @PostMapping("/status-reconciliation/{linkId}/replay")
-    @SaCheckPermission("ai:businessFlow:reconcile:manage")
-    @OperationLog(module = "业务流程", type = OperationType.UPDATE, desc = "人工重放流程状态对账死信",
-            saveRequestParams = false, saveResponseResult = false)
-    public RespInfo<Void> replayStatusReconciliation(
-            @PathVariable Long linkId,
-            @Valid @RequestBody BusinessFlowStatusReplayDTO dto) {
-        LoginUser loginUser = SessionHelper.getLoginUser();
-        if (loginUser == null || loginUser.getUserId() == null || loginUser.getUserId() <= 0) {
-            throw new BusinessException(403, "无法确定流程状态对账重放操作人");
-        }
-        statusReconciliationService.requeueDead(linkId, loginUser.getUserId(), dto.getReason());
-        return RespInfo.success("流程状态对账死信已进入重试队列", null);
     }
 
     @PostMapping("/callback")

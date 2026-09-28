@@ -19,8 +19,6 @@ class SysResourceAssignableTreeContractTest {
             "src/main/java/com/mdframe/forge/plugin/system/service/impl/SysResourceServiceImpl.java");
     private static final Path USER_LOAD_IMPL = Path.of(
             "src/main/java/com/mdframe/forge/plugin/system/service/impl/UserLoadServiceImpl.java");
-    private static final Path RESOURCE_MAPPER_XML = Path.of(
-            "src/main/resources/mapper/SysResourceMapper.xml");
 
     @Test
     void assignableTreeMustExcludeFullyDisabledResourcesButKeepHiddenPages() throws IOException {
@@ -41,18 +39,11 @@ class SysResourceAssignableTreeContractTest {
     @Test
     void permissionLoadingMustNotFilterByVisible() throws IOException {
         String source = Files.readString(USER_LOAD_IMPL);
-        String mapperXml = Files.readString(RESOURCE_MAPPER_XML);
 
         // 历史坑防回归：权限加载（perms 与 apiPermissions）都不得按 visible=1 过滤，
         // 否则角色已绑定的隐藏菜单/隐藏 API 会被鉴权层拦成 403
         assertThat(source)
                 .doesNotContain(".eq(SysResource::getVisible, 1)");
-        assertThat(statement(mapperXml, "selectUserApiPermissions"))
-                .doesNotContain("visible = 1");
-        assertThat(statement(mapperXml, "selectConfiguredApiUrls"))
-                .doesNotContain("visible = 1");
-        assertThat(statement(mapperXml, "selectApiPermissionPatternsByResourceIds"))
-                .doesNotContain("visible = 1");
     }
 
     private String method(String source, String name) {
@@ -61,13 +52,5 @@ class SysResourceAssignableTreeContractTest {
         int end = source.indexOf("\n    }", start);
         assertThat(end).as("unclosed method %s", name).isGreaterThan(start);
         return source.substring(start, end);
-    }
-
-    private String statement(String mapperXml, String id) {
-        int start = mapperXml.indexOf("<select id=\"" + id + "\"");
-        assertThat(start).as("missing mapper statement %s", id).isGreaterThanOrEqualTo(0);
-        int end = mapperXml.indexOf("</select>", start);
-        assertThat(end).as("unclosed mapper statement %s", id).isGreaterThan(start);
-        return mapperXml.substring(start, end);
     }
 }

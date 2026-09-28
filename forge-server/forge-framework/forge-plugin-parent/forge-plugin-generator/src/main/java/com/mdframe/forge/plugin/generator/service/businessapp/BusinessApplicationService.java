@@ -344,7 +344,6 @@ public class BusinessApplicationService extends ServiceImpl<BusinessApplicationM
         if (dto == null) {
             throw new BusinessException("业务应用不能为空");
         }
-        requireTenantId();
         AiBusinessApplication application = new AiBusinessApplication();
         copyDtoToEntity(dto, application, true);
         application.setDesignStatus(BusinessApplicationDesignStatus.DRAFT.getCode());
@@ -935,19 +934,12 @@ public class BusinessApplicationService extends ServiceImpl<BusinessApplicationM
     }
 
     private Long resolveTenantId() {
-        return requireTenantId();
-    }
-
-    private Long requireTenantId() {
         Long tenantId;
         try {
             tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
             tenantId = null;
         }
-        if (tenantId == null || tenantId <= 0) {
-            throw new BusinessException("业务应用操作缺少可信租户上下文");
-        }
-        return tenantId;
+        return tenantId != null ? tenantId : 1L;
     }
 }

@@ -128,14 +128,9 @@ public class FileController {
             @RequestParam("fileName") String fileName,
             @RequestParam(value = "businessType", required = false, defaultValue = "common") String businessType,
             @RequestParam(value = "businessId", required = false) String businessId,
-            @RequestParam(value = "storageType", required = false, defaultValue = "local") String storageType,
-            @RequestParam("totalSize") Long totalSize,
-            @RequestParam("totalParts") Integer totalParts,
-            @RequestParam(value = "isPrivate", required = false, defaultValue = "true") Boolean isPrivate,
-            @RequestParam(value = "contentType", defaultValue = "application/octet-stream") String contentType) {
+            @RequestParam(value = "storageType", required = false, defaultValue = "local") String storageType) {
         
-        String uploadId = fileManager.initMultipartUpload(
-                fileName, businessType, businessId, storageType, totalSize, totalParts, isPrivate, contentType);
+        String uploadId = fileManager.initMultipartUpload(fileName, businessType, businessId, storageType);
         return RespInfo.success(uploadId);
     }
     
@@ -151,8 +146,7 @@ public class FileController {
             @RequestParam(value = "storageType", required = false, defaultValue = "local") String storageType) throws Exception {
         
         try (InputStream inputStream = file.getInputStream()) {
-            String etag = fileManager.uploadPart(uploadId, partNumber, inputStream, storageType,
-                    file.getSize(), file.getContentType());
+            String etag = fileManager.uploadPart(uploadId, partNumber, inputStream, storageType);
             return RespInfo.success(etag);
         }
     }

@@ -36,29 +36,15 @@ public class AiBusinessTriggerLog implements Serializable {
 
     private String eventType;
 
-    private String eventId;
-
-    private String eventSource;
-
-    private Integer eventVersion;
-
-    private String eventDigest;
-
     /** 事件数据快照JSON */
     private String eventData;
-
-    /** 触发器配置快照JSON，恢复时不得读取已变更的当前配置。 */
-    private String triggerSnapshot;
-
-    /** 事件与触发器快照的联合 SHA-256 摘要。 */
-    private String executionDigest;
 
     private String actionType;
 
     /** 执行结果JSON */
     private String actionResult;
 
-    /** PENDING/SUCCESS/FAILED/SKIPPED/TODO/DEAD */
+    /** PENDING/SUCCESS/FAILED/SKIPPED/TODO */
     private String executeStatus;
 
     private String errorMessage;
@@ -72,12 +58,6 @@ public class AiBusinessTriggerLog implements Serializable {
     private Long durationMs;
 
     private Integer retryCount;
-
-    private LocalDateTime nextRetryTime;
-
-    private String lockOwner;
-
-    private LocalDateTime lockTime;
 
     private LocalDateTime createTime;
 }

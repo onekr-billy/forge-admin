@@ -116,7 +116,7 @@
                   </div>
                 </div>
               </div>
-              <span v-else class="msg-content">{{ msg.content }}</span>
+              <span v-else class="msg-content" v-html="renderContent(msg.content)"></span>
               <span v-if="msg.streaming" class="typing-cursor">|</span>
             </div>
             <div v-if="msg.role === 'assistant' && !msg.streaming && msg.canvasResponse" class="msg-actions">
@@ -1041,6 +1041,21 @@ watch(chatModeRef, mode => {
       })
   }
 })
+
+function renderContent(content: string): string {
+  if (!content) return ''
+  let escaped = content
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+
+  escaped = escaped.replace(/```[\s\S]*?```/g, match => {
+    return `<pre class="code-block">${match.replace(/```\w*\n?/g, '').replace(/```/g, '')}</pre>`
+  })
+  escaped = escaped.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
+  escaped = escaped.replace(/\n/g, '<br/>')
+  return escaped
+}
 
 function visibleValidationItems(summary: GenerateValidationSummary): GenerateValidationItem[] {
   return (summary.items || []).slice(0, 8)

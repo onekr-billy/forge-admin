@@ -61,9 +61,8 @@ public class BusinessApplicationReadinessService {
     private final BusinessProcessValidationContextResolver processValidationContextResolver;
 
     public BusinessApplicationReadinessVO check(Long applicationId) {
-        Long tenantId = requireTenantId();
         BusinessApplicationVO application = applicationService.publishContext(applicationId);
-        return evaluate(application, selectionService.resolveContext(applicationId, null), tenantId).readiness();
+        return evaluate(application, selectionService.resolveContext(applicationId, null)).readiness();
     }
 
     public BusinessApplicationPublishCheckVO publishCheck(Long applicationId, BusinessApplicationPublishDTO dto) {
@@ -84,14 +83,13 @@ public class BusinessApplicationReadinessService {
     private ResolvedPublishCheck resolvePublishCheck(Long applicationId,
                                                      BusinessApplicationPublishDTO dto,
                                                      boolean statusOnly) {
-        Long tenantId = requireTenantId();
         BusinessApplicationVO application = applicationService.publishContext(applicationId);
         BusinessApplicationAssetSelectionService.ResolvedSelection resolved
                 = selectionService.resolveContext(applicationId, dto);
         BusinessApplicationAssetSelectionVO selection = resolved.selection();
         EvaluationResult evaluation = statusOnly
                 ? evaluateStatusOnly(application, resolved)
-                : evaluate(application, resolved, tenantId);
+                : evaluate(application, resolved);
         BusinessApplicationReadinessVO readiness = evaluation.readiness();
         BusinessApplicationPublishCheckVO result = new BusinessApplicationPublishCheckVO();
         result.setApplicationId(applicationId);
@@ -128,8 +126,7 @@ public class BusinessApplicationReadinessService {
 
     private EvaluationResult evaluate(
             BusinessApplicationVO application,
-            BusinessApplicationAssetSelectionService.ResolvedSelection resolved,
-            Long tenantId) {
+            BusinessApplicationAssetSelectionService.ResolvedSelection resolved) {
         Long applicationId = application.getId();
         BusinessApplicationAssetSelectionVO selection = resolved.selection();
         List<BusinessApplicationObjectVO> allObjects = resolved.objects();
@@ -210,11 +207,11 @@ public class BusinessApplicationReadinessService {
             }
         }
 
-        checkProcesses(application, resolved, selection, issues, tenantId);
+        checkProcesses(application, resolved, selection, issues);
 
         List<AiBusinessBinding> bindings = null;
         if (Boolean.TRUE.equals(selection.getIncludeAutomation())) {
-            bindings = bindingMapper.selectByApplication(tenantId, applicationId);
+            bindings = bindingMapper.selectByApplication(resolveTenantId(), applicationId);
             if (selection.getProcessIds().isEmpty()) {
                 issues.add(issue("PROCESS_OPTIONAL", WARN, "尚未配置应用级业务流程",
                         "业务流程不是发布必需项；需要审批或自动流转时可在业务流程画布中配置。",
@@ -305,8 +302,7 @@ public class BusinessApplicationReadinessService {
             BusinessApplicationVO application,
             BusinessApplicationAssetSelectionService.ResolvedSelection resolved,
             BusinessApplicationAssetSelectionVO selection,
-            List<BusinessApplicationReadinessIssueVO> issues,
-            Long tenantId) {
+            List<BusinessApplicationReadinessIssueVO> issues) {
         if (!Boolean.TRUE.equals(selection.getIncludeAutomation())) {
             return;
         }
@@ -335,7 +331,7 @@ public class BusinessApplicationReadinessService {
             BusinessProcessValidationContext context;
             try {
                 context = processValidationContextResolver.resolve(
-                        tenantId, application.getId(), process.getProcessCode(), schema);
+                        resolveTenantId(), application.getId(), process.getProcessCode(), schema);
             } catch (RuntimeException exception) {
                 issues.add(issue("PROCESS_DEPENDENCY_CHECK_FAILED", BLOCK, "业务流程依赖检查失败",
                         processName + "：无法解析当前应用的受治理依赖。",
@@ -517,17 +513,13 @@ public class BusinessApplicationReadinessService {
         return value == null ? 0L : value;
     }
 
-    private Long requireTenantId() {
-        Long tenantId;
+    private Long resolveTenantId() {
         try {
-            tenantId = SessionHelper.getTenantId();
+            Long tenantId = SessionHelper.getTenantId();
+            return tenantId == null ? 1L : tenantId;
         } catch (Exception e) {
-            tenantId = null;
+            return 1L;
         }
-        if (tenantId == null || tenantId <= 0) {
-            throw new BusinessException("应用发布就绪检查缺少可信租户上下文");
-        }
-        return tenantId;
     }
 
     record ResolvedPublishCheck(

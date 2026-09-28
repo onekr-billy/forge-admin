@@ -5,16 +5,14 @@ import com.mdframe.forge.starter.flow.entity.FlowBusiness;
 import com.mdframe.forge.starter.flow.entity.FlowTask;
 import lombok.Getter;
 
-import java.time.LocalDateTime;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * 流程通知事件（Spring 应用事件）
  *
- * <p>在 Flowable 引擎事务内发布后，先由 Outbox 捕获器在同一事务保存通知意图，
- * 再由提交后调度器异步认领并交给 {@code FlowTaskNotifyListener} 消费。站内信、
- * 企微卡片、流程抄送、Redis/Webhook 事件通知等外部调用全部走该事件，保证：</p>
+ * <p>在 Flowable 引擎事务内发布，由 {@code FlowTaskNotifyListener} 在事务提交后
+ * 通过 {@code flowEventExecutor} 线程池异步消费。站内信、企微卡片、流程抄送、
+ * Redis/Webhook 事件通知等外部调用全部走该事件，保证：</p>
  * <ul>
  *   <li>审批主事务不被外部 HTTP 调用阻塞；</li>
  *   <li>事务回滚时不会发出"幽灵通知"；</li>
@@ -23,8 +21,6 @@ import java.util.UUID;
  */
 @Getter
 public class FlowTaskNotifyEvent {
-
-    public static final int CURRENT_VERSION = 1;
 
     /**
      * 通知类型
@@ -38,23 +34,11 @@ public class FlowTaskNotifyEvent {
         PROCESS_CC,
         /** 流程结束（通过/驳回）：按模型通知配置向发起人推送审批结果 */
         PROCESS_RESULT,
-        /** FlowModel 配置化事件通知（Redis Stream / HTTP Webhook） */
+        /** FlowModel 配置化事件通知（Redis Pub/Sub / HTTP Webhook） */
         EVENT_PUBLISH
     }
 
     private final Type type;
-
-    /** 全链路稳定事件 ID，Outbox 重试与下游去重均复用该值。 */
-    private final String eventId;
-
-    /** 事件协议版本。 */
-    private final Integer eventVersion;
-
-    /** 事件产生时间。 */
-    private final LocalDateTime occurredAt;
-
-    /** 可信业务租户。 */
-    private final Long tenantId;
 
     /** 待办任务快照（TASK_TODO 使用） */
     private final FlowTask flowTask;
@@ -77,14 +61,9 @@ public class FlowTaskNotifyEvent {
     /** 审批结果是否驳回（PROCESS_RESULT 使用，null 表示非结果事件） */
     private final Boolean rejected;
 
-    private FlowTaskNotifyEvent(String eventId, Integer eventVersion, LocalDateTime occurredAt, Long tenantId,
-                                Type type, FlowTask flowTask, FlowBusiness business, String taskId,
+    private FlowTaskNotifyEvent(Type type, FlowTask flowTask, FlowBusiness business, String taskId,
                                 FlowEventMessage eventMessage, String processDefKey,
                                 Map<String, Object> variables, Boolean rejected) {
-        this.eventId = eventId;
-        this.eventVersion = eventVersion;
-        this.occurredAt = occurredAt;
-        this.tenantId = tenantId;
         this.type = type;
         this.flowTask = flowTask;
         this.business = business;
@@ -106,68 +85,34 @@ public class FlowTaskNotifyEvent {
      * 待办创建/分配通知，携带流程变量（用于消息模板业务变量注入）
      */
     public static FlowTaskNotifyEvent todo(FlowTask flowTask, FlowBusiness business, Map<String, Object> variables) {
-        return create(Type.TASK_TODO, flowTask, business, null, null, null, variables, null);
+        return new FlowTaskNotifyEvent(Type.TASK_TODO, flowTask, business, null, null, null, variables, null);
     }
 
     /**
      * 待办站内信置已读
      */
     public static FlowTaskNotifyEvent todoRead(String taskId, FlowBusiness business) {
-        return create(Type.TASK_TODO_READ, null, business, taskId, null, null, null, null);
+        return new FlowTaskNotifyEvent(Type.TASK_TODO_READ, null, business, taskId, null, null, null, null);
     }
 
     /**
      * 流程通过抄送
      */
     public static FlowTaskNotifyEvent processCc(FlowBusiness business, Map<String, Object> variables) {
-        return create(Type.PROCESS_CC, null, business, null, null, null, variables, null);
+        return new FlowTaskNotifyEvent(Type.PROCESS_CC, null, business, null, null, null, variables, null);
     }
 
     /**
      * 流程结束审批结果通知（向发起人推送）
      */
     public static FlowTaskNotifyEvent processResult(FlowBusiness business, Map<String, Object> variables, boolean rejected) {
-        return create(Type.PROCESS_RESULT, null, business, null, null, null, variables, rejected);
+        return new FlowTaskNotifyEvent(Type.PROCESS_RESULT, null, business, null, null, null, variables, rejected);
     }
 
     /**
      * FlowModel 配置化事件通知
      */
     public static FlowTaskNotifyEvent eventPublish(FlowEventMessage message, String processDefKey) {
-        return create(Type.EVENT_PUBLISH, null, null, null, message, processDefKey, null, null);
-    }
-
-    public static FlowTaskNotifyEvent restore(String eventId, Integer eventVersion, LocalDateTime occurredAt,
-                                              Long tenantId, Type type, FlowTask flowTask, FlowBusiness business,
-                                              String taskId, FlowEventMessage eventMessage, String processDefKey,
-                                              Map<String, Object> variables, Boolean rejected) {
-        return new FlowTaskNotifyEvent(eventId, eventVersion, occurredAt, tenantId, type, flowTask, business,
-                taskId, eventMessage, processDefKey, variables, rejected);
-    }
-
-    private static FlowTaskNotifyEvent create(Type type, FlowTask flowTask, FlowBusiness business, String taskId,
-                                              FlowEventMessage eventMessage, String processDefKey,
-                                              Map<String, Object> variables, Boolean rejected) {
-        Long tenantId = resolveTenantId(flowTask, business, eventMessage);
-        return new FlowTaskNotifyEvent(UUID.randomUUID().toString(), CURRENT_VERSION, LocalDateTime.now(), tenantId,
-                type, flowTask, business, taskId, eventMessage, processDefKey, variables, rejected);
-    }
-
-    private static Long resolveTenantId(FlowTask flowTask, FlowBusiness business, FlowEventMessage eventMessage) {
-        if (business != null && business.getTenantId() != null && business.getTenantId() > 0) {
-            return business.getTenantId();
-        }
-        if (flowTask != null && flowTask.getTenantId() != null && flowTask.getTenantId() > 0) {
-            return flowTask.getTenantId();
-        }
-        if (eventMessage == null || eventMessage.getTenantId() == null || eventMessage.getTenantId().isBlank()) {
-            return null;
-        }
-        try {
-            long value = Long.parseLong(eventMessage.getTenantId().trim());
-            return value > 0 ? value : null;
-        } catch (NumberFormatException ignored) {
-            return null;
-        }
+        return new FlowTaskNotifyEvent(Type.EVENT_PUBLISH, null, null, null, message, processDefKey, null, null);
     }
 }

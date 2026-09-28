@@ -102,8 +102,9 @@ public final class DynamicFormArrayPermissionValidator {
             if (fieldWritable) {
                 createWritableFields.add(field);
             }
-            boolean requiredOnCreate = schema.requiredFields().contains(field)
-                    || (permission != null && permission.required());
+            boolean requiredOnCreate = permission != null
+                    ? permission.required()
+                    : schema.requiredFields().contains(field);
             if (requiredOnCreate && createWritableFields.contains(field)) {
                 createRequiredFields.add(field);
             }
@@ -128,8 +129,7 @@ public final class DynamicFormArrayPermissionValidator {
                                          Map<String, Object> row) {
         for (String field : schema.requiredFields()) {
             FieldPermission permission = permissions.get(field);
-            boolean required = schema.requiredFields().contains(field)
-                    || (permission != null && permission.required());
+            boolean required = permission != null ? permission.required() : schema.requiredFields().contains(field);
             if (required && writableFields.contains(field) && isEmpty(row.get(field))) {
                 throw denied(schema.field(), "行字段 " + field + " 必填");
             }

@@ -1,62 +1,62 @@
 package com.mdframe.forge.plugin.data.support;
 
 import lombok.extern.slf4j.Slf4j;
-import net.sf.jsqlparser.parser.CCJSqlParserUtil;
-import net.sf.jsqlparser.statement.Statement;
-import net.sf.jsqlparser.statement.Statements;
-import net.sf.jsqlparser.statement.select.Select;
 import org.springframework.stereotype.Component;
 
+import java.util.Arrays;
 import java.util.List;
-import java.util.Locale;
 import java.util.regex.Pattern;
 
 @Slf4j
 @Component
 public class SqlSafetyValidator {
 
-    private static final List<Pattern> FORBIDDEN_SELECT_FEATURES = List.of(
-            tokenPattern("UNION"),
-            tokenPattern("FOR\\s+UPDATE"),
-            tokenPattern("LOCK\\s+IN\\s+SHARE\\s+MODE"),
-            tokenPattern("INTO\\s+OUTFILE"),
-            tokenPattern("INTO\\s+DUMPFILE"),
-            functionPattern("LOAD_FILE"),
-            functionPattern("SLEEP"),
-            functionPattern("BENCHMARK"),
-            Pattern.compile("(?<![A-Z0-9_])@@?[A-Z0-9_]+", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("(?<![A-Z0-9_])(INFORMATION_SCHEMA|MYSQL|PERFORMANCE_SCHEMA|SYS|PG_CATALOG)\\s*\\.",
-                    Pattern.CASE_INSENSITIVE));
+    private static final List<String> FORBIDDEN_KEYWORDS = Arrays.asList(
+            "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", 
+            "TRUNCATE", "MERGE", "CALL", "EXEC", "EXECUTE"
+    );
+
+    private static final List<String> FORBIDDEN_FUNCTIONS = Arrays.asList(
+            "LOAD_FILE", "INTO OUTFILE", "INTO DUMPFILE"
+    );
+
+    private static final Pattern MULTI_STATEMENT_PATTERN = Pattern.compile(";.*;");
+    private static final Pattern UNION_ATTACK_PATTERN = Pattern.compile("UNION\\s+SELECT", Pattern.CASE_INSENSITIVE);
 
     public void validate(String sql) {
-        if (sql == null || sql.isBlank()) {
+        if (sql == null || sql.trim().isEmpty()) {
             throw new IllegalArgumentException("SQL不能为空");
         }
 
-        Statement statement;
-        try {
-            Statements statements = CCJSqlParserUtil.parseStatements(sql);
-            if (statements == null || statements.getStatements().size() != 1) {
+        String normalizedSql = sql.toUpperCase().trim();
+
+        for (String keyword : FORBIDDEN_KEYWORDS) {
+            if (normalizedSql.startsWith(keyword) || normalizedSql.contains(" " + keyword + " ")) {
+                log.warn("SQL contains forbidden keyword: {}", keyword);
                 throw new IllegalArgumentException("SQL仅允许单条查询语句");
             }
-            statement = statements.getStatements().get(0);
-        } catch (IllegalArgumentException exception) {
-            throw exception;
-        } catch (Exception exception) {
-            log.warn("SQL AST parse failed: {}", exception.getClass().getSimpleName());
-            throw new IllegalArgumentException("SQL语法无效或不是受支持的只读查询");
         }
 
-        if (!(statement instanceof Select)) {
-            throw new IllegalArgumentException("SQL仅允许单条SELECT查询语句");
-        }
-
-        String canonicalSql = statement.toString().toUpperCase(Locale.ROOT);
-        for (Pattern forbiddenPattern : FORBIDDEN_SELECT_FEATURES) {
-            if (forbiddenPattern.matcher(canonicalSql).find()) {
-                log.warn("SQL AST contains forbidden read feature: {}", forbiddenPattern.pattern());
-                throw new IllegalArgumentException("SQL包含不允许的查询特性");
+        for (String function : FORBIDDEN_FUNCTIONS) {
+            if (normalizedSql.contains(function.toUpperCase())) {
+                log.warn("SQL contains forbidden function: {}", function);
+                throw new IllegalArgumentException("SQL包含不允许的危险函数");
             }
+        }
+
+        if (MULTI_STATEMENT_PATTERN.matcher(sql).find()) {
+            log.warn("SQL contains multiple statements");
+            throw new IllegalArgumentException("SQL仅允许单条查询语句");
+        }
+
+        if (!normalizedSql.startsWith("SELECT") && !normalizedSql.startsWith("WITH")) {
+            log.warn("SQL is not a SELECT or WITH statement");
+            throw new IllegalArgumentException("SQL仅允许SELECT或WITH查询语句");
+        }
+
+        if (UNION_ATTACK_PATTERN.matcher(sql).find()) {
+            log.warn("SQL contains UNION SELECT");
+            throw new IllegalArgumentException("SQL不允许UNION注入攻击");
         }
     }
 
@@ -64,16 +64,8 @@ public class SqlSafetyValidator {
         try {
             validate(sql);
             return true;
-        } catch (IllegalArgumentException exception) {
+        } catch (IllegalArgumentException e) {
             return false;
         }
-    }
-
-    private static Pattern tokenPattern(String tokenExpression) {
-        return Pattern.compile("(?<![A-Z0-9_])" + tokenExpression + "(?![A-Z0-9_])", Pattern.CASE_INSENSITIVE);
-    }
-
-    private static Pattern functionPattern(String functionName) {
-        return Pattern.compile("(?<![A-Z0-9_])" + functionName + "\\s*\\(", Pattern.CASE_INSENSITIVE);
     }
 }

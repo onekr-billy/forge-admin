@@ -5,11 +5,6 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
 import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationObjectMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectRelationMapper;
-import com.mdframe.forge.starter.core.context.ExecutionIdentity;
-import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
-import com.mdframe.forge.starter.core.session.LoginUser;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -18,7 +13,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -26,26 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DisplayName("BusinessObjectService page-form orphan reclaim")
 class BusinessObjectPageFormOrphanReclaimTest {
-
-    private ExecutionIdentityContextHolder.Scope identityScope;
-
-    @BeforeEach
-    void setUpIdentity() {
-        LoginUser user = new LoginUser();
-        user.setTenantId(1L);
-        user.setUserId(101L);
-        identityScope = ExecutionIdentityContextHolder.open(new ExecutionIdentity(
-                user, "USER", 101L, null, 301L,
-                "page_form_reclaim_test", "token-page-form", Set.of()));
-    }
-
-    @AfterEach
-    void clearIdentity() {
-        if (identityScope != null) {
-            identityScope.close();
-        }
-        ExecutionIdentityContextHolder.clear();
-    }
 
     @Test
     @DisplayName("reclaims unused PAGE_FORM object so the same object code can be reused")

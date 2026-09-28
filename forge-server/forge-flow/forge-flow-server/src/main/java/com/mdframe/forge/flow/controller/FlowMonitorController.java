@@ -25,7 +25,9 @@ import com.mdframe.forge.starter.flow.vo.FlowProcessDistributionVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.flowable.engine.HistoryService;
+import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
+import org.flowable.engine.runtime.ProcessInstance;
 import org.flowable.task.api.Task;
 import org.springframework.web.bind.annotation.*;
 
@@ -45,6 +47,7 @@ import java.util.*;
 @ApiEncrypt
 public class FlowMonitorController {
 
+    private final RuntimeService runtimeService;
     private final TaskService taskService;
     private final HistoryService historyService;
     private final FlowInstanceService flowInstanceService;
@@ -260,8 +263,33 @@ public class FlowMonitorController {
     @SaCheckPermission("flow:monitor:view")
     @GetMapping("/variables/{processInstanceId}")
     public RespInfo<Map<String, Object>> getProcessVariables(@PathVariable String processInstanceId) {
+        flowMonitorService.assertCurrentTenantProcessInstance(processInstanceId);
         try {
-            return RespInfo.success(flowMonitorService.getProcessVariables(processInstanceId));
+            Map<String, Object> variables = new HashMap<>();
+
+            // 先尝试从运行时获取（运行中或挂起的流程）
+            ProcessInstance processInstance = runtimeService.createProcessInstanceQuery()
+                    .processInstanceId(processInstanceId)
+                    .singleResult();
+
+            if (processInstance != null) {
+                // 流程还在运行中，从运行时服务获取变量
+                variables = runtimeService.getVariables(processInstanceId);
+                log.info("从运行时获取流程变量：processInstanceId={}, 变量数量={}", processInstanceId, variables.size());
+            } else {
+                // 流程已完成，从历史服务获取变量
+                List<org.flowable.variable.api.history.HistoricVariableInstance> historicVariables =
+                        historyService.createHistoricVariableInstanceQuery()
+                                .processInstanceId(processInstanceId)
+                                .list();
+
+                for (org.flowable.variable.api.history.HistoricVariableInstance variable : historicVariables) {
+                    variables.put(variable.getVariableName(), variable.getValue());
+                }
+                log.info("从历史获取流程变量：processInstanceId={}, 变量数量={}", processInstanceId, variables.size());
+            }
+
+            return RespInfo.success(variables);
         } catch (Exception e) {
             log.error("获取流程变量失败：processInstanceId={}", processInstanceId, e);
             return RespInfo.error("获取流程变量失败，请稍后重试");

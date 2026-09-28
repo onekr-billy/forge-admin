@@ -10,14 +10,14 @@ import com.mdframe.forge.plugin.message.service.MessageService;
 import com.mdframe.forge.plugin.system.dto.SysOrgQuery;
 import com.mdframe.forge.plugin.system.entity.SysOrg;
 import com.mdframe.forge.plugin.system.mapper.SysOrgMapper;
+import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.flow.dto.FlowFillBatchQueryDTO;
 import com.mdframe.forge.starter.flow.entity.FlowFillBatch;
-import com.mdframe.forge.starter.flow.entity.FlowFillBatchItem;
 import com.mdframe.forge.starter.flow.enums.FlowFillBatchStatus;
 import com.mdframe.forge.starter.flow.enums.FlowFillItemStatus;
+import com.mdframe.forge.starter.flow.entity.FlowFillBatchItem;
 import com.mdframe.forge.starter.flow.mapper.FlowFillBatchItemMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowFillBatchMapper;
-import com.mdframe.forge.starter.flow.security.FlowRuntimeIdentity;
 import com.mdframe.forge.starter.flow.service.FlowFillBatchService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +38,8 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class FlowFillBatchServiceImpl extends ServiceImpl<FlowFillBatchMapper, FlowFillBatch> implements FlowFillBatchService {
 
+    private static final Long DEFAULT_TENANT_ID = 1L;
+
     private final FlowFillBatchMapper flowFillBatchMapper;
     private final FlowFillBatchItemMapper flowFillBatchItemMapper;
     private final SysOrgMapper sysOrgMapper;
@@ -46,20 +48,19 @@ public class FlowFillBatchServiceImpl extends ServiceImpl<FlowFillBatchMapper, F
 
     @Override
     public IPage<FlowFillBatch> pageBatches(FlowFillBatchQueryDTO query, Integer pageNum, Integer pageSize) {
-        Long tenantId = FlowRuntimeIdentity.requireTenantId();
-        return flowFillBatchMapper.selectBatchPage(new Page<>(pageNum, pageSize), tenantId, query);
+        return flowFillBatchMapper.selectBatchPage(new Page<>(pageNum, pageSize), query);
     }
 
     @Override
     public List<FlowFillBatchItem> listItems(Long batchId) {
-        Long tenantId = FlowRuntimeIdentity.requireTenantId();
-        return flowFillBatchItemMapper.selectByBatchId(tenantId, batchId);
+        return flowFillBatchItemMapper.selectByBatchId(batchId);
     }
 
     @Override
     public void saveBatchConfig(FlowFillBatch batch) {
-        Long tenantId = FlowRuntimeIdentity.requireTenantId();
-        batch.setTenantId(tenantId);
+        if (batch.getTenantId() == null) {
+            batch.setTenantId(resolveTenantId());
+        }
         if (batch.getStatus() == null) {
             batch.setStatus(FlowFillBatchStatus.DRAFT.getCode());
         }
@@ -69,7 +70,6 @@ public class FlowFillBatchServiceImpl extends ServiceImpl<FlowFillBatchMapper, F
         if (batch.getId() == null) {
             save(batch);
         } else {
-            requireBatch(batch.getId(), tenantId);
             updateById(batch);
         }
     }
@@ -77,15 +77,17 @@ public class FlowFillBatchServiceImpl extends ServiceImpl<FlowFillBatchMapper, F
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void publishBatch(Long id) {
-        Long tenantId = FlowRuntimeIdentity.requireTenantId();
-        FlowFillBatch batch = requireBatch(id, tenantId);
-        List<SysOrg> targetOrgs = resolveTargetOrgs(batch, tenantId);
+        FlowFillBatch batch = getById(id);
+        if (batch == null) {
+            throw new RuntimeException("填报批次不存在");
+        }
+        List<SysOrg> targetOrgs = resolveTargetOrgs(batch);
         if (targetOrgs.isEmpty()) {
             throw new RuntimeException("未解析到目标组织");
         }
 
         Set<Long> existingOrgIds = new HashSet<>();
-        for (FlowFillBatchItem item : flowFillBatchItemMapper.selectByBatchId(tenantId, id)) {
+        for (FlowFillBatchItem item : flowFillBatchItemMapper.selectByBatchId(id)) {
             if (item.getOrgId() != null) {
                 existingOrgIds.add(item.getOrgId());
             }
@@ -97,7 +99,7 @@ public class FlowFillBatchServiceImpl extends ServiceImpl<FlowFillBatchMapper, F
                 continue;
             }
             FlowFillBatchItem item = new FlowFillBatchItem();
-            item.setTenantId(tenantId);
+            item.setTenantId(batch.getTenantId() == null ? resolveTenantId() : batch.getTenantId());
             item.setBatchId(batch.getId());
             item.setEntryCode(batch.getEntryCode());
             item.setOrgId(org.getId());
@@ -121,11 +123,10 @@ public class FlowFillBatchServiceImpl extends ServiceImpl<FlowFillBatchMapper, F
 
     @Override
     public void deleteBatch(Long id) {
-        requireBatch(id, FlowRuntimeIdentity.requireTenantId());
         removeById(id);
     }
 
-    private List<SysOrg> resolveTargetOrgs(FlowFillBatch batch, Long tenantId) {
+    private List<SysOrg> resolveTargetOrgs(FlowFillBatch batch) {
         JsonNode scope = parseJson(batch.getTargetScope());
         String type = scope == null ? "ALL_ORG" : scope.path("type").asText("ALL_ORG");
         Set<Long> orgIds = new HashSet<>();
@@ -151,7 +152,7 @@ public class FlowFillBatchServiceImpl extends ServiceImpl<FlowFillBatchMapper, F
             return List.of();
         }
         SysOrgQuery query = new SysOrgQuery();
-        query.setTenantId(tenantId);
+        query.setTenantId(batch.getTenantId() == null ? resolveTenantId() : batch.getTenantId());
         query.setOrgStatus(1);
         List<SysOrg> allOrgs = sysOrgMapper.selectOrgList(query);
         List<SysOrg> result = new ArrayList<>();
@@ -209,11 +210,12 @@ public class FlowFillBatchServiceImpl extends ServiceImpl<FlowFillBatchMapper, F
         }
     }
 
-    private FlowFillBatch requireBatch(Long id, Long tenantId) {
-        FlowFillBatch batch = flowFillBatchMapper.selectByIdAndTenant(id, tenantId);
-        if (batch == null) {
-            throw new RuntimeException("填报批次不存在");
+    private Long resolveTenantId() {
+        try {
+            Long tenantId = SessionHelper.getTenantId();
+            return tenantId == null ? DEFAULT_TENANT_ID : tenantId;
+        } catch (Exception e) {
+            return DEFAULT_TENANT_ID;
         }
-        return batch;
     }
 }

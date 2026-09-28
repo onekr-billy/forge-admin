@@ -61,7 +61,6 @@ class OidcExternalIdentityVerifierTest {
         CapabilityIdentityProperties properties = new CapabilityIdentityProperties();
         CapabilityIdentityProperties.ExternalProvider provider =
                 new CapabilityIdentityProperties.ExternalProvider();
-        provider.setEnabled(true);
         provider.setIssuer(issuer);
         provider.setJwkSetUri(issuer + "/jwks");
         provider.setAudience("forge-capability");

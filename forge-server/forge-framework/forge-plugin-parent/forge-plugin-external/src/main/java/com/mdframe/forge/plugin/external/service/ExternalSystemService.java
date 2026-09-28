@@ -22,6 +22,4 @@ public interface ExternalSystemService extends IService<ExternalSystem> {
     boolean saveSystem(ExternalSystem entity);
 
     boolean updateSystem(ExternalSystem entity);
-
-    boolean removeSystem(Long id);
 }

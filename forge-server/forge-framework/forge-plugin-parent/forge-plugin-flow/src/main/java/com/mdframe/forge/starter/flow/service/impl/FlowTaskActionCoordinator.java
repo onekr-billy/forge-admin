@@ -225,14 +225,7 @@ final class FlowTaskActionCoordinator {
     }
 
     void returnTask(String taskId, String userId, String comment, String signature,
-                    String requestedTargetActivityId, Long tenantId,
-                    String idempotencyKey, String requestDigest) {
-        FlowTask storedTask = authorizeTaskAction(
-                taskId, userId, tenantId, "RETURN",
-                idempotencyKey, requestDigest, FlowTaskStatus.RETURNED);
-        if (storedTask == null) {
-            return;
-        }
+                    String requestedTargetActivityId) {
         taskTenantGuard.accept(taskId);
         Task task = requireRuntimeTask(taskId);
         validateFlowableAssignee(task, userId);
@@ -264,11 +257,7 @@ final class FlowTaskActionCoordinator {
                     .moveActivityIdTo(task.getTaskDefinitionKey(), targetActivityId)
                     .changeState();
 
-            FlowTask flowTask = completedTask(FlowTaskStatus.RETURNED, comment, signature);
-            flowTask.setActionIdempotencyKey(idempotencyKey);
-            flowTask.setActionRequestDigest(requestDigest);
-            flowTask.setActionType(idempotencyKey == null ? null : "RETURN");
-            updateTaskActionResultRequired(taskId, flowTask);
+            updateTaskByTenant(taskId, completedTask(FlowTaskStatus.RETURNED, comment, signature));
             log.info("退回任务：taskId={}, userId={}, targetActivityId={}",
                     taskId, userId, targetActivityId);
         } catch (Exception e) {

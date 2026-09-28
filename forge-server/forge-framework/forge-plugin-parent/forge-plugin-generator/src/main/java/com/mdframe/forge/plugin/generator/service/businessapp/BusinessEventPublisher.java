@@ -4,12 +4,13 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfig;
 import com.mdframe.forge.plugin.generator.mapper.AiCrudConfigMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessObjectMapper;
 import com.mdframe.forge.plugin.generator.service.DynamicCrudService;
-import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.plugin.generator.service.businessprocess.BusinessProcessOrchestrator;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.context.event.EventListener;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
@@ -17,18 +18,19 @@ import java.util.Map;
 /**
  * 业务事件发布者。
  * <p>
- * 在动态 CRUD 与流程回调的本地事务中追加业务事件 Outbox，
- * 由租约投递器在提交后交给触发器和应用流程消费者。
+ * 在 DynamicCrudController 的增删改操作后调用此服务发布业务事件，
+ * 交由触发器引擎异步处理。
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class BusinessEventPublisher {
 
+    private final BusinessTriggerExecutor triggerExecutor;
     private final AiCrudConfigMapper crudConfigMapper;
     private final BusinessObjectMapper businessObjectMapper;
     private final DynamicCrudService dynamicCrudService;
-    private final BusinessEventOutboxService outboxService;
+    private final ObjectProvider<BusinessProcessOrchestrator> processOrchestratorProvider;
 
     /**
      * 发布记录创建事件
@@ -37,17 +39,6 @@ public class BusinessEventPublisher {
         BusinessEvent event = buildEvent(configKey, BusinessEvent.RECORD_CREATED, data, null);
         publish(event);
         publish(buildEvent(configKey, BusinessEvent.FORM_SUBMITTED, data, null));
-    }
-
-    /**
-     * 绑定业务对象的 CRUD 必须使用 Forge 主数据源，才能与主库 Outbox 原子提交。
-     * 外接数据源没有分布式事务能力，禁止在写入后再以尽力而为方式补事件。
-     */
-    public void assertTransactionalPublishSupported(String configKey) {
-        Long tenantId = requireTenantId();
-        if (resolveObject(configKey, tenantId) != null) {
-            dynamicCrudService.assertLocalTransactionConfig(configKey);
-        }
     }
 
     /**
@@ -73,7 +64,6 @@ public class BusinessEventPublisher {
         BusinessEvent event = buildEvent(configKey, BusinessEvent.RECORD_DELETED, null, null);
         if (event != null) {
             event.setRecordId(recordId);
-            BusinessEventEnvelope.stamp(event, BusinessEventEnvelope.SOURCE_DYNAMIC_CRUD);
             publish(event);
         }
     }
@@ -111,7 +101,7 @@ public class BusinessEventPublisher {
             Object newVal = baseEvent.readRecordValue(field);
             Object oldVal = baseEvent.readPreviousValue(field);
             if (newVal != null && !newVal.equals(oldVal)) {
-                BusinessEvent statusEvent = BusinessEventEnvelope.stamp(BusinessEvent.builder()
+                BusinessEvent statusEvent = BusinessEvent.builder()
                         .eventType(BusinessEvent.STATUS_CHANGED)
                         .suiteCode(baseEvent.getSuiteCode())
                         .objectCode(baseEvent.getObjectCode())
@@ -122,7 +112,7 @@ public class BusinessEventPublisher {
                         .operatorId(baseEvent.getOperatorId())
                         .operatorName(baseEvent.getOperatorName())
                         .tenantId(baseEvent.getTenantId())
-                        .build(), BusinessEventEnvelope.SOURCE_DYNAMIC_CRUD);
+                        .build();
                 publish(statusEvent);
                 break;
             }
@@ -133,34 +123,42 @@ public class BusinessEventPublisher {
         if (event == null || StringUtils.isBlank(event.getObjectCode()) || StringUtils.isBlank(event.getEventType())) {
             return;
         }
-        if (!BusinessEventEnvelope.isTrusted(event)) {
-            throw new BusinessException("拒绝发布缺少可信信封的业务事件");
+        // Keep legacy action triggers and application-level START_EVENT flows
+        // on the same successful CRUD event. The orchestrator is optional so
+        // installations that do not enable business-process support keep the
+        // existing trigger behavior.
+        triggerExecutor.executeTriggersAsync(event);
+        BusinessProcessOrchestrator orchestrator = processOrchestratorProvider.getIfAvailable();
+        if (orchestrator != null) {
+            try {
+                orchestrator.startEvent(event);
+            } catch (Exception exception) {
+                // The business row is already committed. A transient process
+                // start failure is recorded in logs and can be retried from
+                // the process runtime; it must not turn a successful save
+                // into a misleading CRUD error response.
+                log.error("事件开始业务流程失败, objectCode={}, eventType={}, recordId={}",
+                        event.getObjectCode(), event.getEventType(), event.getRecordId(), exception);
+            }
         }
-        // 只在本地事务中追加可靠信封；触发器和流程副作用由 Outbox 投递器在提交后执行。
-        // Outbox 入库失败必须向上抛出，使业务写入一起回滚，禁止退化成日志告警。
-        outboxService.append(event);
     }
 
     private BusinessEvent buildFlowResultEvent(String objectCode, String recordId,
                                                String eventType, Map<String, Object> recordData) {
-        Long tenantId = requireTenantId();
-        return BusinessEventEnvelope.stamp(BusinessEvent.builder()
-                .eventType(eventType)
-                .objectCode(objectCode)
-                .recordId(recordId)
-                .recordData(recordData)
-                .operatorId(resolveUserId())
-                .operatorName(resolveUsername())
-                .tenantId(tenantId)
-                .build(), BusinessEventEnvelope.SOURCE_FLOW_CALLBACK);
-    }
-
-    private Long requireTenantId() {
-        Long tenantId = resolveTenantId();
-        if (tenantId == null) {
-            throw new BusinessException("业务事件缺少可信租户上下文");
+        try {
+            return BusinessEvent.builder()
+                    .eventType(eventType)
+                    .objectCode(objectCode)
+                    .recordId(recordId)
+                    .recordData(recordData)
+                    .operatorId(resolveUserId())
+                    .operatorName(resolveUsername())
+                    .tenantId(resolveTenantId())
+                    .build();
+        } catch (Exception e) {
+            log.debug("构建流程业务事件失败, objectCode={}, recordId={}", objectCode, recordId);
+            return null;
         }
-        return tenantId;
     }
 
     private Long resolveTenantId() {
@@ -170,7 +168,7 @@ public class BusinessEventPublisher {
         } catch (Exception e) {
             tenantId = null;
         }
-        return tenantId != null && tenantId > 0 ? tenantId : null;
+        return tenantId != null ? tenantId : 1L;
     }
 
     private Long resolveUserId() {
@@ -193,29 +191,34 @@ public class BusinessEventPublisher {
      * 根据 configKey 构建事件
      */
     private BusinessEvent buildEvent(String configKey, String eventType, Map<String, Object> data, Map<String, Object> previousData) {
-        Long tenantId = requireTenantId();
+        try {
+            Long tenantId = SessionHelper.getTenantId();
 
-        // 从运行配置中获取对象编码
-        ResolvedBusinessObject resolvedObject = resolveObject(configKey, tenantId);
-        String objectCode = resolvedObject == null ? null : resolvedObject.objectCode();
-        if (objectCode == null) {
-            return null; // 非业务对象的动态CRUD，不触发
+            // 从运行配置中获取对象编码
+            ResolvedBusinessObject resolvedObject = resolveObject(configKey, tenantId);
+            String objectCode = resolvedObject == null ? null : resolvedObject.objectCode();
+            if (objectCode == null) {
+                return null; // 非业务对象的动态CRUD，不触发
+            }
+
+            String recordId = resolveRecordId(configKey, data);
+
+            return BusinessEvent.builder()
+                    .eventType(eventType)
+                    .suiteCode(resolvedObject.suiteCode())
+                    .objectCode(objectCode)
+                    .configKey(configKey)
+                    .recordId(recordId)
+                    .recordData(data)
+                    .previousData(previousData)
+                    .operatorId(SessionHelper.getUserId())
+                    .operatorName(SessionHelper.getUsername())
+                    .tenantId(tenantId)
+                    .build();
+        } catch (Exception e) {
+            log.debug("构建业务事件失败, configKey={}: {}", configKey, e.getMessage());
+            return null;
         }
-
-        String recordId = resolveRecordId(configKey, data);
-
-        return BusinessEventEnvelope.stamp(BusinessEvent.builder()
-                .eventType(eventType)
-                .suiteCode(resolvedObject.suiteCode())
-                .objectCode(objectCode)
-                .configKey(configKey)
-                .recordId(recordId)
-                .recordData(data)
-                .previousData(previousData)
-                .operatorId(SessionHelper.getUserId())
-                .operatorName(SessionHelper.getUsername())
-                .tenantId(tenantId)
-                .build(), BusinessEventEnvelope.SOURCE_DYNAMIC_CRUD);
     }
 
     private String resolveRecordId(String configKey, Map<String, Object> data) {
@@ -228,8 +231,7 @@ public class BusinessEventPublisher {
                 return String.valueOf(recordId);
             }
         } catch (Exception e) {
-            log.debug("按运行主键解析业务事件记录ID失败, configKey={}, failureType={}",
-                    configKey, e.getClass().getSimpleName());
+            log.debug("按运行主键解析业务事件记录ID失败, configKey={}: {}", configKey, e.getMessage());
         }
         Object fallback = data.get("id");
         if (fallback == null) {
@@ -242,18 +244,22 @@ public class BusinessEventPublisher {
      * 通过 configKey 查询关联的业务对象编码
      */
     private ResolvedBusinessObject resolveObject(String configKey, Long tenantId) {
-        // 业务对象表的 object_code 才是流程/触发器绑定使用的规范编码。
-        // ai_crud_config.object_code 在历史低代码数据中通常保存模型/配置编码，
-        // 直接使用它会导致事件无法命中已发布流程的 subject_object_code。
-        var businessObject = businessObjectMapper.selectByConfigKey(tenantId, configKey);
-        if (businessObject != null && StringUtils.isNotBlank(businessObject.getObjectCode())) {
-            return new ResolvedBusinessObject(
-                    businessObject.getSuiteCode(), businessObject.getObjectCode());
-        }
-        // 兼容尚未迁移到业务对象表的旧 CONFIG 配置。
-        AiCrudConfig config = crudConfigMapper.selectByConfigKey(tenantId, configKey);
-        if (config != null && config.getObjectCode() != null && !config.getObjectCode().isBlank()) {
-            return new ResolvedBusinessObject(config.getDomainCode(), config.getObjectCode());
+        try {
+            // 业务对象表的 object_code 才是流程/触发器绑定使用的规范编码。
+            // ai_crud_config.object_code 在历史低代码数据中通常保存模型/配置编码，
+            // 直接使用它会导致事件无法命中已发布流程的 subject_object_code。
+            var businessObject = businessObjectMapper.selectByConfigKey(tenantId, configKey);
+            if (businessObject != null && StringUtils.isNotBlank(businessObject.getObjectCode())) {
+                return new ResolvedBusinessObject(
+                        businessObject.getSuiteCode(), businessObject.getObjectCode());
+            }
+            // 兼容尚未迁移到业务对象表的旧 CONFIG 配置。
+            AiCrudConfig config = crudConfigMapper.selectByConfigKey(tenantId, configKey);
+            if (config != null && config.getObjectCode() != null && !config.getObjectCode().isBlank()) {
+                return new ResolvedBusinessObject(config.getDomainCode(), config.getObjectCode());
+            }
+        } catch (Exception e) {
+            log.debug("resolveObject 失败: configKey={}", configKey);
         }
         return null;
     }

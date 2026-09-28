@@ -4,16 +4,13 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessTrigger;
 import com.mdframe.forge.plugin.generator.mapper.BusinessTriggerLogMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessTriggerMapper;
 import com.mdframe.forge.starter.core.exception.BusinessException;
-import com.mdframe.forge.starter.core.session.SessionHelper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.MockedStatic;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
 
 @DisplayName("触发器 WEBHOOK 保存校验")
@@ -30,18 +27,13 @@ class BusinessTriggerServiceWebhookTest {
                  "paramMappings":[],"resultMappings":[],"failureStrategy":"THROW"}
                 """);
 
-        try (MockedStatic<SessionHelper> session = mockStatic(SessionHelper.class)) {
-            session.when(SessionHelper::getTenantId).thenReturn(1L);
+        service.insert(valid);
+        verify(mapper).insert(any(AiBusinessTrigger.class));
 
-            service.insert(valid);
-            verify(mapper).insert(any(AiBusinessTrigger.class));
-            assertEquals(1L, valid.getTenantId());
-
-            BusinessException error = assertThrows(BusinessException.class, () -> service.insert(trigger("""
-                    {"sourceType":"DATASET","sourceKey":"inventory_dataset"}
-                    """)));
-            assertEquals("CALL_API 只允许调用 EXTERNAL_API 查询源", error.getMessage());
-        }
+        BusinessException error = assertThrows(BusinessException.class, () -> service.insert(trigger("""
+                {"sourceType":"DATASET","sourceKey":"inventory_dataset"}
+                """)));
+        assertEquals("CALL_API 只允许调用 EXTERNAL_API 查询源", error.getMessage());
     }
 
     private AiBusinessTrigger trigger(String config) {

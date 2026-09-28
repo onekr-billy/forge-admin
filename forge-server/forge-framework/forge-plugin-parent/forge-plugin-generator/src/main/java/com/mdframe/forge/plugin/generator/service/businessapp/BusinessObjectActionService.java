@@ -60,10 +60,9 @@ public class BusinessObjectActionService {
         if (StringUtils.isBlank(normalizedObjectCode)) {
             throw new BusinessException("业务对象编码不能为空");
         }
-        Long tenantId = requireTenantId();
         AiBusinessObject object = StringUtils.isNotBlank(suiteCode)
-                ? businessObjectMapper.selectByObjectCode(tenantId, suiteCode.trim(), normalizedObjectCode)
-                : businessObjectMapper.selectFirstByObjectCode(tenantId, normalizedObjectCode);
+                ? businessObjectMapper.selectByObjectCode(resolveTenantId(), suiteCode.trim(), normalizedObjectCode)
+                : businessObjectMapper.selectFirstByObjectCode(resolveTenantId(), normalizedObjectCode);
         if (object == null) {
             throw new BusinessException("业务对象不存在: " + normalizedObjectCode);
         }
@@ -142,7 +141,7 @@ public class BusinessObjectActionService {
                 .map(BusinessPermissionSummaryVO.ActionPermissionVO::getActionName)
                 .toList();
         AiBusinessBinding permissionBinding = bindingMapper.selectBindingByTypeAndCode(
-                requireTenantId(), "OBJECT", context.getObject().getObjectCode(), "PERMISSION");
+                resolveTenantId(), "OBJECT", context.getObject().getObjectCode(), "PERMISSION");
         BusinessReadinessItemVO item = new BusinessReadinessItemVO();
         item.setItemCode("PERMISSION_SUMMARY");
         item.setItemName("对象权限");
@@ -394,6 +393,16 @@ public class BusinessObjectActionService {
             }
         }
         return fallback;
+    }
+
+    private Long resolveTenantId() {
+        Long tenantId;
+        try {
+            tenantId = SessionHelper.getTenantId();
+        } catch (Exception e) {
+            tenantId = null;
+        }
+        return tenantId != null ? tenantId : 1L;
     }
 
     private Long requireTenantId() {

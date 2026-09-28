@@ -16,6 +16,7 @@ import com.mdframe.forge.plugin.generator.service.AiCrudConfigService;
 import com.mdframe.forge.plugin.generator.util.LowcodeCodegenOptionUtils;
 import com.mdframe.forge.plugin.generator.vo.lowcode.LowcodeCodePreviewVO;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -62,12 +63,10 @@ public class LowcodeCodegenService {
     }
 
     public byte[] downloadByConfigKey(String configKey) {
-        requireTenantId();
         AiCrudConfig config = configService.getByConfigKey(configKey);
         if (config == null) {
             throw new BusinessException("配置不存在: " + configKey);
         }
-        requireTenantId(config);
         if ("LOWCODE".equals(config.getBuildMode())) {
             return codegenService.generateZip(prepareRuntimeConfig(copyConfig(config), null));
         }
@@ -81,7 +80,6 @@ public class LowcodeCodegenService {
         if (config == null) {
             throw new BusinessException("配置不存在");
         }
-        requireTenantId(config);
         String sourceType = resolveSourceType(request);
         AiCrudConfig source = switch (sourceType) {
             case SOURCE_VERSION -> fromVersion(config, request == null ? null : request.getVersionId());
@@ -98,16 +96,12 @@ public class LowcodeCodegenService {
     }
 
     public Map<String, Object> getOptions(Long appId) {
-        requireTenantId();
         AiCrudConfig config = appService.requireConfig(appId);
-        requireTenantId(config);
         return buildCodegenOptions(config, null);
     }
 
     public void saveOptions(Long appId, LowcodeCodegenRequest request) {
-        requireTenantId();
         AiCrudConfig config = appService.requireConfig(appId);
-        requireTenantId(config);
         Map<String, Object> options = readOptions(config.getOptions());
         options.put("codegen", buildCodegenOptions(config, request));
         config.setOptions(writeJson(options, "代码生成配置"));
@@ -115,9 +109,7 @@ public class LowcodeCodegenService {
     }
 
     private AiCrudConfig resolveCodegenConfig(Long appId, LowcodeCodegenRequest request) {
-        requireTenantId();
         AiCrudConfig base = appService.requireConfig(appId);
-        requireTenantId(base);
         String sourceType = resolveSourceType(request);
         AiCrudConfig config = switch (sourceType) {
             case SOURCE_VERSION -> fromVersion(base, request == null ? null : request.getVersionId());
@@ -323,7 +315,7 @@ public class LowcodeCodegenService {
         if (versionId == null) {
             throw new BusinessException("按历史版本生成代码时 versionId 不能为空");
         }
-        AiCrudConfigVersion version = versionMapper.selectVersionById(requireTenantId(base), base.getId(), versionId);
+        AiCrudConfigVersion version = versionMapper.selectVersionById(resolveTenantId(base), base.getId(), versionId);
         if (version == null) {
             throw new BusinessException("代码生成版本不存在");
         }
@@ -482,11 +474,16 @@ public class LowcodeCodegenService {
         return null;
     }
 
-    private Long requireTenantId() {
-        return LowcodeTenantContext.requireTenantId("低代码代码生成");
-    }
-
-    private Long requireTenantId(AiCrudConfig config) {
-        return LowcodeTenantContext.requireConfigTenant(config, "低代码代码生成");
+    private Long resolveTenantId(AiCrudConfig config) {
+        if (config.getTenantId() != null) {
+            return config.getTenantId();
+        }
+        Long tenantId;
+        try {
+            tenantId = SessionHelper.getTenantId();
+        } catch (Exception e) {
+            tenantId = null;
+        }
+        return tenantId != null ? tenantId : 1L;
     }
 }

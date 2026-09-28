@@ -1,17 +1,35 @@
 /** model.vue setup part 2. */
-import { onMounted } from 'vue'
+import { CopyOutline, CreateOutline, PauseCircleOutline, PlayCircleOutline, TimeOutline, TrashOutline } from '@vicons/ionicons5'
+import { NIcon, NModal, NTreeSelect } from 'naive-ui'
+import { computed, defineAsyncComponent, h, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { businessFlowFormAssets, businessFlowModelBindings } from '@/api/business-app'
 import flowApi from '@/api/flow'
-
+import AiForm from '@/components/ai-form/AiForm.vue'
+import UserSelectPicker from '@/components/common/UserSelectPicker.vue'
+import FlowModelStats from '@/components/flow/FlowModelStats.vue'
+import { useDict } from '@/composables/useDict'
+import { collectInitiatorSelectSelections } from '@/utils/initiatorSelect'
+import DesignerAsyncLoader from '@/views/app-center/components/designer/DesignerAsyncLoader.vue'
+import { buildFlowCategoryTreeOptions, resolveFlowCategoryLabel, resolveFlowCategoryValue } from '../utils/categoryOptions'
 export function applyFlowModelPart2(deps = {}) {
   const {
-    __impl,
-    currentModelId,
-    currentModelVersion,
-    fetchCategories,
-    fetchData,
-    lockModelAction,
-    showVersionHistory,
-    unlockModelAction,
+    __impl, mut, applyModelStatistics, applyStartTestBusinessFormLayout, buildModelFormBinding, cancelModelOrder, collectStartTestFormData, designerTypeClass,
+    designerTypeLabel, enrichModelBusinessBindings, extractBusinessBindingRows, fetchCategories, fetchData, fetchModelPage, fetchModelStatistics, flattenStartTestBusinessComponents,
+    formatBusinessBindings, formatDate, generateModelKey, getActionOptions, getCategoryDisplayName, handleActionSelect, handleAdd, handleCopy,
+    handleDeploy, handleDesign, handleDesignModalClose, handleDragStart, handleDrop, handleEdit, handleFilter, handlePageSizeChange,
+    handleReset, handleSearch, handleStartTest, handleStatusSelect, handleSubmit, handleSubmitStartTest, handleViewInstances, handleViewStarted,
+    hasStartTestAssetSchema, isBusinessStartTestForm, isCodeAppBinding, isModelActionBusy, isModelActionLocked, loadStartTestBusinessForm, lockModelAction, mergeModelBusinessBindings,
+    modelActionKey, normalizeBusinessFormReference, normalizeDesignerType, normalizeStartTestAssetSchema, normalizeStartTestBusinessAssets, normalizeStartTestBusinessFields, normalizeStartTestFieldType, parseBusinessFormReference,
+    parseFormSchema, resetStartTestBusinessFormLayout, resolveApplicationIdFromFormKey, resolveStartTestBusinessFields, saveModelOrder, statusClass, textValue, toCount,
+    toNumberOptions, unlockModelAction, router, DEFAULT_TODO_DETAIL_URL_TEMPLATE, FlowDesignAsyncLoader, FlowFormRendererAsyncLoader, FlowModalAsyncLoader, FlowDesignPage,
+    FlowFormCreateRenderer, VersionHistory, statusOptions, categoryTreeOptions, designerTypePresentation, designerTypeOptions, modelActionLocks, queryParams,
+    activeStatsStatus, dataSource, loading, sortMode, sortSaving, draggingModelId, pagination, showVersionHistory,
+    currentModelId, currentModelVersion, showDesignModal, currentDesignModelId, currentDesignBinding, showStartTestModal, startTestLoading, startTestFormRef,
+    startTestFormData, startTestFormSchema, startTestBusinessFormActive, startTestBusinessFormLoading, startTestBusinessFormAssets, startTestBusinessFormLayout, startTestApproverNodes, startTestApproverSelections,
+    startTestApproverLabels, startTestPreflightDiagnostics, currentStartModel, startTestTitle, startTestAlert, totalCount, designingCount, deployedCount,
+    suspendedCount, disabledCount, showModal, modalTitle, isEdit, submitLoading, formRef, formData,
+    rules,
   } = deps
   async function handleSuspend(row) {
     const lockKey = lockModelAction(row, 'suspend')
@@ -116,9 +134,5 @@ export function applyFlowModelPart2(deps = {}) {
 
   return {
     ...deps,
-    handleActivate,
-    handleDelete,
-    handleSuspend,
-    handleVersionHistory,
   }
 }

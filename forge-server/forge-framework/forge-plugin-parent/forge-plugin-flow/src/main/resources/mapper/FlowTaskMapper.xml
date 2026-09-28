@@ -103,38 +103,6 @@
           AND tenant_id = #{tenantId}
     </update>
 
-    <update id="applyProjection">
-        UPDATE sys_flow_task
-        SET task_name = #{task.taskName},
-            task_def_key = #{task.taskDefKey},
-            task_def_id = #{task.taskDefId},
-            process_instance_id = #{task.processInstanceId},
-            process_def_id = #{task.processDefId},
-            process_def_key = #{task.processDefKey},
-            business_key = #{task.businessKey},
-            business_type = #{task.businessType},
-            title = #{task.title},
-            assignee = #{task.assignee},
-            assignee_name = #{task.assigneeName},
-            candidate_users = #{task.candidateUsers},
-            candidate_groups = #{task.candidateGroups},
-            owner = #{task.owner},
-            due_date = #{task.dueDate},
-            priority = #{task.priority},
-            status = #{task.status},
-            start_user_id = #{task.startUserId},
-            start_user_name = #{task.startUserName},
-            start_dept_id = #{task.startDeptId},
-            start_dept_name = #{task.startDeptName},
-            claim_time = #{task.claimTime},
-            complete_time = #{task.completeTime},
-            projection_event_id = #{eventId},
-            projection_sequence = #{eventSequence}
-        WHERE tenant_id = #{tenantId}
-          AND task_id = #{taskId}
-          AND COALESCE(projection_sequence, 0) &lt; #{eventSequence}
-    </update>
-
     <select id="countProcessParticipant" resultType="int">
         SELECT COUNT(1)
         FROM sys_flow_task t

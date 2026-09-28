@@ -460,10 +460,6 @@ public class BusinessActionExecutionService {
             system.put("activeOrgId", user.getActiveOrgId());
             system.put("activeOrgName", user.getActiveOrgName());
             system.put("mainOrgId", user.getMainOrgId());
-        } else if (context.getCapabilityServiceUserId() != null
-                && context.getCapabilityServiceUserId() > 0) {
-            system.put("userId", context.getCapabilityServiceUserId());
-            system.put("username", "service-user-" + context.getCapabilityServiceUserId());
         }
         return system;
     }

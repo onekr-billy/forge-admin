@@ -202,20 +202,6 @@ public interface ICacheService {
     long increment(String key, long delta);
 
     /**
-     * 原子递增，并在首次创建计数器时设置过期时间。
-     *
-     * <p>该操作用于限流、失败次数等必须自动回收的计数器，避免
-     * {@code increment + expire} 两条命令之间发生故障后留下永久键。</p>
-     *
-     * @param key      键
-     * @param delta    增量
-     * @param timeout  过期时间
-     * @param timeUnit 时间单位
-     * @return 递增后的值
-     */
-    long incrementWithExpiry(String key, long delta, long timeout, TimeUnit timeUnit);
-
-    /**
      * 递减
      *
      * @param key   键

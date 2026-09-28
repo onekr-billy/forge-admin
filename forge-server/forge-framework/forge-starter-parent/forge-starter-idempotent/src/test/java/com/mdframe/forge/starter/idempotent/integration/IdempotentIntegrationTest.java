@@ -5,6 +5,7 @@ import com.mdframe.forge.starter.idempotent.enums.IdempotentStrategy;
 import com.mdframe.forge.starter.idempotent.exception.IdempotentException;
 import com.mdframe.forge.starter.idempotent.service.TokenService;
 import org.aspectj.lang.ProceedingJoinPoint;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -32,10 +33,14 @@ class IdempotentIntegrationTest {
     @Mock
     private TokenService tokenService;
     
+    @BeforeEach
+    void setUp() throws Throwable {
+        when(joinPoint.proceed()).thenReturn("success");
+    }
+    
     @Test
     @DisplayName("并发场景 - 严格模式测试")
     void testConcurrentStrictMode() throws Throwable {
-        when(joinPoint.proceed()).thenReturn("success");
         AtomicInteger successCount = new AtomicInteger(0);
         AtomicInteger failCount = new AtomicInteger(0);
         

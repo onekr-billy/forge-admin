@@ -24,9 +24,6 @@ public interface BusinessSuiteMapper extends BaseMapper<AiBusinessSuite> {
     BusinessSuiteVO selectSuiteDetail(@Param("tenantId") Long tenantId,
                                       @Param("id") Long id);
 
-    AiBusinessSuite selectBySuiteId(@Param("tenantId") Long tenantId,
-                                    @Param("id") Long id);
-
     AiBusinessSuite selectBySuiteCode(@Param("tenantId") Long tenantId,
                                       @Param("suiteCode") String suiteCode);
 

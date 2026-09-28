@@ -44,15 +44,14 @@ public class CustomQueryService extends ServiceImpl<CustomQuerySchemeMapper, Cus
 
     public List<CustomQuerySchemeVO> listSchemes(String configKey) {
         validateConfigKey(configKey);
-        UserIdentity identity = requireUserIdentity();
-        return customQuerySchemeMapper.selectUserSchemes(identity.tenantId(), identity.userId(), configKey)
+        return customQuerySchemeMapper.selectUserSchemes(currentTenantId(), currentUserId(), configKey)
                 .stream()
                 .map(this::toVO)
                 .toList();
     }
 
     public CustomQuerySchemeVO getScheme(String configKey, Long id) {
-        CustomQueryScheme scheme = getOwnScheme(configKey, id, requireUserIdentity());
+        CustomQueryScheme scheme = getOwnScheme(configKey, id);
         return toVO(scheme);
     }
 
@@ -60,12 +59,11 @@ public class CustomQueryService extends ServiceImpl<CustomQuerySchemeMapper, Cus
     public Long createScheme(String configKey, CustomQuerySchemeDTO dto) {
         validateConfigKey(configKey);
         validateScheme(dto, false);
-        UserIdentity identity = requireUserIdentity();
         if (isDefault(dto)) {
-            customQuerySchemeMapper.clearDefault(identity.tenantId(), identity.userId(), configKey);
+            customQuerySchemeMapper.clearDefault(currentTenantId(), currentUserId(), configKey);
         }
         CustomQueryScheme scheme = new CustomQueryScheme();
-        fillScheme(configKey, dto, scheme, identity.tenantId());
+        fillScheme(configKey, dto, scheme);
         save(scheme);
         return scheme.getId();
     }
@@ -74,12 +72,11 @@ public class CustomQueryService extends ServiceImpl<CustomQuerySchemeMapper, Cus
     public void updateScheme(String configKey, CustomQuerySchemeDTO dto) {
         validateConfigKey(configKey);
         validateScheme(dto, true);
-        UserIdentity identity = requireUserIdentity();
-        CustomQueryScheme existing = getOwnScheme(configKey, dto.getId(), identity);
+        CustomQueryScheme existing = getOwnScheme(configKey, dto.getId());
         if (isDefault(dto)) {
-            customQuerySchemeMapper.clearDefault(identity.tenantId(), identity.userId(), configKey);
+            customQuerySchemeMapper.clearDefault(currentTenantId(), currentUserId(), configKey);
         }
-        fillScheme(configKey, dto, existing, identity.tenantId());
+        fillScheme(configKey, dto, existing);
         existing.setCreateBy(null);
         existing.setCreateTime(null);
         existing.setCreateDept(null);
@@ -89,26 +86,24 @@ public class CustomQueryService extends ServiceImpl<CustomQuerySchemeMapper, Cus
     @Transactional(rollbackFor = Exception.class)
     public void deleteScheme(String configKey, Long id) {
         validateConfigKey(configKey);
-        UserIdentity identity = requireUserIdentity();
-        int deleted = customQuerySchemeMapper.deleteUserScheme(
-                identity.tenantId(), identity.userId(), configKey, normalizeId(id));
+        int deleted = customQuerySchemeMapper.deleteUserScheme(currentTenantId(), currentUserId(), configKey, normalizeId(id));
         if (deleted <= 0) {
             throw new BusinessException("查询方案不存在");
         }
     }
 
-    private CustomQueryScheme getOwnScheme(String configKey, Long id, UserIdentity identity) {
+    private CustomQueryScheme getOwnScheme(String configKey, Long id) {
         validateConfigKey(configKey);
         CustomQueryScheme scheme = customQuerySchemeMapper.selectUserScheme(
-                identity.tenantId(), identity.userId(), configKey, normalizeId(id));
+                currentTenantId(), currentUserId(), configKey, normalizeId(id));
         if (scheme == null) {
             throw new BusinessException("查询方案不存在");
         }
         return scheme;
     }
 
-    private void fillScheme(String configKey, CustomQuerySchemeDTO dto, CustomQueryScheme scheme, Long tenantId) {
-        scheme.setTenantId(tenantId);
+    private void fillScheme(String configKey, CustomQuerySchemeDTO dto, CustomQueryScheme scheme) {
+        scheme.setTenantId(currentTenantId());
         scheme.setConfigKey(configKey);
         scheme.setSchemeName(trim(dto.getSchemeName(), MAX_SCHEME_NAME_LENGTH));
         scheme.setConditionsJson(writeJson(defaultList(dto.getConditions())));
@@ -250,26 +245,17 @@ public class CustomQueryService extends ServiceImpl<CustomQuerySchemeMapper, Cus
         return id;
     }
 
-    private UserIdentity requireUserIdentity() {
-        Long tenantId;
-        try {
-            tenantId = SessionHelper.getTenantId();
-        } catch (Exception e) {
-            tenantId = null;
-        }
-        if (tenantId == null || tenantId <= 0) {
-            throw new BusinessException("自定义查询方案缺少可信租户上下文");
-        }
-        Long userId;
-        try {
-            userId = SessionHelper.getUserId();
-        } catch (Exception e) {
-            userId = null;
-        }
-        if (userId == null || userId <= 0) {
+    private Long currentTenantId() {
+        Long tenantId = SessionHelper.getTenantId();
+        return tenantId == null ? 1L : tenantId;
+    }
+
+    private Long currentUserId() {
+        Long userId = SessionHelper.getUserId();
+        if (userId == null) {
             throw new BusinessException("当前用户未登录");
         }
-        return new UserIdentity(tenantId, userId);
+        return userId;
     }
 
     private String trim(String value, int maxLength) {
@@ -282,8 +268,5 @@ public class CustomQueryService extends ServiceImpl<CustomQuerySchemeMapper, Cus
             return null;
         }
         return trim(value, maxLength);
-    }
-
-    private record UserIdentity(Long tenantId, Long userId) {
     }
 }

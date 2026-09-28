@@ -1,33 +1,20 @@
 package com.mdframe.forge.plugin.external.controller;
 
-import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.mdframe.forge.plugin.external.adapter.DataAdapter;
-import com.mdframe.forge.plugin.external.adapter.DataAdapterFactory;
-import com.mdframe.forge.plugin.external.adapter.impl.JsonPathAdapter;
 import com.mdframe.forge.plugin.external.dto.ExternalApiDTO;
 import com.mdframe.forge.plugin.external.dto.ExternalApiQuery;
 import com.mdframe.forge.plugin.external.entity.ExternalApi;
-import com.mdframe.forge.plugin.external.constant.ExternalPermissions;
 import com.mdframe.forge.plugin.external.service.ExternalApiService;
 import com.mdframe.forge.plugin.external.support.ExternalQueryContractValidator;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiDecrypt;
 import com.mdframe.forge.starter.core.annotation.crypto.ApiEncrypt;
-import com.mdframe.forge.starter.core.annotation.log.OperationLog;
-import com.mdframe.forge.starter.core.domain.OperationType;
 import com.mdframe.forge.starter.core.domain.RespInfo;
 import com.mdframe.forge.starter.core.exception.BusinessException;
-import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
 import java.util.List;
 
 @RestController
@@ -35,58 +22,44 @@ import java.util.List;
 @RequiredArgsConstructor
 @ApiEncrypt
 @ApiDecrypt
-@Slf4j
 public class ExternalApiController {
 
     private final ExternalApiService apiService;
     private final ExternalQueryContractValidator queryContractValidator;
-    private final DataAdapterFactory dataAdapterFactory;
 
     @GetMapping("/page")
-    @SaCheckPermission(ExternalPermissions.API_QUERY)
     public RespInfo<IPage<ExternalApi>> page(ExternalApiQuery query) {
         return RespInfo.success(apiService.page(query));
     }
 
     @GetMapping("/{id}")
-    @SaCheckPermission(ExternalPermissions.API_QUERY)
     public RespInfo<ExternalApi> getById(@PathVariable Long id) {
-        return RespInfo.success(apiService.getManagementById(id));
+        return RespInfo.success(apiService.getById(id));
     }
 
     @PostMapping
-    @SaCheckPermission(ExternalPermissions.API_ADD)
-    @OperationLog(module = "外部接口管理", type = OperationType.ADD,
-            desc = "新增外部接口", saveRequestParams = false, saveResponseResult = false)
     public RespInfo<Void> add(@Validated @RequestBody ExternalApiDTO dto) {
         validateApi(dto);
         ExternalApi entity = convertDtoToEntity(dto);
-        apiService.saveApi(entity);
-        auditResponseTransform("ADD", entity);
+        apiService.save(entity);
         return RespInfo.success();
     }
 
     @PutMapping
-    @SaCheckPermission(ExternalPermissions.API_EDIT)
-    @OperationLog(module = "外部接口管理", type = OperationType.UPDATE,
-            desc = "修改外部接口", saveRequestParams = false, saveResponseResult = false)
     public RespInfo<Void> edit(@Validated @RequestBody ExternalApiDTO dto) {
         validateApi(dto);
         ExternalApi entity = convertDtoToEntity(dto);
-        apiService.updateApi(entity);
-        auditResponseTransform("UPDATE", entity);
+        apiService.updateById(entity);
         return RespInfo.success();
     }
 
     @DeleteMapping("/{id}")
-    @SaCheckPermission(ExternalPermissions.API_REMOVE)
     public RespInfo<Void> remove(@PathVariable Long id) {
-        apiService.removeApi(id);
+        apiService.removeById(id);
         return RespInfo.success();
     }
 
     @GetMapping("/list")
-    @SaCheckPermission(ExternalPermissions.API_QUERY)
     public RespInfo<List<ExternalApi>> list(@RequestParam(required = false) Long systemId) {
         if (systemId != null) {
             return RespInfo.success(apiService.listBySystemId(systemId));
@@ -138,9 +111,6 @@ public class ExternalApiController {
     }
 
     private void validateApi(ExternalApiDTO dto) {
-        if (dto.getPermissionCheckEnabled() == null) {
-            dto.setPermissionCheckEnabled(true);
-        }
         if (dto.getSystemId() == null) {
             throw new BusinessException("请选择所属系统");
         }
@@ -179,12 +149,7 @@ public class ExternalApiController {
             }
         }
         if (Boolean.TRUE.equals(dto.getResponseTransformEnabled())) {
-            requireNotBlank(dto.getResponseTransformScript(), "启用响应转换时必须配置字段映射");
-            DataAdapter adapter = dataAdapterFactory.getRequiredAdapter("JsonPath");
-            if (!adapter.validateConfig(dto.getResponseTransformScript())) {
-                throw new BusinessException(
-                        "响应转换仅支持 " + JsonPathAdapter.CONFIG_VERSION + " 受限字段映射 JSON，旧脚本禁止执行");
-            }
+            requireNotBlank(dto.getResponseTransformScript(), "启用响应转换时必须配置转换脚本");
         }
         queryContractValidator.validateConfiguration(
                 dto.getLowcodeQueryEnabled(), dto.getApiMethod(), dto.getPermissionCheckEnabled(),
@@ -241,26 +206,5 @@ public class ExternalApiController {
 
     private boolean isBlank(String value) {
         return value == null || value.trim().isEmpty();
-    }
-
-    private void auditResponseTransform(String operation, ExternalApi entity) {
-        String version = Boolean.TRUE.equals(entity.getResponseTransformEnabled())
-                ? JsonPathAdapter.CONFIG_VERSION : "DISABLED";
-        String digest = Boolean.TRUE.equals(entity.getResponseTransformEnabled())
-                ? sha256(entity.getResponseTransformScript()) : null;
-        log.info("外部接口响应映射配置审计，operation={}, tenantId={}, operatorId={}, apiId={}, apiCode={}, "
-                        + "transformVersion={}, configDigest={}, result=SUCCESS",
-                operation, SessionHelper.getTenantId(), SessionHelper.getUserId(), entity.getId(), entity.getApiCode(),
-                version, digest);
-    }
-
-    private String sha256(String value) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256")
-                    .digest(value.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest);
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("JVM 不支持 SHA-256", exception);
-        }
     }
 }

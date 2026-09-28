@@ -59,18 +59,6 @@ public class AiBusinessProcessRun extends TenantEntity {
 
     private String flowProcessInstanceId;
 
-    /** 单调递增的执行栅栏令牌；每次获取或接管运行权时加一。 */
-    private Long executionToken;
-
-    /** 当前持有执行租约的工作实例。 */
-    private String leaseOwner;
-
-    /** 当前执行租约过期时间。 */
-    private LocalDateTime leaseExpireTime;
-
-    /** 当前执行器最近一次成功续租时间。 */
-    private LocalDateTime heartbeatTime;
-
     /** 已清洗的运行上下文，不允许保存 Token、Secret 或完整外部报文。 */
     private String contextSnapshot;
 

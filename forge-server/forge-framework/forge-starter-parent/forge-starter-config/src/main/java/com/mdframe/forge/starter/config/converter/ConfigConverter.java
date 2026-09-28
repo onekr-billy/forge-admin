@@ -143,12 +143,6 @@ public class ConfigConverter {
         JsonNode rootNode = objectMapper.readTree(configJson);
 
         putIfNotNull(configMap, "forge.auth.enable-api-permission", rootNode, "enableApiPermission");
-        putIfNotNull(configMap, "forge.auth.api-permission-coverage-enabled", rootNode,
-                "apiPermissionCoverageEnabled");
-        putIfNotNull(configMap, "forge.auth.api-permission-coverage-fail-on-missing", rootNode,
-                "apiPermissionCoverageFailOnMissing");
-        putIfNotNull(configMap, "forge.auth.api-permission-coverage-report-limit", rootNode,
-                "apiPermissionCoverageReportLimit");
         putIfNotNull(configMap, "forge.auth.enable-login-lock", rootNode, "enableLoginLock");
         putIfNotNull(configMap, "forge.auth.max-login-attempts", rootNode, "maxLoginAttempts");
         putIfNotNull(configMap, "forge.auth.lock-duration", rootNode, "lockDuration");

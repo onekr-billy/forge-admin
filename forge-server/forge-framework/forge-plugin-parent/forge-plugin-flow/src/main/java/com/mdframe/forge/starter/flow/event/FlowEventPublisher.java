@@ -6,22 +6,15 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.mdframe.forge.starter.core.domain.FlowEventMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
-import org.springframework.data.redis.connection.RedisStreamCommands;
-import org.springframework.data.redis.connection.stream.MapRecord;
-import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
-import java.util.Map;
-
 /**
- * 流程事件 Redis Stream 可靠发布器
+ * 流程事件 Redis Pub/Sub 发布器
  *
- * <p>先同步写入 {@code flow:event:stream}，成功返回后上层通知 Outbox 才能标记完成。
- * Pub/Sub 只作为旧客户端滚动升级期间的兼容广播，不参与可靠投递结果。</p>
- * <p>兼容频道命名规则：</p>
+ * <p>将流程事件异步发布到 Redis 频道，频道命名规则：</p>
  * <pre>
  *   flow:event:{processDefKey}     — 按流程 Key 订阅（精准订阅某类流程的事件）
  *   flow:event:*                   — 通配符订阅所有流程事件（Redis PSUBSCRIBE）
@@ -61,9 +54,6 @@ import java.util.Map;
 @ConditionalOnClass(StringRedisTemplate.class)
 public class FlowEventPublisher {
 
-    /** 可靠事件流；每个业务应用使用独立 consumer group。 */
-    public static final String STREAM_KEY = "flow:event:stream";
-
     /** Redis 频道前缀 */
     public static final String CHANNEL_PREFIX = "flow:event:";
 
@@ -72,12 +62,6 @@ public class FlowEventPublisher {
 
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
-
-    @Value("${forge.flow.event.redis-stream-key:flow:event:stream}")
-    private String streamKey = STREAM_KEY;
-
-    @Value("${forge.flow.event.redis-pubsub-compatibility-enabled:true}")
-    private boolean pubSubCompatibilityEnabled = true;
 
     @Autowired(required = false)
     public FlowEventPublisher(StringRedisTemplate redisTemplate) {
@@ -89,7 +73,7 @@ public class FlowEventPublisher {
     }
 
     /**
-     * 同步写入 Redis Stream，并按需广播到兼容 Pub/Sub 频道。
+     * 异步发布流程事件到 Redis
      *
      * <p>同时发布到两个频道：</p>
      * <ol>
@@ -99,68 +83,34 @@ public class FlowEventPublisher {
      *
      * @param message 流程事件消息
      */
+    @Async("flowEventExecutor")
     public void publish(FlowEventMessage message) {
         if (redisTemplate == null) {
-            throw new IllegalStateException("FLOW_EVENT_REDIS_REQUIRED");
-        }
-        validateReliableIdentity(message);
-        try {
-            String json = objectMapper.writeValueAsString(message);
-            RecordId recordId = redisTemplate.<String, String>opsForStream().add(
-                    MapRecord.create(streamKey, Map.of(
-                            "payload", json,
-                            "eventId", message.getEventId())),
-                    RedisStreamCommands.XAddOptions.none());
-            if (recordId == null) {
-                throw new IllegalStateException("FLOW_EVENT_STREAM_XADD_NOT_CONFIRMED");
-            }
-            publishCompatibilityChannels(message, json);
-            log.info("[FlowEvent] Redis Stream 发布成功: recordId={}, eventId={}, eventType={}, processDefKey={}",
-                    recordId, message.getEventId(), message.getEventType(), message.getProcessDefKey());
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("FLOW_EVENT_SERIALIZE_FAILED", e);
-        } catch (RuntimeException e) {
-            throw new IllegalStateException("FLOW_EVENT_STREAM_PUBLISH_FAILED", e);
-        }
-    }
-
-    private void publishCompatibilityChannels(FlowEventMessage message, String json) {
-        if (!pubSubCompatibilityEnabled) {
+            log.warn("[FlowEvent] Redis 未配置，跳过事件发布: eventType={}, businessKey={}",
+                    message.getEventType(), message.getBusinessKey());
             return;
         }
         try {
+            String json = objectMapper.writeValueAsString(message);
+
+            // 发布到按流程 Key 的精准频道
             if (message.getProcessDefKey() != null) {
-                redisTemplate.convertAndSend(CHANNEL_PREFIX + message.getProcessDefKey(), json);
+                String channel = CHANNEL_PREFIX + message.getProcessDefKey();
+                redisTemplate.convertAndSend(channel, json);
+                log.debug("[FlowEvent] 发布到频道 {}: eventType={}, businessKey={}",
+                        channel, message.getEventType(), message.getBusinessKey());
             }
+
+            // 发布到全量频道（方便监听所有流程事件）
             redisTemplate.convertAndSend(CHANNEL_ALL, json);
-        } catch (RuntimeException compatibilityFailure) {
-            log.warn("[FlowEvent] Redis Pub/Sub 兼容广播失败但 Stream 已持久化: eventId={}, failureType={}",
-                    message.getEventId(), compatibilityFailure.getClass().getSimpleName());
-        }
-    }
+            log.info("[FlowEvent] Redis Pub/Sub 发布成功: eventType={}, processDefKey={}, businessKey={}",
+                    message.getEventType(), message.getProcessDefKey(), message.getBusinessKey());
 
-    private void validateReliableIdentity(FlowEventMessage message) {
-        if (message == null
-                || isBlank(message.getEventId())
-                || message.getEventVersion() == null || message.getEventVersion() <= 0
-                || message.getEventSequence() == null || message.getEventSequence() <= 0
-                || isBlank(message.getEventType())
-                || isBlank(message.getProcessDefKey())
-                || (isBlank(message.getProcessInstanceId()) && isBlank(message.getBusinessKey()))
-                || !hasPositiveTenant(message.getTenantId())) {
-            throw new IllegalArgumentException("FLOW_EVENT_RELIABLE_IDENTITY_REQUIRED");
+        } catch (JsonProcessingException e) {
+            log.error("[FlowEvent] 序列化事件消息失败: {}", e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("[FlowEvent] Redis 发布事件失败: eventType={}, error={}",
+                    message.getEventType(), e.getMessage(), e);
         }
-    }
-
-    private boolean hasPositiveTenant(String tenantId) {
-        try {
-            return tenantId != null && Long.parseLong(tenantId.trim()) > 0;
-        } catch (NumberFormatException invalidTenant) {
-            return false;
-        }
-    }
-
-    private boolean isBlank(String value) {
-        return value == null || value.isBlank();
     }
 }

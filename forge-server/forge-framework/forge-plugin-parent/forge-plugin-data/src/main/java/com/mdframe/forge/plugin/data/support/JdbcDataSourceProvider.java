@@ -21,7 +21,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public class JdbcDataSourceProvider {
 
     private final PersistentCryptoService persistentCryptoService;
-    private final JdbcConnectionSecurityPolicy connectionSecurityPolicy;
 
     private final Map<Long, HikariDataSource> dataSourceCache = new ConcurrentHashMap<>();
 
@@ -30,15 +29,7 @@ public class JdbcDataSourceProvider {
     }
 
     public DataSource createTempDataSource(DataConnection connection, String password) {
-        connectionSecurityPolicy.validateTemporaryTarget(connection.getDriverClassName(), connection.getJdbcUrl());
         HikariConfig config = buildHikariConfig(connection, password);
-        config.setMaximumPoolSize(1);
-        config.setMinimumIdle(0);
-        config.setIdleTimeout(10000);
-        config.setConnectionTimeout(connectionSecurityPolicy.connectionTimeoutMillis());
-        config.setValidationTimeout(connectionSecurityPolicy.connectionTimeoutMillis());
-        config.setConnectionTestQuery("SELECT 1");
-        config.setPoolName("data-temp-" + java.util.UUID.randomUUID());
         return new HikariDataSource(config);
     }
 

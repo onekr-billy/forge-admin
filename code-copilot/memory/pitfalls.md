@@ -200,7 +200,6 @@
 - 新版应用撤回不可依赖单据配置和 Web Session
 - 流程 Redis 回调非 Web 异常是 NotWebContextException
 - 列表流程状态列偶发消失是旧 fieldRefs 快照滤掉了托管字段
-- 流程执行租约必须在事务提交后认领，心跳线程必须重建租户上下文
 - 嵌入式流程设计器不能由父子组件同时持有
 - 门户外层 deep 样式不能覆盖嵌套加载容器
 - 动态 CRUD 事件不能把运行配置对象码当作流程标准对象码
@@ -254,7 +253,7 @@
 - 167. DAG 分支路由必须同时处理跨层穿卡和三种顺序一致性
 - 183. 捕获参与当前事务的下游异常不能清除 rollback-only
 
-### [后端框架 / Spring / Maven](pitfalls/backend.md)（38）
+### [后端框架 / Spring / Maven](pitfalls/backend.md)（37）
 
 - 打印关系外键 businessObject0eq3Id 对不上是设计器列名+model_schema 漏字段
 - 冷缓存 Maven 并行构建出现依赖锁获取失败

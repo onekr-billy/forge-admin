@@ -37,6 +37,7 @@ class RedisResultCacheServiceTest {
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper();
+        when(redisTemplate.opsForHash()).thenReturn(hashOperations);
         resultCacheService = new RedisResultCacheService(redisTemplate, objectMapper);
     }
     
@@ -47,7 +48,6 @@ class RedisResultCacheServiceTest {
         Object result = "test-result";
         int expireSeconds = 3600;
         
-        when(redisTemplate.opsForHash()).thenReturn(hashOperations);
         when(redisTemplate.expire(anyString(), anyLong(), any(TimeUnit.class))).thenReturn(true);
         
         resultCacheService.cacheResult(key, result, expireSeconds);
@@ -63,7 +63,6 @@ class RedisResultCacheServiceTest {
         Exception exception = new RuntimeException("test-exception");
         int expireSeconds = 3600;
         
-        when(redisTemplate.opsForHash()).thenReturn(hashOperations);
         when(redisTemplate.expire(anyString(), anyLong(), any(TimeUnit.class))).thenReturn(true);
         
         resultCacheService.cacheException(key, exception, expireSeconds);
@@ -149,7 +148,6 @@ class RedisResultCacheServiceTest {
         String requestId = "test-request-id";
         int expireSeconds = 600;
         
-        when(redisTemplate.opsForHash()).thenReturn(hashOperations);
         when(redisTemplate.expire(anyString(), anyLong(), any(TimeUnit.class))).thenReturn(true);
         
         resultCacheService.markProcessing(key, requestId, expireSeconds);

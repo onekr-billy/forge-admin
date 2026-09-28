@@ -14,7 +14,7 @@ import java.util.Set;
 @ConfigurationProperties(prefix = "forge.capability.identity")
 public class CapabilityIdentityProperties {
 
-    private boolean enabled = false;
+    private boolean enabled = true;
     private String issuer = "http://localhost:8580";
     private String resource = "http://localhost:8580/mcp";
     private String openapiResource = "http://localhost:8580/openapi";
@@ -31,7 +31,7 @@ public class CapabilityIdentityProperties {
 
     @Data
     public static class ExternalProvider {
-        private boolean enabled = false;
+        private boolean enabled = true;
         private String issuer;
         private String jwkSetUri;
         private String audience;

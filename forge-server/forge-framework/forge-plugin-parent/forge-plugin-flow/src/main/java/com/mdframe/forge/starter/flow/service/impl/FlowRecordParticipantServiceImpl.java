@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +22,8 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class FlowRecordParticipantServiceImpl implements FlowRecordParticipantService {
+
+    private static final Long DEFAULT_TENANT_ID = 1L;
 
     private final FlowRecordParticipantMapper participantMapper;
 
@@ -39,14 +42,13 @@ public class FlowRecordParticipantServiceImpl implements FlowRecordParticipantSe
         if (StringUtils.isBlank(userId) || StringUtils.isBlank(relationType) || StringUtils.isBlank(businessKey)) {
             return;
         }
-        requireTenantId(tenantId);
         ParsedRef ref = parse(businessType, businessKey);
         if (ref == null) {
             log.debug("跳过经手索引：无法解析业务主键 businessType={}, businessKey={}", businessType, businessKey);
             return;
         }
         FlowRecordParticipant participant = new FlowRecordParticipant();
-        participant.setTenantId(tenantId);
+        participant.setTenantId(tenantId != null ? tenantId : resolveTenantId());
         participant.setBusinessType(ref.businessType());
         participant.setBusinessId(ref.businessId());
         participant.setUserId(userId.trim());
@@ -111,10 +113,9 @@ public class FlowRecordParticipantServiceImpl implements FlowRecordParticipantSe
         return new ParsedRef(type, key);
     }
 
-    private void requireTenantId(Long tenantId) {
-        if (tenantId == null || tenantId <= 0) {
-            throw new IllegalStateException("FLOW_TENANT_REQUIRED");
-        }
+    private Long resolveTenantId() {
+        Long tenantId = TenantContextHolder.getTenantId();
+        return tenantId == null ? DEFAULT_TENANT_ID : tenantId;
     }
 
     record ParsedRef(String businessType, String businessId) {

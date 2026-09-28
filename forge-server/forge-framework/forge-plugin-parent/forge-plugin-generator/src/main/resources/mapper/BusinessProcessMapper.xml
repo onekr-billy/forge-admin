@@ -154,7 +154,7 @@
         <result column="processCode" property="processCode"/>
         <result column="status" property="status"/>
         <result column="designStatus" property="designStatus"/>
-        <result column="startNodeType" property="startNodeType"/>
+        <result column="draftSchemaJson" property="draftSchemaJson"/>
     </resultMap>
 
     <select id="selectBySubjectObjectCode" resultMap="ObjectProcessSummaryMap">
@@ -163,32 +163,11 @@
                p.process_code AS processCode,
                p.status,
                p.design_status AS designStatus,
-               (
-                 SELECT node.node_type
-                 FROM JSON_TABLE(
-                   IF(JSON_VALID(p.draft_schema_json), p.draft_schema_json, JSON_OBJECT()),
-                   '$.nodes[*]' COLUMNS (
-                     node_type VARCHAR(64) PATH '$.type' NULL ON EMPTY
-                   )
-                 ) node
-                 WHERE LEFT(node.node_type, 6) = 'START_'
-                 LIMIT 1
-               ) AS startNodeType
+               p.draft_schema_json AS draftSchemaJson
         FROM ai_business_process p
         <include refid="Active_Application_And_Subject"/>
         WHERE p.tenant_id = #{tenantId}
           AND p.subject_object_code = #{objectCode}
-          AND p.del_flag = 0
-        ORDER BY p.update_time DESC, p.id DESC
-    </select>
-
-    <select id="selectActiveDraftsBySubjectObjectCode" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Columns"/>
-        FROM ai_business_process p
-        <include refid="Active_Application_And_Subject"/>
-        WHERE p.tenant_id = #{tenantId}
-          AND p.subject_object_code = #{objectCode}
-          AND p.status = 1
           AND p.del_flag = 0
         ORDER BY p.update_time DESC, p.id DESC
     </select>

@@ -144,27 +144,6 @@
         update_time
     </sql>
 
-    <select id="selectByConfigId" resultMap="BaseResultMap">
-        SELECT
-        <include refid="Base_Columns"/>
-        FROM ai_crud_config
-        WHERE tenant_id = #{tenantId}
-          AND id = #{configId}
-          AND del_flag = '0'
-        LIMIT 1
-    </select>
-
-    <select id="selectByConfigIdForUpdate" resultMap="BaseResultMap">
-        SELECT
-        <include refid="Base_Columns"/>
-        FROM ai_crud_config
-        WHERE tenant_id = #{tenantId}
-          AND id = #{configId}
-          AND del_flag = '0'
-        LIMIT 1
-        FOR UPDATE
-    </select>
-
     <select id="selectByConfigKey" resultMap="BaseResultMap">
         SELECT
         <include refid="Base_Columns"/>

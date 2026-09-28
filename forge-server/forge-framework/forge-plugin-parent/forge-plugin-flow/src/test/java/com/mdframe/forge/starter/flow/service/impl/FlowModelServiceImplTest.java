@@ -16,7 +16,6 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
@@ -200,25 +199,6 @@ class FlowModelServiceImplTest {
         assertEquals(4, service.startConfigBuildCount);
     }
 
-    @Test
-    @DisplayName("start config rejects legacy DOCTYPE before invoking the Flowable parser")
-    void startConfigRejectsUnsafeStoredXmlAtHardenedBoundary() {
-        FlowModel model = startConfigModel(7L, 1, """
-                <?xml version="1.0" encoding="UTF-8"?>
-                <!DOCTYPE definitions [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
-                <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">
-                  <process id="leave_approval">
-                    <startEvent id="start"/>
-                    <endEvent id="end"/>
-                    <sequenceFlow id="line" sourceRef="start" targetRef="end"/>
-                  </process>
-                </definitions>
-                """);
-
-        assertThrows(RuntimeException.class,
-                () -> new ParsingFlowModelService().parse(model));
-    }
-
     private static FlowModel startConfigModel(Long tenantId, int version, String bpmnXml) {
         FlowModel model = new FlowModel();
         model.setId("model-1");
@@ -273,12 +253,6 @@ class FlowModelServiceImplTest {
         protected FlowStartConfig buildStartConfig(FlowModel model) {
             startConfigBuildCount++;
             return parsedStartConfig(model.getModelKey());
-        }
-    }
-
-    private static final class ParsingFlowModelService extends FlowModelServiceImpl {
-        private FlowStartConfig parse(FlowModel model) {
-            return super.buildStartConfig(model);
         }
     }
 }

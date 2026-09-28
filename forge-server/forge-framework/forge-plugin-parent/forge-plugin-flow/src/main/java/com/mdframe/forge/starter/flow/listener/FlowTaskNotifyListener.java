@@ -1,6 +1,5 @@
 package com.mdframe.forge.starter.flow.listener;
 
-import com.mdframe.forge.plugin.message.domain.MessageSendStatus;
 import com.mdframe.forge.plugin.message.domain.dto.MessageSendRequestDTO;
 import com.mdframe.forge.plugin.message.domain.entity.SysMessage;
 import com.mdframe.forge.plugin.message.service.MessageService;
@@ -23,7 +22,10 @@ import com.mdframe.forge.starter.core.enums.EnableStatus;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -44,18 +46,19 @@ import static com.mdframe.forge.starter.flow.listener.FlowNotificationContentRen
 import static com.mdframe.forge.starter.flow.listener.FlowNotificationContentRenderer.safeText;
 
 /**
- * 流程通知副作用处理器
+ * 流程通知异步监听器
  *
  * <p>消费 {@link FlowTaskNotifyEvent}：站内信推送、企微待办卡片、待办置已读、
- * 流程抄送、Redis/Webhook 事件通知。提交后调度、失败重试与崩溃接管由
- * {@link FlowNotifyOutboxDispatcher} 负责，本类只执行已经原子认领的通知。</p>
+ * 流程抄送、Redis/Webhook 事件通知。使用 {@code AFTER_COMMIT} 保证审批事务
+ * 提交后才发出通知（事务回滚不发），并通过 {@code flowEventExecutor} 线程池
+ * 异步执行，外部 HTTP 调用不再阻塞审批主链路。</p>
  *
  * <p>消息/协同模块的依赖收敛在本类，{@code FlowTaskEventListener} 只负责
  * 引擎事件到业务表的数据同步。</p>
  */
 @Slf4j
 @Component
-public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
+public class FlowTaskNotifyListener {
 
     private static final String FLOW_TODO_MESSAGE_BIZ_TYPE = "FLOW_TODO";
 
@@ -102,7 +105,7 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
     @Lazy
     private FlowModelMapper flowModelMapper;
 
-    /** Redis Stream 可靠发布器（可选，未引入 Redis 依赖时为 null）*/
+    /** Redis Pub/Sub 发布器（可选，未引入 Redis 依赖时为 null）*/
     @Autowired(required = false)
     @Lazy
     private FlowEventPublisher flowEventPublisher;
@@ -112,27 +115,35 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
     @Lazy
     private FlowWebhookNotifier flowWebhookNotifier;
 
-    @Override
-    public void handle(FlowTaskNotifyEvent event) {
-        switch (event.getType()) {
-            case TASK_TODO:
-                sendTaskCreatedMessage(event.getFlowTask(), event.getBusiness(), event.getVariables());
-                break;
-            case TASK_TODO_READ:
-                markTaskTodoMessageRead(event.getTaskId(), event.getBusiness());
-                break;
-            case PROCESS_CC:
-                sendProcessCc(event.getBusiness(), event.getVariables());
-                break;
-            case PROCESS_RESULT:
-                sendProcessResult(event.getBusiness(), event.getVariables(),
-                        Boolean.TRUE.equals(event.getRejected()));
-                break;
-            case EVENT_PUBLISH:
-                publishEvent(event.getEventMessage(), event.getProcessDefKey());
-                break;
-            default:
-                break;
+    /**
+     * 事务提交后异步消费通知事件；无事务上下文时（fallbackExecution）直接异步执行
+     */
+    @Async("flowEventExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onNotifyEvent(FlowTaskNotifyEvent event) {
+        try {
+            switch (event.getType()) {
+                case TASK_TODO:
+                    sendTaskCreatedMessage(event.getFlowTask(), event.getBusiness(), event.getVariables());
+                    break;
+                case TASK_TODO_READ:
+                    markTaskTodoMessageRead(event.getTaskId(), event.getBusiness());
+                    break;
+                case PROCESS_CC:
+                    sendProcessCc(event.getBusiness(), event.getVariables());
+                    break;
+                case PROCESS_RESULT:
+                    sendProcessResult(event.getBusiness(), event.getVariables(),
+                            Boolean.TRUE.equals(event.getRejected()));
+                    break;
+                case EVENT_PUBLISH:
+                    publishEvent(event.getEventMessage(), event.getProcessDefKey());
+                    break;
+                default:
+                    break;
+            }
+        } catch (Exception e) {
+            log.warn("流程通知异步处理失败，不影响主流程: type={}", event.getType(), e);
         }
     }
 
@@ -166,22 +177,11 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
 
         if (todoConfig == null) {
             // 未配置通知矩阵：默认行为（站内信 + 企微卡片跟随连接开关）
-            RuntimeException failure = null;
-            try {
-                sendTaskWebMessage(flowTask, business, receiverIds, null, null);
-            } catch (Exception exception) {
-                failure = collectFailure(failure, "FLOW_TODO_WEB_DELIVERY_FAILED", exception);
-            }
-            try {
-                sendTaskCollaborationCard(flowTask, business, receiverIds, model, null, null, true);
-            } catch (Exception exception) {
-                failure = collectFailure(failure, "FLOW_TODO_COLLABORATION_DELIVERY_FAILED", exception);
-            }
-            throwIfFailed(failure);
+            sendTaskWebMessage(flowTask, business, receiverIds, null, null);
+            sendTaskCollaborationCard(flowTask, business, receiverIds, model, null, null, true);
             return;
         }
 
-        RuntimeException failure = null;
         for (String channel : todoConfig.getChannels()) {
             String normalized = channel == null ? "" : channel.trim().toUpperCase();
             try {
@@ -200,16 +200,13 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
                         break;
                     default:
                         log.warn("未知的待办通知渠道，跳过: taskId={}, channel={}", flowTask.getTaskId(), channel);
-                        throw new IllegalArgumentException("FLOW_TODO_CHANNEL_UNSUPPORTED");
                 }
             } catch (Exception e) {
-                // 继续尝试其他渠道，全部结束后交给 Outbox 统一重试。
-                log.warn("待办通知渠道推送失败，其他渠道继续: taskId={}, channel={}, failureType={}",
-                        flowTask.getTaskId(), channel, failureType(e));
-                failure = collectFailure(failure, "FLOW_TODO_CHANNEL_DELIVERY_FAILED", e);
+                // 单渠道失败不影响其他渠道
+                log.warn("待办通知渠道推送失败，不影响其他渠道: taskId={}, channel={}",
+                        flowTask.getTaskId(), channel, e);
             }
         }
-        throwIfFailed(failure);
     }
 
     /**
@@ -230,10 +227,13 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
         if (templateCode != null && !templateCode.isBlank()) {
             request.setTemplateCode(templateCode.trim());
         }
-        SysMessage message = runWithBusinessTenantResult(business,
-                () -> messageService.sendIfAbsent(request, FLOW_TODO_MESSAGE_BIZ_TYPE, flowTask.getTaskId()));
-        ensureMessageAccepted(message, "FLOW_TODO_WEB_DELIVERY_FAILED");
-        log.info("待办站内信已推送: taskId={}, receivers={}", flowTask.getTaskId(), receiverIds);
+        try {
+            runWithBusinessTenant(business,
+                    () -> messageService.sendIfAbsent(request, FLOW_TODO_MESSAGE_BIZ_TYPE, flowTask.getTaskId()));
+            log.info("待办站内信已推送: taskId={}, receivers={}", flowTask.getTaskId(), receiverIds);
+        } catch (Exception e) {
+            log.warn("待办站内信推送失败，不阻断流程: taskId={}", flowTask.getTaskId(), e);
+        }
     }
 
     /**
@@ -254,11 +254,14 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
         if (templateCode != null && !templateCode.isBlank()) {
             request.setTemplateCode(templateCode.trim());
         }
-        SysMessage message = runWithBusinessTenantResult(business,
-                () -> messageService.sendIfAbsent(request, FLOW_TODO_MESSAGE_BIZ_TYPE,
-                        flowTask.getTaskId() + ":" + channel));
-        ensureMessageAccepted(message, "FLOW_TODO_CHANNEL_DELIVERY_FAILED");
-        log.info("待办{}通知已推送: taskId={}, receivers={}", channel, flowTask.getTaskId(), receiverIds);
+        try {
+            runWithBusinessTenant(business,
+                    () -> messageService.sendIfAbsent(request, FLOW_TODO_MESSAGE_BIZ_TYPE,
+                            flowTask.getTaskId() + ":" + channel));
+            log.info("待办{}通知已推送: taskId={}, receivers={}", channel, flowTask.getTaskId(), receiverIds);
+        } catch (Exception e) {
+            log.warn("待办{}通知推送失败，不阻断流程: taskId={}", channel, flowTask.getTaskId(), e);
+        }
     }
 
     /** 待办消息基础模板变量 */
@@ -286,8 +289,7 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
 
     /**
      * 待办推送企业协同卡片消息（企微 textcard），卡片点击跳转 H5 待办详情。
-     * 推送开关与 H5 地址配置在企业连接管理（sys_social_config），未启用时静默跳过；
-     * 失败抛给 Outbox 调度器记录并重试，不回滚流程主事务。
+     * 推送开关与 H5 地址配置在企业连接管理（sys_social_config），未启用时静默跳过；失败不阻断流程。
      * 模型通知配置了 todo 事件 COLLABORATION 渠道时强制推送（不再依赖连接开关）；
      * templateCodeOverride 支持模型级模板编码覆盖。
      */
@@ -301,7 +303,8 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
         try {
             connection = runWithBusinessTenantResult(business, () -> resolveTodoPushConnection(requireConnectionSwitch));
         } catch (Exception e) {
-            throw new IllegalStateException("FLOW_TODO_CONNECTION_RESOLVE_FAILED", e);
+            log.warn("解析待办推送连接配置失败，跳过卡片推送: taskId={}", flowTask.getTaskId(), e);
+            return;
         }
         if (connection == null) {
             return;
@@ -309,9 +312,9 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
         String detailUrl = buildH5TodoDetailUrl(connection.getTodoPushH5Url(), flowTask, business, model);
         // 地址非法时企微渠道会整批拒绝（TEMPLATE_INVALID），在源头拦下并指明是连接配置问题
         if (!isHttpUrl(detailUrl)) {
-            log.warn("待办H5访问地址不是合法的http/https地址，跳过卡片推送: connectionId={}, taskId={}",
-                    connection.getId(), flowTask.getTaskId());
-            throw new IllegalStateException("FLOW_TODO_DETAIL_URL_INVALID");
+            log.warn("待办H5访问地址不是合法的http/https地址，跳过卡片推送: connectionId={}, taskId={}, h5Url={}",
+                    connection.getId(), flowTask.getTaskId(), connection.getTodoPushH5Url());
+            return;
         }
 
         // 卡片字段值统一转义并截断（企微 textcard.description 仅支持有限 HTML），整体控制在 512 字节内
@@ -332,7 +335,7 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
         sendCollaborationCardMessage(business, connection, receiverIds, params,
                 "您有新的流程待办", buildDefaultCardDescription(taskTitle, processName, startUserName),
                 DEFAULT_TODO_CARD_TEMPLATE, templateCodeOverride,
-                FLOW_TODO_MESSAGE_BIZ_TYPE, flowTask.getTaskId() + ":COLLABORATION");
+                FLOW_TODO_MESSAGE_BIZ_TYPE, flowTask.getTaskId() + ":COLLABORATION", detailUrl);
     }
 
     /**
@@ -343,7 +346,7 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
                                               Set<Long> receiverIds, Map<String, Object> params,
                                               String fallbackTitle, String fallbackContent,
                                               String defaultTemplateCode, String templateCodeOverride,
-                                              String bizType, String bizKey) {
+                                              String bizType, String bizKey, String detailUrl) {
         if (messageService == null) {
             return;
         }
@@ -365,10 +368,20 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
             request.setTitle(fallbackTitle);
             request.setContent(fallbackContent);
         }
-        SysMessage message = runWithBusinessTenantResult(business,
-                () -> messageService.sendIfAbsent(request, bizType, bizKey));
-        ensureMessageAccepted(message, "FLOW_COLLABORATION_CARD_DELIVERY_FAILED");
-        log.info("企业协同卡片已推送: bizKey={}, receivers={}", bizKey, receiverIds);
+        try {
+            SysMessage message = runWithBusinessTenantResult(business,
+                    () -> messageService.sendIfAbsent(request, bizType, bizKey));
+            // 逐人投递失败不抛异常，只体现在消息状态上，这里按结果打日志避免失败也报「已推送」
+            if (message != null && Integer.valueOf(2).equals(message.getStatus())) {
+                log.warn("企业协同卡片全部接收人投递失败，失败码见 sys_message_receiver.last_error_code: "
+                                + "bizKey={}, messageId={}, receivers={}, url={}",
+                        bizKey, message.getId(), receiverIds, detailUrl);
+            } else {
+                log.info("企业协同卡片已推送: bizKey={}, receivers={}, url={}", bizKey, receiverIds, detailUrl);
+            }
+        } catch (Exception e) {
+            log.warn("企业协同卡片推送失败，不阻断流程: bizKey={}", bizKey, e);
+        }
     }
 
     /**
@@ -403,7 +416,9 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
         return usable.get(0);
     }
 
-    /** 按流程定义 Key 加载流程模型（通知配置 + 深链模板复用）。 */
+    /**
+     * 按流程定义 Key 加载流程模型（通知配置 + 深链模板复用），查询失败返回 null
+     */
     private FlowModel loadFlowModel(FlowBusiness business) {
         if (business == null || business.getProcessDefKey() == null || flowModelMapper == null) {
             return null;
@@ -418,7 +433,8 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
             log.warn("查询流程模型时缺少可信租户上下文: processDefKey={}", business.getProcessDefKey());
             return null;
         } catch (Exception e) {
-            throw new IllegalStateException("FLOW_NOTIFY_MODEL_LOAD_FAILED", e);
+            log.debug("查询流程模型失败: processDefKey={}", business.getProcessDefKey(), e);
+            return null;
         }
     }
 
@@ -442,11 +458,15 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
         if (messageService == null || taskId == null || taskId.isBlank()) {
             return;
         }
-        final int[] updated = {0};
-        runWithBusinessTenant(business,
-                () -> updated[0] = messageService.markWebReadByBiz(FLOW_TODO_MESSAGE_BIZ_TYPE, taskId));
-        if (updated[0] > 0) {
-            log.info("待办站内信已自动置为已读: taskId={}, updated={}", taskId, updated[0]);
+        try {
+            final int[] updated = {0};
+            runWithBusinessTenant(business,
+                    () -> updated[0] = messageService.markWebReadByBiz(FLOW_TODO_MESSAGE_BIZ_TYPE, taskId));
+            if (updated[0] > 0) {
+                log.info("待办站内信已自动置为已读: taskId={}, updated={}", taskId, updated[0]);
+            }
+        } catch (Exception e) {
+            log.warn("待办站内信自动置已读失败，不阻断流程: taskId={}", taskId, e);
         }
     }
 
@@ -459,7 +479,6 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
             return;
         }
 
-        RuntimeException[] roleFailure = {null};
         Set<String> ccUserIds = runWithBusinessTenantResult(business, () -> {
             Set<String> resolvedUserIds = new LinkedHashSet<>();
             for (String roleKey : roleKeys) {
@@ -469,14 +488,12 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
                         resolvedUserIds.addAll(userIds);
                     }
                 } catch (Exception e) {
-                    log.warn("流程抄送角色解析失败: businessKey={}, roleKey={}, failureType={}",
-                            business.getBusinessKey(), roleKey, failureType(e));
-                    roleFailure[0] = collectFailure(roleFailure[0], "FLOW_CC_ROLE_RESOLVE_FAILED", e);
+                    log.warn("流程抄送角色解析失败: businessKey={}, roleKey={}",
+                            business.getBusinessKey(), roleKey, e);
                 }
             }
             return resolvedUserIds;
         });
-        throwIfFailed(roleFailure[0]);
         if (ccUserIds.isEmpty()) {
             log.warn("流程抄送未找到接收人: businessKey={}, roleKeys={}", business.getBusinessKey(), roleKeys);
             return;
@@ -484,17 +501,22 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
 
         List<String> userIds = new ArrayList<>(ccUserIds);
         if (flowCcService != null) {
-            runWithBusinessTenant(business, () -> flowCcService.sendCc(
-                    business.getProcessInstanceId(),
-                    business.getProcessDefKey(),
-                    null,
-                    business.getTitle(),
-                    "流程已通过，请知悉：" + safeText(business.getTitle(), business.getBusinessKey()),
-                    business.getBusinessKey(),
-                    userIds,
-                    resolveUserNames(userIds),
-                    business.getApplyUserId(),
-                    business.getApplyUserName()));
+            try {
+                runWithBusinessTenant(business, () -> flowCcService.sendCc(
+                        business.getProcessInstanceId(),
+                        business.getProcessDefKey(),
+                        null,
+                        business.getTitle(),
+                        "流程已通过，请知悉：" + safeText(business.getTitle(), business.getBusinessKey()),
+                        business.getBusinessKey(),
+                        userIds,
+                        resolveUserNames(userIds),
+                        business.getApplyUserId(),
+                        business.getApplyUserName()));
+            } catch (Exception e) {
+                log.warn("流程抄送发送失败，不阻断主流程: businessKey={}, ccUserIds={}",
+                        business.getBusinessKey(), userIds, e);
+            }
         } else {
             log.warn("流程抄送落库服务未初始化，仅继续执行配置化渠道通知: businessKey={}",
                     business.getBusinessKey());
@@ -529,7 +551,6 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
                 + resultText + "，请知悉。";
         String bizKey = safeText(business.getBusinessKey(), safeText(business.getProcessInstanceId(), "")) + ":RESULT";
 
-        RuntimeException failure = null;
         for (String channel : resultConfig.getChannels()) {
             String normalized = channel == null ? "" : channel.trim().toUpperCase();
             try {
@@ -547,15 +568,12 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
                     default:
                         log.warn("未知的审批结果通知渠道，跳过: businessKey={}, channel={}",
                                 business.getBusinessKey(), channel);
-                        throw new IllegalArgumentException("FLOW_RESULT_CHANNEL_UNSUPPORTED");
                 }
             } catch (Exception e) {
-                log.warn("审批结果通知渠道推送失败，其他渠道继续: businessKey={}, channel={}, failureType={}",
-                        business.getBusinessKey(), channel, failureType(e));
-                failure = collectFailure(failure, "FLOW_RESULT_CHANNEL_DELIVERY_FAILED", e);
+                log.warn("审批结果通知渠道推送失败，不影响其他渠道: businessKey={}, channel={}",
+                        business.getBusinessKey(), channel, e);
             }
         }
-        throwIfFailed(failure);
     }
 
     /**
@@ -578,10 +596,13 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
         if (templateCode != null && !templateCode.isBlank()) {
             request.setTemplateCode(templateCode.trim());
         }
-        SysMessage message = runWithBusinessTenantResult(business,
-                () -> messageService.sendIfAbsent(request, FLOW_RESULT_MESSAGE_BIZ_TYPE, bizKey + ":" + channel));
-        ensureMessageAccepted(message, "FLOW_RESULT_CHANNEL_DELIVERY_FAILED");
-        log.info("审批结果{}通知已推送: businessKey={}, receivers={}", channel, business.getBusinessKey(), receiverIds);
+        try {
+            runWithBusinessTenant(business,
+                    () -> messageService.sendIfAbsent(request, FLOW_RESULT_MESSAGE_BIZ_TYPE, bizKey + ":" + channel));
+            log.info("审批结果{}通知已推送: businessKey={}, receivers={}", channel, business.getBusinessKey(), receiverIds);
+        } catch (Exception e) {
+            log.warn("审批结果{}通知推送失败，不阻断流程: businessKey={}", channel, business.getBusinessKey(), e);
+        }
     }
 
     /**
@@ -597,7 +618,8 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
         try {
             connection = runWithBusinessTenantResult(business, () -> resolveTodoPushConnection(false));
         } catch (Exception e) {
-            throw new IllegalStateException("FLOW_RESULT_CONNECTION_RESOLVE_FAILED", e);
+            log.warn("解析审批结果推送连接配置失败，跳过卡片推送: businessKey={}", business.getBusinessKey(), e);
+            return;
         }
         if (connection == null) {
             return;
@@ -609,9 +631,9 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
         String detailUrl = appendH5BasePath(connection.getTodoPushH5Url(),
                 renderUrlTemplate(template, null, business));
         if (!isHttpUrl(detailUrl)) {
-            log.warn("审批结果H5访问地址不是合法的http/https地址，跳过卡片推送: connectionId={}",
-                    connection.getId());
-            throw new IllegalStateException("FLOW_RESULT_DETAIL_URL_INVALID");
+            log.warn("审批结果H5访问地址不是合法的http/https地址，跳过卡片推送: connectionId={}, h5Url={}",
+                    connection.getId(), connection.getTodoPushH5Url());
+            return;
         }
 
         String processName = cardText(safeText(business.getTitle(), business.getBusinessKey()), 60);
@@ -632,7 +654,7 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
                 rejected ? "流程审批结果：已驳回" : "流程审批结果：已通过",
                 buildDefaultResultCardDescription(processName, resultText, applyUserName),
                 DEFAULT_RESULT_CARD_TEMPLATE, templateCodeOverride,
-                FLOW_RESULT_MESSAGE_BIZ_TYPE, bizKey + ":COLLABORATION");
+                FLOW_RESULT_MESSAGE_BIZ_TYPE, bizKey + ":COLLABORATION", detailUrl);
     }
 
     /**
@@ -654,7 +676,6 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
         String content = "流程「" + safeText(business.getTitle(), business.getBusinessKey()) + "」已通过，请知悉。";
         String bizKey = safeText(business.getBusinessKey(), safeText(business.getProcessInstanceId(), "")) + ":CC";
 
-        RuntimeException failure = null;
         for (String channel : ccConfig.getChannels()) {
             String normalized = channel == null ? "" : channel.trim().toUpperCase();
             try {
@@ -675,10 +696,9 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
                         if (ccConfig.getTemplateCode() != null && !ccConfig.getTemplateCode().isBlank()) {
                             request.setTemplateCode(ccConfig.getTemplateCode().trim());
                         }
-                        SysMessage message = runWithBusinessTenantResult(business,
+                        runWithBusinessTenant(business,
                                 () -> messageService.sendIfAbsent(request, FLOW_CC_MESSAGE_BIZ_TYPE,
                                         bizKey + ":" + normalized));
-                        ensureMessageAccepted(message, "FLOW_CC_CHANNEL_DELIVERY_FAILED");
                         log.info("流程抄送{}通知已推送: businessKey={}, receivers={}",
                                 normalized, business.getBusinessKey(), receiverIds);
                         break;
@@ -688,15 +708,12 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
                     default:
                         log.warn("未知的抄送通知渠道，跳过: businessKey={}, channel={}",
                                 business.getBusinessKey(), channel);
-                        throw new IllegalArgumentException("FLOW_CC_CHANNEL_UNSUPPORTED");
                 }
             } catch (Exception e) {
-                log.warn("流程抄送通知渠道推送失败，其他渠道继续: businessKey={}, channel={}, failureType={}",
-                        business.getBusinessKey(), channel, failureType(e));
-                failure = collectFailure(failure, "FLOW_CC_CHANNEL_DELIVERY_FAILED", e);
+                log.warn("流程抄送通知渠道推送失败，不影响其他渠道: businessKey={}, channel={}",
+                        business.getBusinessKey(), channel, e);
             }
         }
-        throwIfFailed(failure);
     }
 
     /**
@@ -711,7 +728,8 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
         try {
             connection = runWithBusinessTenantResult(business, () -> resolveTodoPushConnection(false));
         } catch (Exception e) {
-            throw new IllegalStateException("FLOW_CC_CONNECTION_RESOLVE_FAILED", e);
+            log.warn("解析抄送推送连接配置失败，跳过卡片推送: businessKey={}", business.getBusinessKey(), e);
+            return;
         }
         if (connection == null) {
             return;
@@ -723,9 +741,9 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
         String detailUrl = appendH5BasePath(connection.getTodoPushH5Url(),
                 renderUrlTemplate(template, null, business));
         if (!isHttpUrl(detailUrl)) {
-            log.warn("抄送H5访问地址不是合法的http/https地址，跳过卡片推送: connectionId={}",
-                    connection.getId());
-            throw new IllegalStateException("FLOW_CC_DETAIL_URL_INVALID");
+            log.warn("抄送H5访问地址不是合法的http/https地址，跳过卡片推送: connectionId={}, h5Url={}",
+                    connection.getId(), connection.getTodoPushH5Url());
+            return;
         }
 
         String processName = cardText(safeText(business.getTitle(), business.getBusinessKey()), 60);
@@ -740,7 +758,7 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
         sendCollaborationCardMessage(business, connection, receiverIds, params,
                 "流程抄送通知", buildDefaultCcCardDescription(processName),
                 DEFAULT_CC_CARD_TEMPLATE, templateCodeOverride,
-                FLOW_CC_MESSAGE_BIZ_TYPE, bizKey + ":COLLABORATION");
+                FLOW_CC_MESSAGE_BIZ_TYPE, bizKey + ":COLLABORATION", detailUrl);
     }
 
     /** 结果/抄送消息基础模板变量 */
@@ -847,7 +865,7 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
      * 统一发布流程事件：根据 FlowModel.notifyType 互斥选择通知方式
      *
      * <ul>
-     *   <li>{@code redis}   → 方案B: Redis Stream（同步 XADD，消费后 ACK）</li>
+     *   <li>{@code redis}   → 方案B: Redis Pub/Sub</li>
      *   <li>{@code webhook} → 方案C: HTTP Webhook（读取 FlowModel.webhookUrl）</li>
      *   <li>{@code none} 或未配置 → 不发送任何通知</li>
      * </ul>
@@ -879,12 +897,12 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
                 return;
             }
 
-            // 方案B: Redis Stream；发布异常向上抛出，由通知 Outbox 重试。
+            // 方案B: Redis Pub/Sub
             if ("redis".equalsIgnoreCase(notifyType)) {
                 if (flowEventPublisher != null) {
                     flowEventPublisher.publish(message);
                 } else {
-                    throw new IllegalStateException("FLOW_EVENT_REDIS_PUBLISHER_REQUIRED");
+                    log.warn("[FlowEvent] notifyType=redis 但 FlowEventPublisher 未初始化（请确认已引入 spring-boot-starter-data-redis）");
                 }
                 return;
             }
@@ -894,15 +912,15 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
                 if (model.getWebhookUrl() != null && !model.getWebhookUrl().isBlank()) {
                     flowWebhookNotifier.notify(model.getWebhookUrl(), message);
                 } else {
-                    throw new IllegalStateException("FLOW_EVENT_WEBHOOK_URL_REQUIRED");
+                    log.warn("[FlowEvent] notifyType=webhook 但 webhookUrl 未配置: processDefKey={}", processDefKey);
                 }
                 return;
             }
 
-            throw new IllegalStateException("FLOW_EVENT_NOTIFY_TYPE_UNSUPPORTED");
+            log.warn("[FlowEvent] 未知的 notifyType={}，跳过通知", notifyType);
 
         } catch (Exception e) {
-            throw new IllegalStateException("FLOW_EVENT_DELIVERY_FAILED", e);
+            log.warn("[FlowEvent] 发布事件失败，不影响主流程: processDefKey={}, error={}", processDefKey, e.getMessage(), e);
         }
     }
 
@@ -917,33 +935,6 @@ public class FlowTaskNotifyListener implements FlowTaskNotificationHandler {
             log.warn("[FlowEvent] tenantId 格式错误，按当前上下文发布: tenantId={}", tenantId);
             return null;
         }
-    }
-
-    private void ensureMessageAccepted(SysMessage message, String failureCode) {
-        if (message == null || MessageSendStatus.FAILED.matches(message.getStatus())
-                || MessageSendStatus.SENDING.matches(message.getStatus())) {
-            throw new IllegalStateException(failureCode);
-        }
-    }
-
-    private RuntimeException collectFailure(RuntimeException current, String failureCode, Exception failure) {
-        RuntimeException wrapped = new IllegalStateException(failureCode, failure);
-        if (current == null) {
-            return wrapped;
-        }
-        current.addSuppressed(wrapped);
-        return current;
-    }
-
-    private void throwIfFailed(RuntimeException failure) {
-        if (failure != null) {
-            throw failure;
-        }
-    }
-
-    private String failureType(Throwable failure) {
-        String simpleName = failure == null ? null : failure.getClass().getSimpleName();
-        return simpleName == null || simpleName.isBlank() ? "UnknownFailure" : simpleName;
     }
 
     private void runWithBusinessTenant(FlowBusiness business, Runnable action) {

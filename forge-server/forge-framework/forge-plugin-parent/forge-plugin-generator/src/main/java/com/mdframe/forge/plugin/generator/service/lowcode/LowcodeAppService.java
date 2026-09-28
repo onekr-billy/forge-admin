@@ -19,6 +19,7 @@ import com.mdframe.forge.plugin.generator.service.AiCrudConfigService;
 import com.mdframe.forge.plugin.generator.vo.lowcode.LowcodeAppDetailVO;
 import com.mdframe.forge.starter.core.domain.PageQuery;
 import com.mdframe.forge.starter.core.exception.BusinessException;
+import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -52,11 +53,10 @@ public class LowcodeAppService {
 
     public Page<LowcodeAppDetailVO> page(PageQuery pageQuery, String keyword, String publishStatus,
                                          Long domainId, String domainCode, Boolean generalDomain) {
-        Long tenantId = requireTenantId();
         List<Long> domainIds = domainId == null ? null : domainService.collectDescendantIds(domainId);
         return configMapper.selectLowcodePage(
                 new Page<>(pageQuery.getPageNum(), pageQuery.getPageSize()),
-                tenantId,
+                resolveTenantId(),
                 StringUtils.trimToNull(keyword),
                 StringUtils.trimToNull(publishStatus),
                 domainIds,
@@ -69,7 +69,6 @@ public class LowcodeAppService {
         if (dto == null) {
             throw new BusinessException("草稿不能为空");
         }
-        requireTenantId();
         AiCrudConfig config = dto.getId() == null ? createDraft(dto) : updateDraft(dto);
         return config.getId();
     }
@@ -101,7 +100,6 @@ public class LowcodeAppService {
     }
 
     public AiCrudConfigRenderVO preview(Long id, LowcodeAppDraftDTO draft) {
-        requireTenantId();
         AiCrudConfig existing = id == null ? null : requireConfig(id);
         String configKey = resolveConfigKey(existing, draft);
         DomainAssignment assignment = resolveDomainAssignment(existing, draft, false);
@@ -141,10 +139,8 @@ public class LowcodeAppService {
         if (id == null) {
             throw new BusinessException("低代码应用ID不能为空");
         }
-        Long tenantId = requireTenantId();
         AiCrudConfig config = configService.getById(id);
-        if (config == null || !"LOWCODE".equals(config.getBuildMode())
-                || config.getTenantId() == null || !tenantId.equals(config.getTenantId())) {
+        if (config == null || !"LOWCODE".equals(config.getBuildMode())) {
             throw new BusinessException("低代码应用不存在");
         }
         return config;
@@ -245,7 +241,7 @@ public class LowcodeAppService {
         schemaValidator.validatePage(pageSchema, modelSchema);
 
         AiCrudConfig config = new AiCrudConfig();
-        config.setTenantId(requireTenantId());
+        config.setTenantId(resolveTenantId());
         applyDomainFields(config, assignment.domain(), assignment.objectCode(), assignment.objectName());
         config.setConfigKey(dto.getConfigKey());
         config.setTableName(modelSchema.getTableName());
@@ -583,8 +579,14 @@ public class LowcodeAppService {
         }
     }
 
-    private Long requireTenantId() {
-        return LowcodeTenantContext.requireTenantId("低代码应用");
+    private Long resolveTenantId() {
+        Long tenantId;
+        try {
+            tenantId = SessionHelper.getTenantId();
+        } catch (Exception e) {
+            tenantId = null;
+        }
+        return tenantId != null ? tenantId : 1L;
     }
 
     private record DomainAssignment(AiLowcodeDomain domain, String objectCode, String objectName) {

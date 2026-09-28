@@ -15,7 +15,6 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -40,9 +39,6 @@ class FlowWebhookNotifierTest {
         assertEquals("POST", request.getMethod());
         assertEquals("application/json", request.getContentType());
         assertEquals("PROCESS_COMPLETED", request.getHeaders().get("X-Flow-Event-Type"));
-        assertEquals("event-1", request.getHeaders().get("X-Flow-Event-Id"));
-        assertEquals("1", request.getHeaders().get("X-Flow-Event-Version"));
-        assertEquals("42", request.getHeaders().get("X-Flow-Event-Sequence"));
         assertEquals("leave", request.getHeaders().get("X-Flow-Process-Key"));
         assertEquals("biz-1", request.getHeaders().get("X-Flow-Business-Key"));
         assertFalse(request.getHeaders().keySet().stream()
@@ -64,34 +60,9 @@ class FlowWebhookNotifierTest {
         verify(client, times(2)).execute(any());
     }
 
-    @Test
-    void shouldSurfaceFinalFailureForOutboxRetry() {
-        SecureOutboundClient client = mock(SecureOutboundClient.class);
-        when(client.execute(any())).thenThrow(new IllegalStateException("secret-url"));
-        FlowWebhookNotifier notifier = new FlowWebhookNotifier(client, objectMapper(), 0);
-
-        assertThrows(IllegalStateException.class,
-                () -> notifier.notify("https://hooks.example.com/callback?token=hidden", message()));
-        verify(client, times(2)).execute(any());
-    }
-
-    @Test
-    void shouldRedactWebhookCredentialsPathAndFailureMessageFromLogFields() {
-        assertEquals("https://hooks.example.com:8443",
-                FlowWebhookNotifier.safeTarget(
-                        "https://user:password@hooks.example.com:8443/callback?token=hidden#fragment"));
-        assertEquals("<invalid>", FlowWebhookNotifier.safeTarget("not-a-url?token=hidden"));
-        assertEquals("IllegalStateException",
-                FlowWebhookNotifier.safeFailureType(
-                        new IllegalStateException("https://hooks.example.com/callback?token=hidden")));
-    }
-
     private FlowEventMessage message() {
         return FlowEventMessage.builder()
                 .eventType(FlowEventMessage.PROCESS_COMPLETED)
-                .eventId("event-1")
-                .eventVersion(1)
-                .eventSequence(42L)
                 .eventTime(LocalDateTime.of(2026, 7, 20, 12, 0))
                 .processDefKey("leave")
                 .businessKey("biz-1")

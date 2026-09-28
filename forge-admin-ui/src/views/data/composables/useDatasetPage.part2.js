@@ -945,7 +945,6 @@ export function applyDatasetPagePart2(deps = {}) {
 
     try {
       const res = await request.post('/data/dataset/preview-sql', {
-        id: formData.id,
         connectionId: formData.connectionId,
         sqlText: formData.sqlText,
         maxRows: 5,

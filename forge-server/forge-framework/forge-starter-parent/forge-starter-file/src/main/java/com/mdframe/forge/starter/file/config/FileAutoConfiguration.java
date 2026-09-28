@@ -1,10 +1,6 @@
 package com.mdframe.forge.starter.file.config;
 
-import com.mdframe.forge.starter.cache.service.ICacheService;
 import com.mdframe.forge.starter.file.core.FileManager;
-import com.mdframe.forge.starter.file.multipart.InMemoryMultipartUploadSessionStore;
-import com.mdframe.forge.starter.file.multipart.MultipartUploadSessionStore;
-import com.mdframe.forge.starter.file.multipart.RedisMultipartUploadSessionStore;
 import com.mdframe.forge.starter.file.spi.StorageConfigProvider;
 import com.mdframe.forge.starter.file.storage.FileStorage;
 import com.mdframe.forge.starter.file.storage.impl.LocalFileStorage;
@@ -13,11 +9,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
-import org.redisson.api.RedissonClient;
 import java.util.List;
 
 /**
@@ -47,19 +41,6 @@ public class FileAutoConfiguration implements InitializingBean {
     @ConditionalOnMissingBean(LocalFileStorage.class)
     public LocalFileStorage localFileStorage() {
         return new LocalFileStorage();
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public static MultipartUploadSessionStore multipartUploadSessionStore(
-            ObjectProvider<ICacheService> cacheServiceProvider,
-            ObjectProvider<RedissonClient> redissonClientProvider) {
-        ICacheService cacheService = cacheServiceProvider.getIfAvailable();
-        RedissonClient redissonClient = redissonClientProvider.getIfAvailable();
-        if (cacheService != null && redissonClient != null) {
-            return new RedisMultipartUploadSessionStore(cacheService, redissonClient);
-        }
-        return new InMemoryMultipartUploadSessionStore();
     }
     
     public void init() {

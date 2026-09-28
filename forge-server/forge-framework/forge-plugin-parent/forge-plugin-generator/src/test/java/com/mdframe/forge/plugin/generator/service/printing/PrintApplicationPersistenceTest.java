@@ -14,10 +14,7 @@ import com.mdframe.forge.plugin.print.mapper.PrintTemplateVersionMapper;
 import com.mdframe.forge.plugin.print.protocol.PrintProtocolValidator;
 import com.mdframe.forge.plugin.print.service.PrintIdentity;
 import com.mdframe.forge.plugin.print.spi.PrintActor;
-import com.mdframe.forge.starter.core.context.ExecutionIdentity;
-import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.exception.BusinessException;
-import com.mdframe.forge.starter.core.session.LoginUser;
 import jakarta.validation.Validation;
 import jakarta.validation.ValidatorFactory;
 import org.apache.ibatis.builder.xml.XMLMapperBuilder;
@@ -41,7 +38,6 @@ import java.sql.Connection;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -70,10 +66,8 @@ class PrintApplicationPersistenceTest {
     private PrintTemplateMapper templateMapper;
     private PrintTemplateVersionMapper printVersionMapper;
     private com.mdframe.forge.plugin.generator.mapper.AiCrudConfigMapper configs;
-    private ExecutionIdentityContextHolder.Scope identityScope;
 
     @BeforeEach void setup() throws Exception {
-        identityScope = openIdentity();
         var ds = new JdbcDataSource();
         ds.setURL("jdbc:h2:mem:app_print_" + UUID.randomUUID() + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;LOCK_TIMEOUT=2000");
         anchor = ds.getConnection(); jdbc = new JdbcTemplate(ds);
@@ -146,8 +140,6 @@ class PrintApplicationPersistenceTest {
     }
 
     @AfterEach void close() throws Exception {
-        if (identityScope != null) { identityScope.close(); }
-        ExecutionIdentityContextHolder.clear();
         if (validation != null) { validation.close(); }
         if (anchor != null) { anchor.close(); }
     }
@@ -207,12 +199,7 @@ class PrintApplicationPersistenceTest {
                 catch (InterruptedException ex) { Thread.currentThread().interrupt(); throw new AssertionError(ex); }
             }));
             assertThat(locked.await(5, TimeUnit.SECONDS)).isTrue();
-            var second = executor.submit(() -> {
-                started.countDown();
-                try (var ignored = openIdentity()) {
-                    return commit(service, 1, candidate, false);
-                }
-            });
+            var second = executor.submit(() -> { started.countDown(); return commit(service, 1, candidate, false); });
             assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
             assertThatThrownBy(() -> second.get(150, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
             release.countDown(); first.get(5, TimeUnit.SECONDS);
@@ -284,16 +271,5 @@ class PrintApplicationPersistenceTest {
         var proxy = new ProxyFactory(target); proxy.setProxyTargetClass(true);
         proxy.addAdvice(new TransactionInterceptor(transactionManager, new AnnotationTransactionAttributeSource()));
         return (BusinessApplicationVersionService) proxy.getProxy();
-    }
-
-    private ExecutionIdentityContextHolder.Scope openIdentity() {
-        LoginUser user = new LoginUser();
-        user.setTenantId(1L);
-        user.setUserId(9L);
-        user.setUsername("print-publisher");
-        user.setActiveOrgId(1L);
-        return ExecutionIdentityContextHolder.open(new ExecutionIdentity(
-                user, "USER", 9L, null, 301L,
-                "print_persistence_test", "token-print-persistence", Set.of()));
     }
 }

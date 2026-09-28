@@ -64,14 +64,13 @@ public class BusinessApplicationRollbackService {
                                                        Integer sourceVersionNo,
                                                        BusinessApplicationRollbackDTO dto,
                                                        String idempotencyKey) {
-        IdentitySnapshot identity = requireIdentity();
         AiBusinessApplicationPublishRun existing = runService.findByIdempotencyKey(applicationId, idempotencyKey);
         if (existing != null) {
             return toResult(existing, existingRunMessage(existing));
         }
         AiBusinessApplicationVersion source = versionService.requireVersion(applicationId, sourceVersionNo);
         Map<String, Object> candidateMap = snapshotService.parse(source.getSnapshotJson());
-        assertCompatible(identity.tenantId(), applicationId, candidateMap);
+        assertCompatible(applicationId, candidateMap);
         prepareRollbackCandidate(candidateMap, sourceVersionNo);
         SnapshotBundle candidate = snapshotService.bundle(candidateMap);
         BusinessApplicationAssetSelectionVO selection = resolveSelection(candidateMap);
@@ -92,14 +91,13 @@ public class BusinessApplicationRollbackService {
 
     public BusinessApplicationPublishResultVO resume(AiBusinessApplicationPublishRun run,
                                                      BusinessApplicationRollbackDTO dto) {
-        IdentitySnapshot identity = requireIdentity();
         String step = run.getCurrentStep();
         try {
             Map<String, Object> snapshot = snapshotService.parse(run.getSnapshotJson());
             if (!runService.isStepComplete(run, BusinessApplicationPublishStep.PRECHECK)) {
                 step = BusinessApplicationPublishStep.PRECHECK;
                 run = runService.markStepRunning(run, step);
-                assertCompatible(identity.tenantId(), run.getApplicationId(), snapshot);
+                assertCompatible(run.getApplicationId(), snapshot);
                 run = runService.markStepSuccess(run, step, "历史版本兼容性检查通过");
             }
             if (!runService.isStepComplete(run, BusinessApplicationPublishStep.SNAPSHOT)) {
@@ -131,7 +129,7 @@ public class BusinessApplicationRollbackService {
                 snapshot = snapshotService.parse(run.getSnapshotJson());
                 applicationService.restoreSnapshotMetadata(run.getApplicationId(), map(snapshot.get("application")));
                 businessAppService.restoreSnapshotEntries(run.getApplicationId(), listOfMap(snapshot.get("entries")));
-                restoreBindings(identity.tenantId(), run.getApplicationId(), listOfMap(snapshot.get("bindings")));
+                restoreBindings(run.getApplicationId(), listOfMap(snapshot.get("bindings")));
                 run = runService.markStepSuccess(run, step, "页面入口和应用挂接配置已恢复");
             }
             if (!runService.isStepComplete(run, BusinessApplicationPublishStep.PAGE_MENUS)) {
@@ -146,7 +144,7 @@ public class BusinessApplicationRollbackService {
                 step = BusinessApplicationPublishStep.EXTENSIONS;
                 run = runService.markStepRunning(run, step);
                 snapshot = snapshotService.parse(run.getSnapshotJson());
-                restoreExtensions(identity.tenantId(), run.getApplicationId(), listOfMap(snapshot.get("extensions")));
+                restoreExtensions(run.getApplicationId(), listOfMap(snapshot.get("extensions")));
                 run = runService.markStepSuccess(run, step, "扩展运行版本已恢复");
             }
             if (!runService.isStepComplete(run, BusinessApplicationPublishStep.COMMIT)) {
@@ -185,7 +183,7 @@ public class BusinessApplicationRollbackService {
         return run;
     }
 
-    private void assertCompatible(Long tenantId, Long applicationId, Map<String, Object> snapshot) {
+    private void assertCompatible(Long applicationId, Map<String, Object> snapshot) {
         Map<Long, Long> objectVersions = objectVersionMap(firstNonNull(
                 snapshot.get("rollbackSourceObjectVersions"), snapshot.get("publishedObjectVersions")));
         if (objectVersions.isEmpty()) {
@@ -220,18 +218,18 @@ public class BusinessApplicationRollbackService {
             }
         }
         Map<Long, AiBusinessExtension> extensions = extensionMapper
-                .selectByApplicationId(tenantId, applicationId).stream()
+                .selectByApplicationId(resolveTenantId(), applicationId).stream()
                 .collect(Collectors.toMap(AiBusinessExtension::getId, Function.identity()));
         for (Map<String, Object> extension : listOfMap(snapshot.get("extensions"))) {
             Long extensionId = longValue(extension.get("id"));
             Integer enabledVersion = integerValue(extension.get("enabledVersion"));
             if (!extensions.containsKey(extensionId)
                     || enabledVersion == null
-                    || extensionVersionMapper.selectVersion(tenantId, extensionId, enabledVersion) == null) {
+                    || extensionVersionMapper.selectVersion(resolveTenantId(), extensionId, enabledVersion) == null) {
                 throw new BusinessException("历史版本依赖的扩展版本已不存在: " + extensionId);
             }
         }
-        Set<Long> currentBindings = bindingMapper.selectByApplication(tenantId, applicationId).stream()
+        Set<Long> currentBindings = bindingMapper.selectByApplication(resolveTenantId(), applicationId).stream()
                 .map(AiBusinessBinding::getId).collect(Collectors.toSet());
         for (Map<String, Object> binding : listOfMap(snapshot.get("bindings"))) {
             Long bindingId = longValue(binding.get("id"));
@@ -274,11 +272,11 @@ public class BusinessApplicationRollbackService {
                 .toList();
     }
 
-    private void restoreBindings(Long tenantId, Long applicationId, List<Map<String, Object>> snapshots) {
+    private void restoreBindings(Long applicationId, List<Map<String, Object>> snapshots) {
         for (Map<String, Object> snapshot : snapshots) {
             Long bindingId = longValue(snapshot.get("id"));
             String config = writeOptionalJson(snapshot.get("bindingConfig"));
-            int changed = bindingMapper.restoreApplicationBinding(tenantId, applicationId, bindingId,
+            int changed = bindingMapper.restoreApplicationBinding(resolveTenantId(), applicationId, bindingId,
                     config, integerValue(snapshot.get("status")), integerValue(snapshot.get("sortOrder")));
             if (changed == 0) {
                 throw new BusinessException("应用挂接恢复失败: " + bindingId);
@@ -286,12 +284,12 @@ public class BusinessApplicationRollbackService {
         }
     }
 
-    private void restoreExtensions(Long tenantId, Long applicationId, List<Map<String, Object>> snapshots) {
+    private void restoreExtensions(Long applicationId, List<Map<String, Object>> snapshots) {
         for (Map<String, Object> snapshot : snapshots) {
             Long extensionId = longValue(snapshot.get("id"));
             Integer enabledVersion = integerValue(snapshot.get("enabledVersion"));
             String status = StringUtils.defaultIfBlank(text(snapshot.get("status")), "ENABLED");
-            if (extensionMapper.restoreEnabledVersion(tenantId, applicationId, extensionId,
+            if (extensionMapper.restoreEnabledVersion(resolveTenantId(), applicationId, extensionId,
                     status, enabledVersion) == 0) {
                 throw new BusinessException("扩展运行版本恢复失败: " + extensionId);
             }
@@ -418,25 +416,12 @@ public class BusinessApplicationRollbackService {
         return value == null ? null : String.valueOf(value);
     }
 
-    private IdentitySnapshot requireIdentity() {
-        Long tenantId;
-        Long userId;
+    private Long resolveTenantId() {
         try {
-            tenantId = SessionHelper.getTenantId();
-            userId = SessionHelper.getUserId();
+            Long tenantId = SessionHelper.getTenantId();
+            return tenantId == null ? 1L : tenantId;
         } catch (Exception e) {
-            tenantId = null;
-            userId = null;
+            return 1L;
         }
-        if (tenantId == null || tenantId <= 0) {
-            throw new BusinessException("应用回滚缺少可信租户上下文");
-        }
-        if (userId == null || userId <= 0) {
-            throw new BusinessException("应用回滚缺少可信操作者");
-        }
-        return new IdentitySnapshot(tenantId, userId);
-    }
-
-    private record IdentitySnapshot(Long tenantId, Long userId) {
     }
 }

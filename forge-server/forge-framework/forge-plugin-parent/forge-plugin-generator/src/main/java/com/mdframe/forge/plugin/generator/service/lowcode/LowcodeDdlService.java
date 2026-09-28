@@ -15,7 +15,6 @@ import com.mdframe.forge.starter.core.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
@@ -113,16 +112,6 @@ public class LowcodeDdlService {
 
     @Transactional(rollbackFor = Exception.class)
     public void executeCreateTable(LowcodeModelSchema modelSchema) {
-        executeCreateTableInternal(modelSchema);
-    }
-
-    /** 发布工作流专用：显式挂起本地事务，避免暗示目标数据源 DDL 可被主库事务回滚。 */
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    public void executeCreateTableWithoutTransaction(LowcodeModelSchema modelSchema) {
-        executeCreateTableInternal(modelSchema);
-    }
-
-    private void executeCreateTableInternal(LowcodeModelSchema modelSchema) {
         LowcodeDdlPreviewVO preview = previewCreateTable(modelSchema);
         if (!Boolean.TRUE.equals(preview.getExecutable())) {
             throw new BusinessException("DDL预览不可执行");

@@ -8,50 +8,18 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessExtensionVersi
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessExtensionVersionDTO;
 import com.mdframe.forge.plugin.generator.mapper.BusinessExtensionMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessExtensionVersionMapper;
-import com.mdframe.forge.starter.core.context.ExecutionIdentity;
-import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
-import com.mdframe.forge.starter.core.exception.BusinessException;
-import com.mdframe.forge.starter.core.session.LoginUser;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 
 @DisplayName("BusinessExtensionVersionService")
 class BusinessExtensionVersionServiceTest {
-
-    private ExecutionIdentityContextHolder.Scope identityScope;
-
-    @BeforeEach
-    void setUpIdentity() {
-        LoginUser user = new LoginUser();
-        user.setTenantId(1L);
-        user.setUserId(101L);
-        user.setUsername("extension-editor");
-        identityScope = ExecutionIdentityContextHolder.open(new ExecutionIdentity(
-                user, "USER", 101L, null, 301L,
-                "extension_version_test", "token-extension-version", Set.of()));
-    }
-
-    @AfterEach
-    void clearIdentity() {
-        if (identityScope != null) {
-            identityScope.close();
-        }
-        ExecutionIdentityContextHolder.clear();
-    }
 
     @Test
     @DisplayName("saving content appends a version and preserves the enabled runtime version")
@@ -81,10 +49,9 @@ class BusinessExtensionVersionServiceTest {
             }
             return defaultValue(method);
         });
-        BusinessApplicationChangeTracker changeTracker = mock(BusinessApplicationChangeTracker.class);
         BusinessExtensionVersionService service = new BusinessExtensionVersionService(
                 extensionMapper, new PermissiveLockService(extensionMapper), new ObjectMapper(),
-                new BusinessExtensionStateMachine(), changeTracker);
+                new BusinessExtensionStateMachine(), null);
         setBaseMapper(service, versionMapper);
         BusinessExtensionVersionDTO dto = new BusinessExtensionVersionDTO();
         dto.setContent("return { changed: true }");
@@ -97,8 +64,6 @@ class BusinessExtensionVersionServiceTest {
         assertEquals(BusinessExtensionStatus.DRAFT.getCode(), nextStatus.get());
         assertEquals(3, extension.getEnabledVersion());
         assertEquals(4, inserted.get().getVersionNo());
-        assertEquals(1L, inserted.get().getTenantId());
-        verify(changeTracker).markApplicationChanged(1L, extension.getApplicationId());
     }
 
     @Test
@@ -129,10 +94,9 @@ class BusinessExtensionVersionServiceTest {
             }
             return defaultValue(method);
         });
-        BusinessApplicationChangeTracker changeTracker = mock(BusinessApplicationChangeTracker.class);
         BusinessExtensionVersionService service = new BusinessExtensionVersionService(
                 extensionMapper, new PermissiveLockService(extensionMapper), new ObjectMapper(),
-                new BusinessExtensionStateMachine(), changeTracker);
+                new BusinessExtensionStateMachine(), null);
         setBaseMapper(service, versionMapper);
 
         Integer rollbackVersion = service.rollback(extension.getId(), 1, "lock-token");
@@ -142,30 +106,6 @@ class BusinessExtensionVersionServiceTest {
         assertEquals(4, inserted.get().getVersionNo());
         assertNotEquals(source.getId(), inserted.get().getId());
         assertEquals(source.getContent(), inserted.get().getContent());
-        verify(changeTracker).markApplicationChanged(1L, extension.getApplicationId());
-    }
-
-    @Test
-    @DisplayName("missing trusted identity is rejected before lock validation and persistence")
-    void missingIdentityIsRejectedBeforeLockValidation() throws Exception {
-        identityScope.close();
-        identityScope = null;
-        BusinessExtensionMapper extensionMapper = mock(BusinessExtensionMapper.class);
-        BusinessExtensionVersionMapper versionMapper = mock(BusinessExtensionVersionMapper.class);
-        BusinessExtensionLockService lockService = mock(BusinessExtensionLockService.class);
-        BusinessApplicationChangeTracker changeTracker = mock(BusinessApplicationChangeTracker.class);
-        BusinessExtensionVersionService service = new BusinessExtensionVersionService(
-                extensionMapper, lockService, new ObjectMapper(),
-                new BusinessExtensionStateMachine(), changeTracker);
-        setBaseMapper(service, versionMapper);
-        BusinessExtensionVersionDTO dto = new BusinessExtensionVersionDTO();
-        dto.setLockToken("lock-token");
-
-        BusinessException error = assertThrows(BusinessException.class,
-                () -> service.saveDraft(9L, dto));
-
-        assertEquals("扩展版本操作缺少可信租户上下文", error.getMessage());
-        verifyNoInteractions(extensionMapper, versionMapper, lockService, changeTracker);
     }
 
     private AiBusinessExtension enabledExtension() {

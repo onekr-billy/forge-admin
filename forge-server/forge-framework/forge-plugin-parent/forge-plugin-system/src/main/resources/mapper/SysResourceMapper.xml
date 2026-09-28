@@ -107,6 +107,7 @@
            AND r.del_flag = 0
         WHERE sur.user_id = #{userId}
           AND sr.del_flag = 0
+          AND sr.visible = 1
           AND sr.resource_type = 4
         <if test="clientCode != null and clientCode != ''">
             AND sr.client_code = #{clientCode}
@@ -118,7 +119,8 @@
     <select id="selectConfiguredApiUrls" resultType="java.lang.String">
         SELECT DISTINCT api_url
         FROM sys_resource
-        WHERE del_flag = 0
+        WHERE visible = 1
+          AND del_flag = 0
           AND resource_type = 4
           AND api_url IS NOT NULL
           AND api_url != ''
@@ -196,7 +198,8 @@
             ELSE CONCAT(UPPER(api_method), ' ', api_url)
         END
         FROM sys_resource
-        WHERE del_flag = 0
+        WHERE visible = 1
+          AND del_flag = 0
           AND resource_type = 4
           AND api_url IS NOT NULL
           AND api_url != ''

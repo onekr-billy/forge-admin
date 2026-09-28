@@ -17,7 +17,6 @@ import java.io.StringReader;
 import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -29,92 +28,7 @@ import java.util.Set;
  */
 public final class BpmnXmlUtils {
 
-    private static final Set<String> EXECUTABLE_NODE_TYPES = Set.of(
-            "startEvent", "endEvent", "userTask", "serviceTask", "scriptTask",
-            "exclusiveGateway", "parallelGateway", "inclusiveGateway", "callActivity", "subProcess",
-            "transaction", "adHocSubProcess");
-
     private BpmnXmlUtils() {
-    }
-
-    /**
-     * Parses BPMN through the hardened XML parser and exposes only the structural
-     * metadata needed by deployment preflight checks. This avoids regex-based XML
-     * interpretation and therefore supports namespaces, attribute reordering and
-     * either quote style without broadening the accepted execution surface.
-     */
-    public static BpmnAnalysis analyze(String bpmnXml) {
-        if (bpmnXml == null || bpmnXml.isBlank()) {
-            throw new RuntimeException("BPMN XML 不能为空");
-        }
-        try {
-            Document document = parseXml(bpmnXml);
-            List<Element> processElements = findElements(document, "process");
-            List<BpmnNodeInfo> nodes = new ArrayList<>();
-            List<BpmnSequenceFlowInfo> sequenceFlows = new ArrayList<>();
-            NodeList allNodes = processElements.size() == 1
-                    ? processElements.get(0).getElementsByTagName("*")
-                    : document.getElementsByTagName("*");
-            for (int i = 0; i < allNodes.getLength(); i++) {
-                Node node = allNodes.item(i);
-                if (!(node instanceof Element element)) {
-                    continue;
-                }
-                String type = localName(element);
-                if (EXECUTABLE_NODE_TYPES.contains(type)) {
-                    nodes.add(new BpmnNodeInfo(type, attributesOf(element), isDirectProcessChild(element)));
-                }
-                if ("sequenceFlow".equals(type)) {
-                    sequenceFlows.add(new BpmnSequenceFlowInfo(
-                            normalizeText(element.getAttribute("id")),
-                            normalizeText(element.getAttribute("sourceRef")),
-                            normalizeText(element.getAttribute("targetRef")),
-                            hasDescendant(element, "conditionExpression")));
-                }
-            }
-            String processId = processElements.size() == 1
-                    ? normalizeText(processElements.get(0).getAttribute("id")) : null;
-            return new BpmnAnalysis(processElements.size(), processId,
-                    !findElements(document, "BPMNDiagram").isEmpty(),
-                    List.copyOf(nodes), List.copyOf(sequenceFlows));
-        } catch (RuntimeException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new RuntimeException("BPMN XML 解析失败：" + e.getMessage(), e);
-        }
-    }
-
-    /** Replaces only the semantic process id and matching diagram-plane reference. */
-    public static String replaceSingleProcessId(String bpmnXml, String modelKey) {
-        if (modelKey == null || modelKey.isBlank()) {
-            throw new RuntimeException("流程模型 Key 不能为空");
-        }
-        try {
-            Document document = parseXml(bpmnXml);
-            List<Element> processElements = findElements(document, "process");
-            if (processElements.size() != 1) {
-                throw new RuntimeException("BPMN XML 必须包含且只能包含一个 process 节点");
-            }
-            Element process = processElements.get(0);
-            String previousId = normalizeText(process.getAttribute("id"));
-            if (previousId.isBlank()) {
-                throw new RuntimeException("BPMN process 缺少 id 属性");
-            }
-            if (previousId.equals(modelKey)) {
-                return bpmnXml;
-            }
-            process.setAttribute("id", modelKey);
-            for (Element plane : findElements(document, "BPMNPlane")) {
-                if (previousId.equals(normalizeText(plane.getAttribute("bpmnElement")))) {
-                    plane.setAttribute("bpmnElement", modelKey);
-                }
-            }
-            return serialize(document);
-        } catch (RuntimeException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new RuntimeException("BPMN 流程 ID 替换失败：" + e.getMessage(), e);
-        }
     }
 
     public static NormalizationResult normalizeDuplicateSequenceFlows(String bpmnXml) {
@@ -447,7 +361,6 @@ public final class BpmnXmlUtils {
     private static Document parseXml(String xml) throws Exception {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         factory.setNamespaceAware(false);
-        factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
         factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
         factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
         factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
@@ -458,42 +371,8 @@ public final class BpmnXmlUtils {
         // BPMN deployment fail with "property ... is not recognized".
         setAttributeIfSupported(factory, XMLConstants.ACCESS_EXTERNAL_DTD, "");
         setAttributeIfSupported(factory, XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
-        factory.setXIncludeAware(false);
         factory.setExpandEntityReferences(false);
         return factory.newDocumentBuilder().parse(new InputSource(new StringReader(xml)));
-    }
-
-    private static List<Element> findElements(Document document, String expectedLocalName) {
-        List<Element> result = new ArrayList<>();
-        NodeList allNodes = document.getElementsByTagName("*");
-        for (int i = 0; i < allNodes.getLength(); i++) {
-            Node node = allNodes.item(i);
-            if (node instanceof Element element && expectedLocalName.equals(localName(element))) {
-                result.add(element);
-            }
-        }
-        return result;
-    }
-
-    private static boolean hasDescendant(Element element, String expectedLocalName) {
-        NodeList descendants = element.getElementsByTagName("*");
-        for (int i = 0; i < descendants.getLength(); i++) {
-            Node node = descendants.item(i);
-            if (node instanceof Element child && expectedLocalName.equals(localName(child))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static Map<String, String> attributesOf(Element element) {
-        Map<String, String> attributes = new LinkedHashMap<>();
-        NamedNodeMap namedNodeMap = element.getAttributes();
-        for (int i = 0; i < namedNodeMap.getLength(); i++) {
-            Node attribute = namedNodeMap.item(i);
-            attributes.put(attribute.getNodeName(), attribute.getNodeValue());
-        }
-        return Collections.unmodifiableMap(attributes);
     }
 
     private static String serialize(Document document) throws Exception {
@@ -527,54 +406,12 @@ public final class BpmnXmlUtils {
         return idx >= 0 ? nodeName.substring(idx + 1) : nodeName;
     }
 
-    private static boolean isDirectProcessChild(Element element) {
-        Node parent = element.getParentNode();
-        return parent instanceof Element parentElement && "process".equals(localName(parentElement));
-    }
-
     private static String normalizeText(String text) {
         return text == null ? "" : text.replaceAll("\\s+", " ").trim();
     }
 
     private static String normalizeExpressionText(String text) {
         return normalizeText(text).replace(" ", "");
-    }
-
-    public record BpmnAnalysis(int processCount,
-                               String processId,
-                               boolean hasDiagram,
-                               List<BpmnNodeInfo> nodes,
-                               List<BpmnSequenceFlowInfo> sequenceFlows) {
-    }
-
-    public record BpmnNodeInfo(String type, Map<String, String> attributes, boolean topLevel) {
-
-        public String attribute(String name) {
-            String direct = attributes.get(name);
-            if (direct != null) {
-                return direct;
-            }
-            String suffix = ":" + name;
-            return attributes.entrySet().stream()
-                    .filter(entry -> entry.getKey().endsWith(suffix))
-                    .map(Map.Entry::getValue)
-                    .findFirst()
-                    .orElse(null);
-        }
-
-        public String id() {
-            return attribute("id");
-        }
-
-        public String name() {
-            return attribute("name");
-        }
-    }
-
-    public record BpmnSequenceFlowInfo(String id,
-                                       String sourceRef,
-                                       String targetRef,
-                                       boolean hasCondition) {
     }
 
     private static final class SequenceFlowInfo {

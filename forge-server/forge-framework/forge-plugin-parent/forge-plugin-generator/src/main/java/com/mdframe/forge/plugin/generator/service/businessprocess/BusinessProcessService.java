@@ -125,7 +125,9 @@ public class BusinessProcessService {
         if (normalizedObjectCode == null) {
             throw new BusinessException("业务对象编码不能为空");
         }
-        return safeList(processMapper.selectBySubjectObjectCode(tenantId, normalizedObjectCode));
+        List<BusinessObjectProcessVO> result = safeList(processMapper.selectBySubjectObjectCode(tenantId, normalizedObjectCode));
+        result.forEach(this::extractStartNodeType);
+        return result;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -769,6 +771,31 @@ public class BusinessProcessService {
             return schemaValidator.normalize(schemaJson);
         } catch (IllegalArgumentException exception) {
             throw new BusinessException(400, exception.getMessage(), exception);
+        }
+    }
+
+    /**
+     * 从 draftSchemaJson 中提取第一个 START_ 开头的节点类型，填充到 startNodeType 字段，
+     * 然后清理 draftSchemaJson 以避免序列化时暴露完整画布 JSON。
+     */
+    private void extractStartNodeType(BusinessObjectProcessVO vo) {
+        String json = vo.getDraftSchemaJson();
+        vo.setDraftSchemaJson(null);
+        if (StringUtils.isBlank(json)) {
+            return;
+        }
+        try {
+            BusinessProcessSchema schema = parseSchema(json);
+            if (schema != null && schema.getNodes() != null) {
+                schema.getNodes().stream()
+                        .map(BusinessProcessNode::getType)
+                        .filter(type -> type != null && type.startsWith("START_"))
+                        .findFirst()
+                        .ifPresent(vo::setStartNodeType);
+            }
+        } catch (Exception exception) {
+            log.debug("无法解析业务流程草稿 JSON 提取 startNodeType（processCode={}）：{}",
+                    vo.getProcessCode(), exception.getMessage());
         }
     }
 

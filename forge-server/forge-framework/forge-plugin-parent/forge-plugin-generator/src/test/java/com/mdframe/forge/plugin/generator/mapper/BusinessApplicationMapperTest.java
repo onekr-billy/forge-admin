@@ -51,20 +51,6 @@ class BusinessApplicationMapperTest {
         assertTrue(xml.contains("child.del_flag = '0'"));
     }
 
-    @Test
-    @DisplayName("suite entity lookup uses explicit tenant and logical-delete predicates")
-    void suiteEntityLookupUsesExplicitTenantPredicate() throws IOException {
-        String xml = resource("mapper/BusinessSuiteMapper.xml");
-        int statementStart = xml.indexOf("<select id=\"selectBySuiteId\"");
-        int statementEnd = xml.indexOf("</select>", statementStart);
-
-        assertTrue(statementStart >= 0 && statementEnd > statementStart);
-        String statement = xml.substring(statementStart, statementEnd);
-        assertTrue(statement.contains("tenant_id = #{tenantId}"));
-        assertTrue(statement.contains("del_flag = '0'"));
-        assertTrue(statement.contains("id = #{id}"));
-    }
-
     private String resource(String path) throws IOException {
         try (InputStream input = getClass().getClassLoader().getResourceAsStream(path)) {
             assertNotNull(input, "找不到 Mapper XML: " + path);

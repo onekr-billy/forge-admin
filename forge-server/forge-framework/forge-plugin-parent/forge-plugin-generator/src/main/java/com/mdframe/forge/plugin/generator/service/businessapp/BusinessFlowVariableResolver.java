@@ -12,7 +12,6 @@ import com.mdframe.forge.plugin.generator.mapper.AiCrudConfigMapper;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFlowVariableCandidateVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFlowVariableMappingSuggestionVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectVO;
-import com.mdframe.forge.starter.core.exception.BusinessException;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
@@ -58,7 +57,6 @@ public class BusinessFlowVariableResolver {
     private final ObjectMapper objectMapper;
 
     public Map<String, Object> resolve(String modelKey, String objectCode) {
-        Long tenantId = requireTenantId();
         Map<String, Object> result = new LinkedHashMap<>();
         List<String> warnings = new ArrayList<>();
         Map<String, BusinessFlowVariableCandidateVO> variables = new LinkedHashMap<>();
@@ -68,7 +66,7 @@ public class BusinessFlowVariableResolver {
         List<Map<String, Object>> userTasks = parseBpmnVariables(text(model.get("bpmnXml")), variables, warnings);
         parseFormVariables(text(model.get("formJson")), variables, warnings);
 
-        List<Map<String, Object>> fieldCandidates = collectFieldCandidates(tenantId, objectCode, warnings);
+        List<Map<String, Object>> fieldCandidates = collectFieldCandidates(objectCode, warnings);
         List<BusinessFlowVariableMappingSuggestionVO> suggestions = buildSuggestions(
                 new ArrayList<>(variables.values()), fieldCandidates);
 
@@ -262,9 +260,7 @@ public class BusinessFlowVariableResolver {
         }
     }
 
-    private List<Map<String, Object>> collectFieldCandidates(Long tenantId,
-                                                             String objectCode,
-                                                             List<String> warnings) {
+    private List<Map<String, Object>> collectFieldCandidates(String objectCode, List<String> warnings) {
         if (StringUtils.isBlank(objectCode)) {
             return List.of();
         }
@@ -281,7 +277,7 @@ public class BusinessFlowVariableResolver {
                 return collectCodeFieldCandidates(objectCode, warnings,
                         "业务对象缺少低代码运行配置，且未找到代码表单字段目录: " + objectCode);
             }
-            AiCrudConfig config = crudConfigMapper.selectByConfigKey(tenantId, configKey);
+            AiCrudConfig config = crudConfigMapper.selectByConfigKey(resolveTenantId(), configKey);
             if (config == null || StringUtils.isBlank(config.getModelSchema())) {
                 warnings.add("业务对象模型配置不存在: " + objectCode);
                 return List.of();
@@ -488,16 +484,13 @@ public class BusinessFlowVariableResolver {
         return value == null ? null : String.valueOf(value);
     }
 
-    private Long requireTenantId() {
+    private Long resolveTenantId() {
         Long tenantId;
         try {
             tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
             tenantId = null;
         }
-        if (tenantId == null || tenantId <= 0) {
-            throw new BusinessException("流程变量解析缺少可信租户上下文");
-        }
-        return tenantId;
+        return tenantId != null ? tenantId : 1L;
     }
 }

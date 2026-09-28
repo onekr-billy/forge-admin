@@ -1,15 +1,12 @@
 package com.mdframe.forge.starter.auth.config;
 
 import cn.dev33.satoken.interceptor.SaInterceptor;
-import cn.dev33.satoken.exception.NotLoginException;
 import cn.dev33.satoken.router.SaRouter;
 import cn.dev33.satoken.stp.StpUtil;
 import com.mdframe.forge.starter.auth.interceptor.ApiPermissionInterceptor;
 import com.mdframe.forge.starter.auth.interceptor.ApiRateLimitInterceptor;
 import com.mdframe.forge.starter.auth.session.LoginSessionRenewal;
-import com.mdframe.forge.starter.auth.session.LoginSessionValidationService;
 import com.mdframe.forge.starter.core.context.AuthProperties;
-import com.mdframe.forge.starter.core.session.SessionHelper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -29,8 +26,6 @@ public class SaTokenConfig implements WebMvcConfigurer {
     private final ApiRateLimitInterceptor apiRateLimitInterceptor;
     
     private final AuthProperties authProperties;
-
-    private final LoginSessionValidationService loginSessionValidationService;
 
     /**
      * 注册拦截器
@@ -92,12 +87,6 @@ public class SaTokenConfig implements WebMvcConfigurer {
                     .notMatch("/ws/**")
                     .check(r -> {
                         StpUtil.checkLogin();
-                        if (!loginSessionValidationService.isValid(SessionHelper.getLoginUser())) {
-                            throw new NotLoginException(
-                                    "登录凭证已失效",
-                                    StpUtil.getLoginType(),
-                                    NotLoginException.KICK_OUT);
-                        }
                         LoginSessionRenewal.renewIfHalfwayExpired();
                     });
         })).addPathPatterns("/**").order(1);  // 优先级1，先执行登录校验

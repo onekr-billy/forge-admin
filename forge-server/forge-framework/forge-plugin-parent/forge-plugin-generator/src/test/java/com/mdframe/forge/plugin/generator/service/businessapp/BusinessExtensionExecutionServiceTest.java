@@ -17,12 +17,9 @@ import com.mdframe.forge.plugin.generator.service.businessapp.extension.LowcodeE
 import com.mdframe.forge.plugin.generator.service.businessapp.extension.LowcodeExtensionRegistry;
 import com.mdframe.forge.plugin.generator.service.businessapp.extension.ServerBindingExecutor;
 import com.mdframe.forge.starter.core.exception.BusinessException;
-import com.mdframe.forge.starter.core.session.SessionHelper;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.MockedStatic;
 
 import java.lang.reflect.Proxy;
 import java.util.List;
@@ -32,30 +29,19 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mockStatic;
 
 @DisplayName("BusinessExtensionExecutionService")
 class BusinessExtensionExecutionServiceTest {
 
     private ServerBindingExecutor serverBindingExecutor;
-    private MockedStatic<SessionHelper> session;
-
-    @BeforeEach
-    void establishTrustedIdentity() {
-        session = mockStatic(SessionHelper.class);
-        session.when(SessionHelper::getTenantId).thenReturn(1L);
-        session.when(SessionHelper::getUserId).thenReturn(7L);
-    }
 
     @AfterEach
     void closeExecutor() {
         if (serverBindingExecutor != null) {
             serverBindingExecutor.close();
         }
-        session.close();
     }
 
     @Test
@@ -253,37 +239,6 @@ class BusinessExtensionExecutionServiceTest {
                         published, 10L, 102L, null, "BEFORE_SUBMIT", Map.of()));
 
         assertTrue(error.getMessage().contains("不适用于当前业务范围"));
-    }
-
-    @Test
-    @DisplayName("server extension fails before handler execution when actor identity is missing")
-    void missingActorDoesNotExecuteHandlerOrWriteAudit() {
-        session.when(SessionHelper::getUserId).thenReturn(null);
-        AiBusinessExtension extension = serverExtension("BLOCK");
-        AiBusinessExtensionVersion version = version(false, false);
-        version.setConfigJson("{\"handlerCode\":\"published_handler\"}");
-        AtomicReference<ExtensionExecutionContext> contextRef = new AtomicReference<>();
-        AtomicReference<AiBusinessExtensionExecutionLog> auditRef = new AtomicReference<>();
-        BusinessExtensionMapper extensionMapper = proxy(BusinessExtensionMapper.class, (method, args) ->
-                "selectEnabledForHook".equals(method) ? List.of(extension) : defaultValue(method));
-        BusinessExtensionVersionMapper versionMapper = proxy(BusinessExtensionVersionMapper.class, (method, args) ->
-                "selectVersion".equals(method) ? version : defaultValue(method));
-        BusinessExtensionExecutionLogMapper auditMapper = proxy(BusinessExtensionExecutionLogMapper.class,
-                (method, args) -> {
-                    if ("insert".equals(method)) {
-                        auditRef.set((AiBusinessExtensionExecutionLog) args[0]);
-                    }
-                    return defaultValue(method);
-                });
-        BusinessExtensionExecutionService service = service(
-                extensionMapper, versionMapper, List.of(capturingHandler(contextRef)), auditMapper);
-
-        BusinessException error = assertThrows(BusinessException.class,
-                () -> service.executeHook(10L, null, null, "BEFORE_SUBMIT", Map.of()));
-
-        assertEquals("服务端扩展缺少可信执行用户", error.getMessage());
-        assertNull(contextRef.get());
-        assertNull(auditRef.get());
     }
 
     private BusinessExtensionExecutionService service(BusinessExtensionMapper extensionMapper,

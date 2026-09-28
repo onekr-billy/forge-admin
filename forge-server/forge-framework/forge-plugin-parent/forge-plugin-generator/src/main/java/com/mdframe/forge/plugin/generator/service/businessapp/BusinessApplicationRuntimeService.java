@@ -45,25 +45,22 @@ public class BusinessApplicationRuntimeService {
     private final ConcurrentHashMap<String, CachedRuntime> runtimeByAppIdCache = new ConcurrentHashMap<>();
 
     public BusinessApplicationRuntimeVO runtimeByCode(String applicationCode) {
-        Long tenantId = requireTenantId();
         BusinessApplicationVO current = applicationService.detailByCode(applicationCode);
-        return runtimeCached(current, tenantId);
+        return runtimeCached(current);
     }
 
     public BusinessApplicationRuntimeVO runtimeByCodeOrSlug(String identifier) {
-        Long tenantId = requireTenantId();
-        return runtimeCached(applicationService.detailByPublishedCodeOrSlug(identifier), tenantId);
+        return runtimeCached(applicationService.detailByPublishedCodeOrSlug(identifier));
     }
 
     /**
      * 使用正式门户的同一发布快照、应用可见范围和页面权限链路构建工作台应用。
      */
     public List<BusinessApplicationVO> workbenchApplications() {
-        Long tenantId = requireTenantId();
         List<BusinessApplicationVO> result = new ArrayList<>();
         for (BusinessApplicationVO candidate : applicationService.workbenchDistributionCandidates()) {
             try {
-                BusinessApplicationRuntimeVO runtime = runtimeCached(candidate, tenantId);
+                BusinessApplicationRuntimeVO runtime = runtimeCached(candidate);
                 if (hasReachableHomePage(runtime)
                         && applicationService.isCurrentUserDistributedToWorkbench(
                                 runtime.getApplication().getPortalConfig())) {
@@ -81,16 +78,15 @@ public class BusinessApplicationRuntimeService {
      */
     public BusinessApplicationRuntimeVO runtimeById(Long applicationId) {
         if (applicationId == null) {
-            throw new BusinessException("应用不存在");
+            return runtime(null);
         }
-        Long tenantId = requireTenantId();
         long now = System.currentTimeMillis();
-        String appKey = tenantId + ":id:" + applicationId;
+        String appKey = resolveTenantId() + ":id:" + applicationId;
         CachedRuntime softHit = runtimeByAppIdCache.get(appKey);
         if (softHit != null && softHit.expiresAtMs > now) {
             return softHit.value;
         }
-        return runtimeCached(applicationService.detail(applicationId), tenantId);
+        return runtimeCached(applicationService.detail(applicationId));
     }
 
     /** 发布后主动失效，避免短 TTL 内仍读到旧快照。 */
@@ -98,13 +94,13 @@ public class BusinessApplicationRuntimeService {
         if (applicationId == null) {
             return;
         }
-        Long tenantId = requireTenantId();
+        Long tenantId = resolveTenantId();
         String prefix = tenantId + ":" + applicationId + ":";
         runtimeCache.keySet().removeIf(key -> key.startsWith(prefix));
         runtimeByAppIdCache.remove(tenantId + ":id:" + applicationId);
     }
 
-    private BusinessApplicationRuntimeVO runtimeCached(BusinessApplicationVO current, Long tenantId) {
+    private BusinessApplicationRuntimeVO runtimeCached(BusinessApplicationVO current) {
         if (current == null || current.getId() == null) {
             return runtime(current);
         }
@@ -112,17 +108,17 @@ public class BusinessApplicationRuntimeService {
         if (versionNo == null) {
             return runtime(current);
         }
-        String cacheKey = tenantId + ":" + current.getId() + ":" + versionNo;
+        String cacheKey = resolveTenantId() + ":" + current.getId() + ":" + versionNo;
         long now = System.currentTimeMillis();
         CachedRuntime hit = runtimeCache.get(cacheKey);
         if (hit != null && hit.expiresAtMs > now) {
-            runtimeByAppIdCache.put(tenantId + ":id:" + current.getId(), hit);
+            runtimeByAppIdCache.put(resolveTenantId() + ":id:" + current.getId(), hit);
             return hit.value;
         }
         BusinessApplicationRuntimeVO value = runtime(current);
         CachedRuntime cached = new CachedRuntime(value, now + RUNTIME_CACHE_TTL_MS);
         runtimeCache.put(cacheKey, cached);
-        runtimeByAppIdCache.put(tenantId + ":id:" + current.getId(), cached);
+        runtimeByAppIdCache.put(resolveTenantId() + ":id:" + current.getId(), cached);
         trimRuntimeCache(now);
         return value;
     }
@@ -142,26 +138,19 @@ public class BusinessApplicationRuntimeService {
                 .forEach(runtimeCache::remove);
     }
 
-    private Long requireTenantId() {
-        Long tenantId;
+    private Long resolveTenantId() {
         try {
-            tenantId = SessionHelper.getTenantId();
+            Long tenantId = SessionHelper.getTenantId();
+            return tenantId == null ? 1L : tenantId;
         } catch (Exception ignored) {
-            tenantId = null;
+            return 1L;
         }
-        if (tenantId == null || tenantId <= 0) {
-            throw new BusinessException("应用运行时缺少可信租户上下文");
-        }
-        return tenantId;
     }
 
     private record CachedRuntime(BusinessApplicationRuntimeVO value, long expiresAtMs) {
     }
 
     private BusinessApplicationRuntimeVO runtime(BusinessApplicationVO current) {
-        if (current == null) {
-            throw new BusinessException("应用不存在");
-        }
         if (!EnableStatus.ENABLED.matches(current.getStatus())) {
             throw new BusinessException("应用已停用，暂时无法访问");
         }

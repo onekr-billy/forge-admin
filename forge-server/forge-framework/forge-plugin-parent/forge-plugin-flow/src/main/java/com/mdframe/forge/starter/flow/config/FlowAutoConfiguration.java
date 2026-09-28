@@ -123,9 +123,10 @@ public class FlowAutoConfiguration {
     }
 
     /**
-     * 流程通知 Outbox 异步线程池
-     * <p>用于 {@link com.mdframe.forge.starter.flow.listener.FlowNotifyOutboxDispatcher}
-     * 的提交后派发；具体 Redis Stream 写入与 Webhook 调用在 Outbox 交付线程中同步确认结果。</p>
+     * 流程事件异步线程池
+     * <p>专門用于 {@link com.mdframe.forge.starter.flow.event.FlowEventPublisher}
+     * 和 {@link com.mdframe.forge.starter.flow.event.FlowWebhookNotifier} 的 {@code @Async} 方法，
+     * 避免占用流程引擎线程。</p>
      */
     @Bean(name = "flowEventExecutor")
     public Executor flowEventExecutor() {

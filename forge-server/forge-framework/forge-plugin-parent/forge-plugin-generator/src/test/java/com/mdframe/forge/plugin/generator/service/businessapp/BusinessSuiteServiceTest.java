@@ -7,12 +7,7 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessAppMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessSuiteMapper;
 import com.mdframe.forge.plugin.generator.service.MenuRegisterAdapter;
-import com.mdframe.forge.starter.core.context.ExecutionIdentity;
-import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.exception.BusinessException;
-import com.mdframe.forge.starter.core.session.LoginUser;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -20,7 +15,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -30,27 +24,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DisplayName("BusinessSuiteService")
 class BusinessSuiteServiceTest {
-
-    private ExecutionIdentityContextHolder.Scope identityScope;
-
-    @BeforeEach
-    void setUpIdentity() {
-        LoginUser loginUser = new LoginUser();
-        loginUser.setUserId(7L);
-        loginUser.setTenantId(1L);
-        identityScope = ExecutionIdentityContextHolder.open(
-                new ExecutionIdentity(loginUser, "USER", 7L, null, 1L,
-                        "pc", "business-suite-test", Set.of()));
-    }
-
-    @AfterEach
-    void clearIdentity() {
-        if (identityScope != null) {
-            identityScope.close();
-            identityScope = null;
-        }
-        ExecutionIdentityContextHolder.clear();
-    }
 
     @Test
     @DisplayName("explicit cleanup removes orphan object relations and logically deletes objects before the suite")
@@ -332,7 +305,7 @@ class BusinessSuiteServiceTest {
 
     private BusinessSuiteMapper suiteMapper(ProxyHandler handler) {
         return proxy(BusinessSuiteMapper.class, (method, args) -> {
-            if ("selectBySuiteId".equals(method)) {
+            if ("selectById".equals(method)) {
                 return suite();
             }
             return handler.invoke(method, args);

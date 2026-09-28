@@ -17,7 +17,7 @@ services:
     container_name: forge-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in docker-forge-admin/.env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-forge123456}
       MYSQL_DATABASE: ${MYSQL_DB:-forge_admin}
       TZ: ${TZ:-Asia/Shanghai}
     ports:
@@ -31,7 +31,7 @@ services:
       --default-authentication-plugin=mysql_native_password
       --lower_case_table_names=1
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_PASSWORD:?set MYSQL_PASSWORD in docker-forge-admin/.env}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_PASSWORD:-forge123456}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -45,13 +45,13 @@ services:
     image: redis:7-alpine
     container_name: forge-redis
     restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD:?set REDIS_PASSWORD in docker-forge-admin/.env} --appendonly yes
+    command: redis-server --requirepass ${REDIS_PASSWORD:-forge123456} --appendonly yes
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?set REDIS_PASSWORD in docker-forge-admin/.env}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-forge123456}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -77,10 +77,10 @@ services:
       MYSQL_PORT: ${MYSQL_PORT:-3306}
       MYSQL_DB: ${MYSQL_DB:-forge_admin}
       MYSQL_USER: ${MYSQL_USER:-root}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in docker-forge-admin/.env}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-forge123456}
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in docker-forge-admin/.env}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-forge123456}
       JAVA_OPTS: ${JAVA_OPTS:--Xms256m -Xmx512m}
     volumes:
       - ./application-datasource.yml:/app/application-prod.yml
@@ -111,10 +111,10 @@ services:
       MYSQL_PORT: ${MYSQL_PORT:-3306}
       MYSQL_DB: ${MYSQL_DB:-forge_admin}
       MYSQL_USER: ${MYSQL_USER:-root}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in docker-forge-admin/.env}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-forge123456}
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in docker-forge-admin/.env}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-forge123456}
       FLOW_CLIENT_URL: ${FLOW_CLIENT_URL:-http://forge-flow:8081}
       FORGE_CRYPTO_BOOTSTRAP_ENABLED: ${FORGE_CRYPTO_BOOTSTRAP_ENABLED:-true}
       FORGE_CRYPTO_BOOTSTRAP_FILE: ${FORGE_CRYPTO_BOOTSTRAP_FILE:-/var/lib/forge/secrets/crypto.properties}

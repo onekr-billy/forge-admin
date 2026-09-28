@@ -27,14 +27,13 @@ import java.util.List;
 /**
  * 流程事件分发器（业务侧）
  * <p>
- * 接收来自 flow-server 的事件消息（Redis Stream / 兼容 Pub/Sub / Webhook 请求），
+ * 接收来自 flow-server 的事件消息（Redis 频道消息 or Webhook 请求），
  * 自动路由到当前 Spring 容器中持有 {@link FlowBind} 且 modelKey 匹配的 Bean 的
  * {@link FlowCallback} 方法。
  *
  * <h3>触发方式</h3>
  * <ul>
- *   <li><b>Redis Stream</b>：由可靠消费器在业务回调成功后确认</li>
- *   <li><b>Redis Pub/Sub</b>：兼容监听器订阅 {@code flow:event:all} 后调用</li>
+ *   <li><b>Redis Pub/Sub</b>：由 {@link FlowRedisSubscriber} 监听 {@code flow:event:all} 频道后调用</li>
  *   <li><b>Webhook</b>：由业务方在 Webhook 接收 Controller 中手动调用 {@link #dispatch(FlowEventContext)}</li>
  * </ul>
  *
@@ -60,37 +59,7 @@ public class FlowEventSubscriber {
             FlowEventContext ctx = objectMapper.readValue(jsonMessage, FlowEventContext.class);
             dispatch(ctx);
         } catch (Exception e) {
-            log.warn("[FlowCallback] 兼容消息消费失败: failureType={}",
-                    e.getClass().getSimpleName());
-        }
-    }
-
-    /**
-     * Redis Stream 可靠消费入口。反序列化或任一匹配回调失败时向上传播异常，
-     * 调用方不得 ACK，避免消息在业务 Inbox 持久化前丢失。
-     */
-    public void onMessageReliable(String jsonMessage) {
-        try {
-            FlowEventContext ctx = objectMapper.readValue(jsonMessage, FlowEventContext.class);
-            validateReliableContext(ctx);
-            dispatchReliable(ctx);
-        } catch (RuntimeException failure) {
-            throw failure;
-        } catch (Exception invalidMessage) {
-            throw new IllegalArgumentException("FLOW_CALLBACK_MESSAGE_INVALID", invalidMessage);
-        }
-    }
-
-    private void validateReliableContext(FlowEventContext ctx) {
-        if (ctx == null || ctx.getTenantId() == null || ctx.getTenantId() <= 0
-                || !StringUtils.hasText(ctx.getEventId())
-                || ctx.getEventVersion() == null || ctx.getEventVersion() <= 0
-                || ctx.getEventSequence() == null || ctx.getEventSequence() <= 0
-                || !StringUtils.hasText(ctx.getEvent())
-                || !StringUtils.hasText(ctx.getProcessDefKey())
-                || (!StringUtils.hasText(ctx.getProcessInstanceId())
-                    && !StringUtils.hasText(ctx.getBusinessKey()))) {
-            throw new IllegalArgumentException("FLOW_CALLBACK_RELIABLE_IDENTITY_REQUIRED");
+            log.warn("[FlowCallback] 消息反序列化失败: {} | raw={}", e.getMessage(), jsonMessage);
         }
     }
 
@@ -100,37 +69,27 @@ public class FlowEventSubscriber {
      * @param ctx 流程事件上下文
      */
     public void dispatch(FlowEventContext ctx) {
-        dispatch(ctx, false);
-    }
-
-    /** 严格分发：回调异常必须传播给具备 ACK 语义的上游消费者。 */
-    public void dispatchReliable(FlowEventContext ctx) {
-        dispatch(ctx, true);
-    }
-
-    private void dispatch(FlowEventContext ctx, boolean failOnCallbackError) {
         if (ctx == null || ctx.getProcessDefKey() == null) {
             return;
         }
         Long tenantId = ctx.getTenantId();
         if (tenantId != null) {
-            TenantContextHolder.executeWithTenant(tenantId,
-                    () -> doDispatch(ctx, failOnCallbackError));
+            TenantContextHolder.executeWithTenant(tenantId, () -> doDispatch(ctx));
             return;
         }
         log.warn("[FlowCallback] 流程事件缺少 tenantId，按当前线程租户上下文分发: event={} processDefKey={} businessKey={}",
                 ctx.getEvent(), ctx.getProcessDefKey(), ctx.getBusinessKey());
-        doDispatch(ctx, failOnCallbackError);
+        doDispatch(ctx);
     }
 
-    private void doDispatch(FlowEventContext ctx, boolean failOnCallbackError) {
+    private void doDispatch(FlowEventContext ctx) {
         boolean matchedBean = false;
         for (FlowBindBean flowBindBean : findFlowBindBeans()) {
             if (!matchesModelKey(flowBindBean.bind().modelKey(), ctx.getProcessDefKey())) {
                 continue;
             }
             matchedBean = true;
-            invokeCallbacks(flowBindBean.bean(), flowBindBean.targetClass(), ctx, failOnCallbackError);
+            invokeCallbacks(flowBindBean.bean(), flowBindBean.targetClass(), ctx);
         }
         if (!matchedBean) {
             log.warn("[FlowCallback] 未找到匹配的 @FlowBind Bean: event={} processDefKey={} businessKey={}",
@@ -196,8 +155,7 @@ public class FlowEventSubscriber {
         return AnnotatedElementUtils.findMergedAnnotation(clazz, FlowBind.class);
     }
 
-    private void invokeCallbacks(Object bean, Class<?> targetClass, FlowEventContext ctx,
-                                 boolean failOnCallbackError) {
+    private void invokeCallbacks(Object bean, Class<?> targetClass, FlowEventContext ctx) {
         // 处理 @FlowCallback 注解（方法级别，逐事件匹配）
         for (Method method : targetClass.getDeclaredMethods()) {
             FlowCallback callback = AnnotatedElementUtils.findMergedAnnotation(method, FlowCallback.class);
@@ -208,7 +166,7 @@ public class FlowEventSubscriber {
             if (!matched) {
                 continue;
             }
-            invokeMethod(bean, targetClass, method, ctx, "FlowCallback", failOnCallbackError);
+            invokeMethod(bean, targetClass, method, ctx, "FlowCallback");
         }
 
         // 处理 @FlowComplete 注解（类级别，按事件类型路由到独立方法）
@@ -218,7 +176,7 @@ public class FlowEventSubscriber {
             if (StringUtils.hasText(targetMethodName)) {
                 Method method = findMethod(targetClass, targetMethodName);
                 if (method != null) {
-                    invokeMethod(bean, targetClass, method, ctx, "FlowComplete", failOnCallbackError);
+                    invokeMethod(bean, targetClass, method, ctx, "FlowComplete");
                 } else {
                     log.warn("[FlowComplete] 未找到方法 {}.{} (event={})",
                             targetClass.getSimpleName(), targetMethodName, ctx.getEvent());
@@ -248,8 +206,7 @@ public class FlowEventSubscriber {
 
     /** 调用目标方法，支持无参或 (FlowEventContext) 两种签名 */
     private void invokeMethod(Object bean, Class<?> targetClass, Method method,
-                              FlowEventContext ctx, String annotationName,
-                              boolean failOnCallbackError) {
+                              FlowEventContext ctx, String annotationName) {
         try {
             Object invocationTarget = resolveInvocationTarget(bean, targetClass, method, annotationName);
             method.setAccessible(true);
@@ -268,12 +225,8 @@ public class FlowEventSubscriber {
                     ctx.getEvent(), ctx.getBusinessKey());
         } catch (Exception e) {
             Throwable root = e instanceof InvocationTargetException && e.getCause() != null ? e.getCause() : e;
-            log.error("[{}] 回调执行失败 {}.{}: failureType={}",
-                    annotationName, targetClass.getSimpleName(), method.getName(),
-                    root.getClass().getSimpleName());
-            if (failOnCallbackError) {
-                throw new IllegalStateException("FLOW_CALLBACK_DISPATCH_FAILED", root);
-            }
+            log.error("[{}] 回调执行失败 {}.{}: {}",
+                    annotationName, targetClass.getSimpleName(), method.getName(), root.getMessage(), root);
         }
     }
 

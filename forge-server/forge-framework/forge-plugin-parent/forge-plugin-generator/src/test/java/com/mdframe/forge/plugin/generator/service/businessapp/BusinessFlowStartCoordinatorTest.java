@@ -4,7 +4,6 @@ import com.mdframe.forge.flow.client.FlowClient;
 import com.mdframe.forge.flow.client.FlowResult;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessBinding;
 import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessFlowInstanceLink;
-import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessFlowRemoteCommand;
 import com.mdframe.forge.plugin.generator.domain.entity.AiCrudConfig;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessFlowStartDTO;
 import com.mdframe.forge.plugin.generator.enums.BusinessDocumentFlowStatus;
@@ -21,7 +20,6 @@ import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
@@ -65,7 +63,6 @@ class BusinessFlowStartCoordinatorTest {
                         "purchase", "purchase", "purchase_runtime", null, runtimeConfig, null));
         when(dynamicCrudService.selectById("purchase_runtime", 42L))
                 .thenReturn(Map.of("orderNo", "PO-42"));
-        when(linkMapper.insert(any(AiBusinessFlowInstanceLink.class))).thenReturn(1);
         AiBusinessBinding binding = new AiBusinessBinding();
         binding.setBindingType("FLOW");
         binding.setBindingKey("purchase_approval");
@@ -147,59 +144,5 @@ class BusinessFlowStartCoordinatorTest {
         verify(flowClient, never()).startProcess(
                 any(), any(), any(), anyMap(), any(), any(), any(), any());
         verify(linkMapper, never()).insert(any(AiBusinessFlowInstanceLink.class));
-    }
-
-    @Test
-    void recordsRecoveryWhenRemoteSucceededButLocalStatusWriteFails() {
-        BusinessFlowRemoteCommandService remoteCommandService = mock(BusinessFlowRemoteCommandService.class);
-        AiBusinessFlowRemoteCommand pending = new AiBusinessFlowRemoteCommand();
-        pending.setId(88L);
-        pending.setTenantId(1L);
-        pending.setCommandStatus("PENDING");
-        AiBusinessFlowRemoteCommand remoteSucceeded = new AiBusinessFlowRemoteCommand();
-        remoteSucceeded.setId(88L);
-        remoteSucceeded.setTenantId(1L);
-        remoteSucceeded.setCommandStatus("REMOTE_SUCCEEDED");
-        remoteSucceeded.setProcessInstanceId("process-42");
-        when(remoteCommandService.prepareStart(any(BusinessFlowRemoteStartRequest.class))).thenReturn(pending);
-        when(remoteCommandService.executeStart(pending, flowClient)).thenReturn(remoteSucceeded);
-        when(linkMapper.insert(any(AiBusinessFlowInstanceLink.class))).thenReturn(1);
-        org.mockito.Mockito.doThrow(new IllegalStateException("local write failed"))
-                .when(statusTransitionService).updateBusinessFlowStatus(
-                        isNull(), eq(runtimeConfig), any(), eq(42L),
-                        eq(BusinessDocumentFlowStatus.IN_PROCESS.getCode()));
-
-        StaticListableBeanFactory beans = new StaticListableBeanFactory();
-        BusinessBindingMapper bindingMapper = mock(BusinessBindingMapper.class);
-        AiBusinessBinding binding = new AiBusinessBinding();
-        binding.setBindingType("FLOW");
-        binding.setBindingKey("purchase_approval");
-        binding.setBindingConfig("{\"flowModelKey\":\"purchase_approval\"}");
-        when(bindingMapper.selectBindingByTypeAndCode(1L, "OBJECT", "purchase", "FLOW"))
-                .thenReturn(binding);
-        BusinessFlowStartCoordinator reliableCoordinator = new BusinessFlowStartCoordinator(
-                () -> flowClient,
-                linkMapper,
-                mock(BusinessDocumentConfigService.class),
-                mock(BusinessDocumentRuntimeService.class),
-                dynamicCrudService,
-                runtimeContextResolver,
-                mock(BusinessRuntimeConfigResolver.class),
-                new BusinessFlowBindingResolver(bindingMapper),
-                formAssetAssembler,
-                statusRepairService,
-                statusTransitionService,
-                beans.getBeanProvider(RedissonClient.class),
-                () -> 7L,
-                () -> 9L,
-                () -> "张三",
-                remoteCommandService);
-
-        assertThrows(IllegalStateException.class, () -> reliableCoordinator.start(
-                request, true, null, null, 1L, false, false));
-
-        verify(remoteCommandService).recordRecoveryFailure(
-                eq(1L), eq(88L), any(IllegalStateException.class));
-        verify(remoteCommandService, never()).completeAfterCommit(remoteSucceeded);
     }
 }

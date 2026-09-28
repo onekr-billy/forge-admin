@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FlowTaskEventListenerTest {
 
@@ -19,10 +18,5 @@ class FlowTaskEventListenerTest {
 
         assertFalse(event instanceof FlowableEntityEvent);
         assertEquals("process-001", new FlowTaskEventListener().resolveProcessInstanceId(event));
-    }
-
-    @Test
-    void shouldFailEngineTransactionWhenReliableListenerFailureEscapes() {
-        assertTrue(new FlowTaskEventListener().isFailOnException());
     }
 }

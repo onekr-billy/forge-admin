@@ -61,12 +61,6 @@ public interface FlowTaskMapper extends BaseMapper<FlowTask> {
                                 @Param("tenantId") Long tenantId,
                                 @Param("task") FlowTask task);
 
-    int applyProjection(@Param("tenantId") Long tenantId,
-                        @Param("taskId") String taskId,
-                        @Param("task") FlowTask task,
-                        @Param("eventId") String eventId,
-                        @Param("eventSequence") Long eventSequence);
-
     int countProcessParticipant(@Param("processInstanceId") String processInstanceId,
                                 @Param("userId") String userId,
                                 @Param("tenantId") Long tenantId);

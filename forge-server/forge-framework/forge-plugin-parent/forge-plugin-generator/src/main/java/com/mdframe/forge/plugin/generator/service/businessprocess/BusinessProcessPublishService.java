@@ -73,12 +73,12 @@ public class BusinessProcessPublishService {
             Map<Long, String> expectedSchemaHashes,
             Long publishRunId) {
         requireApplicationVersion(applicationId, applicationVersion);
-        PublishActor actor = requirePublishActor();
-        Long tenantId = actor.tenantId();
+        Long tenantId = resolveTenantId();
         List<Long> selectedIds = normalizeIds(processIds);
         Map<Long, String> expectedHashes = expectedSchemaHashes == null
                 ? Map.of() : expectedSchemaHashes;
         List<BusinessProcessSnapshot> snapshots = new ArrayList<>();
+        Long userId = resolveUserId();
         for (Long processId : selectedIds) {
             AiBusinessProcess process = processMapper.selectForPublish(tenantId, applicationId, processId);
             if (process == null) {
@@ -96,7 +96,7 @@ public class BusinessProcessPublishService {
                 assertSameImmutableVersion(existing, expectedHash);
                 // 已指向同一不可变版本时跳过投影 UPDATE，避免无内容重写。
                 if (needsProjectionUpdate(process, existing)) {
-                    updateProjection(actor, applicationId, processId, existing);
+                    updateProjection(applicationId, processId, existing, userId);
                 }
                 snapshots.add(toSnapshot(existing));
                 continue;
@@ -105,11 +105,11 @@ public class BusinessProcessPublishService {
                 throw new BusinessException(409, "业务流程草稿已在发布运行单创建后变化: " + process.getProcessCode());
             }
             snapshots.add(publishNewVersion(
-                    actor, applicationId, applicationVersion, publishRunId, process));
+                    tenantId, applicationId, applicationVersion, publishRunId, process));
         }
         // 仍需清空未选中流程的发布投影（取消勾选场景）；无其它行时 Updates=0。
         processMapper.clearPublishedProjectionExcept(
-                tenantId, applicationId, selectedIds, actor.userId());
+                tenantId, applicationId, selectedIds, userId);
         return new BusinessProcessPublishResult(snapshots);
     }
 
@@ -124,7 +124,7 @@ public class BusinessProcessPublishService {
             return List.of();
         }
         return safeList(versionMapper.selectCurrentPublishedByApplication(
-                requireTenantId(), applicationId)).stream()
+                resolveTenantId(), applicationId)).stream()
                 .filter(version -> selectedIds.contains(version.getProcessId()))
                 .sorted(Comparator.comparing(AiBusinessProcessVersion::getProcessCode)
                         .thenComparing(AiBusinessProcessVersion::getVersionNo))
@@ -142,8 +142,8 @@ public class BusinessProcessPublishService {
         if (applicationId == null || applicationId <= 0) {
             throw new BusinessException("业务应用ID不能为空");
         }
-        PublishActor actor = requirePublishActor();
-        Long tenantId = actor.tenantId();
+        Long tenantId = resolveTenantId();
+        Long userId = resolveUserId();
         List<BusinessProcessSnapshot> result = new ArrayList<>();
         List<Long> selectedProcessIds = new ArrayList<>();
         for (Long versionId : normalizeIds(processVersionIds)) {
@@ -156,12 +156,12 @@ public class BusinessProcessPublishService {
             if (process == null) {
                 throw new BusinessException("历史应用版本依赖的业务流程已删除或失效: " + version.getProcessCode());
             }
-            updateProjection(actor, applicationId, version.getProcessId(), version);
+            updateProjection(applicationId, version.getProcessId(), version, userId);
             selectedProcessIds.add(version.getProcessId());
             result.add(toSnapshot(version));
         }
         processMapper.clearPublishedProjectionExcept(
-                tenantId, applicationId, selectedProcessIds, actor.userId());
+                tenantId, applicationId, selectedProcessIds, userId);
         return List.copyOf(result);
     }
 
@@ -176,8 +176,7 @@ public class BusinessProcessPublishService {
         if (processId == null || processId <= 0) {
             throw new BusinessException("业务流程ID不能为空");
         }
-        PublishActor actor = requirePublishActor();
-        Long tenantId = actor.tenantId();
+        Long tenantId = resolveTenantId();
         AiBusinessProcess process = processMapper.selectById(processId);
         if (process == null || !tenantId.equals(process.getTenantId()) || process.getApplicationId() == null) {
             throw new BusinessException("业务流程不存在、已删除或不属于当前租户");
@@ -209,16 +208,15 @@ public class BusinessProcessPublishService {
             throw new BusinessException(422, "业务流程发布校验未通过: " + summary, validation);
         }
         int nextVersionNo = value(versionMapper.selectMaxVersionNo(tenantId, processId)) + 1;
-        return publishNewVersion(actor, locked.getApplicationId(), -nextVersionNo, null, locked);
+        return publishNewVersion(tenantId, locked.getApplicationId(), -nextVersionNo, null, locked);
     }
 
     private BusinessProcessSnapshot publishNewVersion(
-            PublishActor actor,
+            Long tenantId,
             Long applicationId,
             Integer applicationVersion,
             Long publishRunId,
             AiBusinessProcess process) {
-        Long tenantId = actor.tenantId();
         BusinessProcessSchema schema = normalizeSchema(process.getDraftSchemaJson());
         String canonicalJson = schemaValidator.canonicalJson(schema);
         String canonicalHash = schemaValidator.schemaHash(schema);
@@ -239,6 +237,7 @@ public class BusinessProcessPublishService {
 
         Map<String, Object> dependencies = resolveDependencySnapshot(
                 tenantId, applicationId, schema, context);
+        Long userId = resolveUserId();
         AiBusinessProcessVersion version = new AiBusinessProcessVersion();
         version.setId(IdWorker.getId());
         version.setTenantId(tenantId);
@@ -253,12 +252,12 @@ public class BusinessProcessPublishService {
         version.setSchemaHash(canonicalHash);
         version.setDependencySnapshotJson(writeJson(dependencies));
         version.setPublishTime(LocalDateTime.now());
-        version.setPublishedBy(actor.userId());
+        version.setPublishedBy(userId);
         version.setStatus(EnableStatus.ENABLED.getCode());
         version.setDelFlag(0L);
-        version.setCreateBy(actor.userId());
-        version.setCreateDept(actor.activeOrgId());
-        version.setUpdateBy(actor.userId());
+        version.setCreateBy(userId);
+        version.setCreateDept(resolveActiveOrgId());
+        version.setUpdateBy(userId);
         try {
             if (versionMapper.insertImmutable(version) != 1) {
                 throw new BusinessException("业务流程版本保存失败: " + process.getProcessCode());
@@ -272,7 +271,7 @@ public class BusinessProcessPublishService {
             assertSameImmutableVersion(existing, canonicalHash);
             version = existing;
         }
-        updateProjection(actor, applicationId, process.getId(), version);
+        updateProjection(applicationId, process.getId(), version, userId);
         return toSnapshot(version);
     }
 
@@ -415,13 +414,13 @@ public class BusinessProcessPublishService {
     }
 
     private void updateProjection(
-            PublishActor actor,
             Long applicationId,
             Long processId,
-            AiBusinessProcessVersion version) {
+            AiBusinessProcessVersion version,
+            Long userId) {
         if (processMapper.updatePublishedProjection(
-                actor.tenantId(), applicationId, processId,
-                version.getVersionNo(), version.getSchemaHash(), actor.userId()) != 1) {
+                resolveTenantId(), applicationId, processId,
+                version.getVersionNo(), version.getSchemaHash(), userId) != 1) {
             throw new BusinessException("业务流程发布投影更新失败: " + version.getProcessCode());
         }
     }
@@ -538,40 +537,32 @@ public class BusinessProcessPublishService {
         return value == null ? null : String.valueOf(value);
     }
 
-    private Long requireTenantId() {
-        Long tenantId;
+    private Long resolveTenantId() {
         try {
-            tenantId = SessionHelper.getTenantId();
+            Long tenantId = SessionHelper.getTenantId();
+            return tenantId == null ? 1L : tenantId;
         } catch (Exception exception) {
-            tenantId = null;
+            return 1L;
         }
-        if (tenantId == null || tenantId <= 0) {
-            throw new BusinessException("业务流程发布缺少可信租户上下文");
-        }
-        return tenantId;
     }
 
-    private PublishActor requirePublishActor() {
-        Long tenantId = requireTenantId();
-        Long userId;
-        Long activeOrgId;
+    private Long resolveUserId() {
         try {
-            userId = SessionHelper.getUserId();
-            activeOrgId = SessionHelper.getActiveOrgId();
+            return SessionHelper.getUserId();
         } catch (Exception exception) {
-            userId = null;
-            activeOrgId = null;
+            return null;
         }
-        if (userId == null || userId <= 0) {
-            throw new BusinessException("业务流程发布缺少可信操作者");
+    }
+
+    private Long resolveActiveOrgId() {
+        try {
+            return SessionHelper.getActiveOrgId();
+        } catch (Exception exception) {
+            return null;
         }
-        return new PublishActor(tenantId, userId, activeOrgId);
     }
 
     private <T> List<T> safeList(List<T> values) {
         return values == null ? List.of() : values;
-    }
-
-    private record PublishActor(Long tenantId, Long userId, Long activeOrgId) {
     }
 }

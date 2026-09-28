@@ -65,28 +65,6 @@ class UserLoadServiceImplPasswordLoginTest {
                 });
     }
 
-    @Test
-    void rejectsExplicitWorkspaceOutsideUserMembership() {
-        SysUserMapper userMapper = mock(SysUserMapper.class);
-        SysUserTenantMapper userTenantMapper = mock(SysUserTenantMapper.class);
-        UserLoadServiceImpl service = spy(new UserLoadServiceImpl(
-                userMapper, null, null, null, null, userTenantMapper, null, null, null,
-                null, null, null));
-        SysUser user = new SysUser();
-        user.setId(10L);
-        user.setUsername("alice");
-        user.setPassword("encoded");
-        user.setUserType(SystemConstants.UserType.NORMAL_USER);
-        when(userMapper.selectUsersByUsernameForLogin("alice")).thenReturn(List.of(user));
-        doReturn(true).when(service).matchPassword("secret", "encoded");
-        when(userTenantMapper.selectUserTenants(10L, true))
-                .thenReturn(List.of(membership(1L, "默认租户")));
-
-        assertThatThrownBy(() -> service.authenticateByUsernamePassword("alice", "secret", 2L))
-                .isInstanceOf(RuntimeException.class)
-                .hasMessage("用户名或密码错误");
-    }
-
     private SysUserTenantVO membership(Long tenantId, String tenantName) {
         SysUserTenantVO vo = new SysUserTenantVO();
         vo.setTenantId(tenantId);

@@ -70,10 +70,6 @@ public class FlowFormInstance extends TenantEntity {
 
     private LocalDateTime endTime;
 
-    private String projectionEventId;
-
-    private Long projectionSequence;
-
     @TableLogic
     private Integer deleted;
 }

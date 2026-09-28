@@ -1,24 +1,22 @@
 # Forge 安全审计问题整改 Tasks
 
 > 关联 Spec：`spec.md`  
-> 状态：实施中（2026-09-27 已完成一批 P0/P1/P2 缺陷修复；T4.2/T4.3 巨型组件/巨型类改造按用户要求排除）
+> 状态：未开始  
 > 执行规则：每个任务遵循“先测试、再实现、再验证、人工审查、记录证据”；不得覆盖工作区既有改动。
-
-> 说明：`[x]` 仅表示该条任务的全部验收点已完成；只完成部分要求的任务保持 `[ ]`，并在条目后注明已完成范围，避免把尚未进行的真实 MySQL/Redis、浏览器权限矩阵或生产审批误记为通过。
 
 ## Phase 0：边界冻结与基线
 
 ### T0.1 建立问题基线和配置清单
 
-- [x] 读取本变更 `spec.md`、`test-spec.md`、`execution-log.md`，并记录当前 `git status --short`。
+- [ ] 读取本变更 `spec.md`、`test-spec.md`、`execution-log.md`，并记录当前 `git status --short`。
 - [ ] 导出 Controller 路由、API 配置、`sys_resource` 资源、外部 API `permission_check_enabled`、网关环境变量和默认 client/grant 清单。
 - [ ] 生成报表脚本、后端 ScriptAdapter、`v-html`、JDBC 临时测试、SQL 拼接和文件入口清单；每项标记数据来源和可控角色。
 - [ ] 建立 P0/P1 人工审查表，未经确认不得把“配置待确认”问题标为已修复。
 
 ### T0.2 固化测试运行环境
 
-- [x] 使用 JDK 17 Maven Toolchain，修复定向测试对 `forge-admin-server/sql/初始化脚本.sql` 的过期引用，改为仓库实际初始化脚本路径或测试专用夹具。（过期引用已改为唯一实际路径 `forge-server/db/全量初始化SQL.sql`；Maven Enforcer、Toolchains 和 Gitee CI 均固定 JDK 17）
-- [x] 在 CI 固定 Node 20 和 `pnpm --ignore-workspace`，保留既有前端构建命令。（固定 Node 20.19.5、pnpm 10.28.1，并完成 Admin/Report 冻结锁文件安装及生产构建）
+- [ ] 使用 JDK 17 Maven Toolchain，修复定向测试对 `forge-admin-server/sql/初始化脚本.sql` 的过期引用，改为仓库实际初始化脚本路径或测试专用夹具。
+- [ ] 在 CI 固定 Node 20 和 `pnpm --ignore-workspace`，保留既有前端构建命令。
 - [ ] 在测试记录中保留本机 Mockito/Byte Buddy 限制，不得将环境失败记录为代码通过。
 
 ## Phase 1：P0/P1 安全边界
@@ -38,10 +36,10 @@
 - `forge-report-ui/src/components/FgAI/AIChatPanel.vue`
 
 - [ ] 先新增脚本执行器契约测试：禁止主线程 `Function` 构造器、禁止访问 `window/document/fetch/storage/cookie`、限制脚本长度/执行时间/调用次数。
-- [x] 以受限 DSL/JSONPath 替代数据过滤和 URL 模板执行；URL 只能由服务端提供的参数模板生成，禁止模板读取全局对象。
-- [x] 确需脚本的事件迁移到 Worker 或 sandbox iframe，仅暴露冻结的最小 API，并在销毁组件时终止执行上下文。（本轮选择彻底移除任意脚本执行能力，旧事件脚本只读展示并可清除，因此无需保留 Worker 执行器）
-- [x] 所有动态 HTML 经过 allowlist 清洗或改为文本渲染；为恶意属性、SVG、事件属性和 URL 协议增加用例。（本轮统一改为文本渲染，源码扫描无 `v-html`）
-- [ ] 运行前端定向测试、ESLint、生产构建和 Playwright 恶意脚本验证。（生产构建已通过；Playwright 恶意脚本验证未执行）
+- [ ] 以受限 DSL/JSONPath 替代数据过滤和 URL 模板执行；URL 只能由服务端提供的参数模板生成，禁止模板读取全局对象。
+- [ ] 确需脚本的事件迁移到 Worker 或 sandbox iframe，仅暴露冻结的最小 API，并在销毁组件时终止执行上下文。
+- [ ] 所有动态 HTML 经过 allowlist 清洗或改为文本渲染；为恶意属性、SVG、事件属性和 URL 协议增加用例。
+- [ ] 运行前端定向测试、ESLint、生产构建和 Playwright 恶意脚本验证。
 
 ### T1.2 移除主 JVM ScriptAdapter 任意执行
 
@@ -50,12 +48,12 @@
 - `forge-server/forge-framework/forge-plugin-parent/forge-plugin-external/src/main/java/com/mdframe/forge/plugin/external/adapter/impl/ScriptAdapter.java`
 - external adapter DTO、配置校验、Mapper XML、迁移脚本和相关单测
 
-- [x] 新增 DSL/字段映射适配器测试，覆盖允许操作、未知/可执行配置、超长配置、记录数/映射操作数和结果大小上限；协议不包含循环或任意代码语义，因此无可触发超时的执行路径。
-- [x] 将 `ScriptAdapter` 改为白名单转换器；旧脚本配置返回明确迁移错误，不得静默执行。
-- [x] 若业务确认必须保留 JavaScript，另建独立执行服务/容器协议，明确 CPU、内存、网络、超时和结果大小上限；主 JVM 只进行 RPC 调用和结果校验。（本轮确认不保留 JavaScript，该条件分支不适用）
-- [x] 审计日志记录映射协议版本、操作者、结果和配置 SHA-256 摘要，`OperationLog` 禁止保存请求参数与响应原文。
+- [ ] 新增 DSL/字段映射适配器测试，覆盖允许操作、未知函数、超长配置、循环和超时。
+- [ ] 将 `ScriptAdapter` 改为白名单转换器；旧脚本配置返回明确迁移错误，不得静默执行。
+- [ ] 若业务确认必须保留 JavaScript，另建独立执行服务/容器协议，明确 CPU、内存、网络、超时和结果大小上限；主 JVM 只进行 RPC 调用和结果校验。
+- [ ] 审计日志记录脚本版本、操作者、结果摘要，不记录脚本中的密钥和响应原文。
 
-### T1.3 API 权限改为显式资源控制
+### T1.3 API 权限改为 fail-closed
 
 **修改范围：**
 
@@ -64,10 +62,10 @@
 - `forge-server/forge-framework/forge-plugin-parent/forge-plugin-system/src/main/resources/mapper/SysResourceMapper.xml`、用户权限加载服务、API 配置缓存
 - Controller 路由扫描器、权限资源 Flyway 脚本
 
-- [x] 新增未配置资源、缓存异常、隐藏 API、通配路径和匿名白名单测试；未配置资源跳过该层，查询异常和已配置但未授权返回 403。
-- [x] 提供可选的 Controller 路由与资源全量覆盖报告；默认关闭，仅要求全量 API 资源治理的部署显式启用盘点和阻断。
-- [x] 隐藏 API 参与匹配和用户权限计算；资源 `visible` 只影响菜单展示。
-- [x] 对明确匿名接口使用显式注解/白名单，禁止通过“未配置”获得匿名访问。
+- [ ] 新增未配置资源、缓存异常、隐藏 API、通配路径和匿名白名单测试；默认结果必须为 403。
+- [ ] 启动/CI 输出 Controller 路由与资源覆盖报告，缺失敏感接口阻止发布。
+- [ ] 隐藏 API 参与匹配和用户权限计算；资源 `visible` 只影响菜单展示。
+- [ ] 对明确匿名接口使用显式注解/白名单，禁止通过“未配置”获得匿名访问。
 - [ ] 完成 Admin 登录、普通用户、无权限用户和缓存故障的接口验证。
 
 ### T1.4 外部系统/API/代理/日志权限闭环
@@ -81,10 +79,10 @@
 - `forge-server/forge-framework/forge-plugin-parent/forge-plugin-external/src/main/java/com/mdframe/forge/plugin/external/support/ExternalPermissionGuard.java`、`ExternalQueryContractValidator.java`
 - `forge-server/db/migration/` 外部资源脚本
 
-- [x] 为管理、调试、代理、日志清理接口定义明确权限标识和平台管理员边界。
-- [x] 外部 API 默认 `permissionCheckEnabled=true`；旧数据迁移前先盘点并提供兼容告警。
-- [x] 补齐 `/external/api/**`、`/external/proxy/**`、`/external/api/log/**` 的资源、角色和租户策略，使用 `NOT EXISTS` 防重复。
-- [ ] 测试普通用户、跨租户用户、平台管理员、匿名请求和权限配置关闭时的结果。（已完成单元/契约矩阵：全部 Controller 方法显式权限、普通用户有/无权限、匿名上下文固定 403、权限配置关闭 fail-closed、平台高风险权限不自动授权、详情/关联查询/写入/删除显式租户条件；仍待真实 Admin + MySQL 环境按角色发起 HTTP 验证）
+- [ ] 为管理、调试、代理、日志清理接口定义明确权限标识和平台管理员边界。
+- [ ] 外部 API 默认 `permissionCheckEnabled=true`；旧数据迁移前先盘点并提供兼容告警。
+- [ ] 补齐 `/external/api/**`、`/external/proxy/**`、`/external/api/log/**` 的资源、角色和租户策略，使用 `NOT EXISTS` 防重复。
+- [ ] 测试普通用户、跨租户用户、平台管理员、匿名请求和权限配置关闭时的结果。
 
 ### T1.5 开放网关和流程动作默认关闭
 
@@ -94,9 +92,9 @@
 - capability open-gateway/identity/flow-actions 配置校验与自动装配
 - capability 默认 client/grant 初始化脚本和启动检查
 
-- [x] 新增配置绑定测试，确认未设置环境变量时 open-gateway、flow-actions、identity 均为关闭。
-- [x] 启动检查拒绝空 pepper、弱密钥、默认 client/grant 和未绑定租户/组织的 SERVICE 身份。
-- [x] 保留 OAuth/HMAC、防重放、scope、RBAC、限流、幂等和高风险确认，测试关闭/开启两种模式。
+- [ ] 新增配置绑定测试，确认未设置环境变量时 open-gateway、flow-actions、identity 均为关闭。
+- [ ] 启动检查拒绝空 pepper、弱密钥、默认 client/grant 和未绑定租户/组织的 SERVICE 身份。
+- [ ] 保留 OAuth/HMAC、防重放、scope、RBAC、限流、幂等和高风险确认，测试关闭/开启两种模式。
 - [ ] 生产开启必须有环境配置、审计快照和人工审批；回滚只切回关闭状态。
 
 ### T1.6 临时 JDBC 和 preview-sql 隔离
@@ -108,10 +106,10 @@
 - `forge-server/forge-framework/forge-plugin-parent/forge-plugin-data/src/main/java/com/mdframe/forge/plugin/data/controller/DataDatasetController.java`
 - `forge-server/forge-framework/forge-plugin-parent/forge-plugin-data/src/main/java/com/mdframe/forge/plugin/data/service/DataDatasetAccessService.java`、`impl/DataDatasetAccessServiceImpl.java`、DTO 校验、出站地址策略
 
-- [x] 新增私网、环回、云元数据、非法驱动、非法协议、超时、并发和超大响应测试。
-- [x] 临时连接仅允许平台管理员，驱动/主机/端口白名单，固定 `SELECT 1`，强制连接和查询超时，使用后关闭数据源。
-- [x] `preview-sql` 必须引用已保存数据集或显式管理权限，执行行权限、列权限、脱敏和只读账号。
-- [x] 普通查询、临时连接、预览 SQL 的审计日志只记录摘要，不记录密码、JDBC URL、用户名、完整 SQL、参数值和响应数据。
+- [ ] 新增私网、环回、云元数据、非法驱动、非法协议、超时、并发和超大响应测试。
+- [ ] 临时连接仅允许平台管理员，驱动/主机/端口白名单，固定 `SELECT 1`，强制连接和查询超时，使用后关闭数据源。
+- [ ] `preview-sql` 必须引用已保存数据集或显式管理权限，执行行权限、列权限、脱敏和只读账号。
+- [ ] 普通查询、临时连接、预览 SQL 的审计日志只记录摘要，不记录密码和完整 SQL 参数。
 
 ## Phase 2：认证、幂等和文件
 
@@ -123,10 +121,10 @@
 - `forge-server/forge-framework/forge-plugin-parent/forge-plugin-system/src/main/java/com/mdframe/forge/plugin/system/service/ISysOnlineUserService.java`、在线会话存储、Sa-Token 登录模型
 - 登录/改密/重置密码单测
 
-- [x] 新增改密、找回密码、管理员重置后旧 Token 访问必须失败的测试。
-- [x] 使用 `SaLoginModel` 设置单次 client 配置，不再调用 `SaManager.setConfig` 修改全局配置。
-- [x] 增加密码版本号或等价缓存校验，覆盖多实例和缓存失效场景。
-- [x] 保留当前会话是否继续有效的产品选择，但必须显式配置并审计。
+- [ ] 新增改密、找回密码、管理员重置后旧 Token 访问必须失败的测试。
+- [ ] 使用 `SaLoginModel` 设置单次 client 配置，不再调用 `SaManager.setConfig` 修改全局配置。
+- [ ] 增加密码版本号或等价缓存校验，覆盖多实例和缓存失效场景。
+- [ ] 保留当前会话是否继续有效的产品选择，但必须显式配置并审计。
 
 ### T2.2 幂等 Token 原子消费
 
@@ -136,10 +134,10 @@
 - `forge-server/forge-framework/forge-starter-parent/forge-starter-idempotent/src/main/java/com/mdframe/forge/starter/idempotent/strategy/TokenRequiredStrategyHandler.java`
 - Redis Lua 脚本/序列化、并发测试
 
-- [x] 先写并发测试，两个请求共用 token 时最多一个进入业务方法。
-- [x] 使用 Lua 原子完成存在性、状态、过期和消费；消费失败返回统一异常。
-- [x] 移除完整 Token 日志，改为不可逆摘要和 prefix。
-- [x] 测试 Redis 重试、超时、节点切换和已消费 Token 的行为；对结果不确定的原子消费禁止应用层自动重试，统一 fail-closed 并要求重新获取 Token。
+- [ ] 先写并发测试，两个请求共用 token 时最多一个进入业务方法。
+- [ ] 使用 Lua 原子完成存在性、状态、过期和消费；消费失败返回统一异常。
+- [ ] 移除完整 Token 日志，改为不可逆摘要和 prefix。
+- [ ] 测试 Redis 重试、超时、节点切换和已消费 Token 的行为。
 
 ### T2.3 验证码原子消费和发送风控
 
@@ -149,10 +147,10 @@
 - `forge-server/forge-framework/forge-starter-parent/forge-starter-auth/src/main/java/com/mdframe/forge/starter/auth/service/ICaptchaService.java`、短信/邮件发送器、认证 Controller
 - Redis Lua/`SET NX`、风控配置和字典
 
-- [x] 图形、短信、邮件验证码并发验证最多成功一次，错误答案按策略消费或锁定。
-- [x] 发送间隔使用原子锁，按 IP、设备、账号、租户和日配额限流。
-- [x] 增加失败次数和短时锁定，避免账号枚举和短信轰炸。
-- [x] 测试 Redis 异常时 fail-closed，不得无限发送或无限尝试。
+- [ ] 图形、短信、邮件验证码并发验证最多成功一次，错误答案按策略消费或锁定。
+- [ ] 发送间隔使用原子锁，按 IP、设备、账号、租户和日配额限流。
+- [ ] 增加失败次数和短时锁定，避免账号枚举和短信轰炸。
+- [ ] 测试 Redis 异常时 fail-closed，不得无限发送或无限尝试。
 
 ### T2.4 分片上传与文件权限
 
@@ -164,12 +162,12 @@
 - `forge-server/forge-framework/forge-plugin-parent/forge-plugin-system/src/main/java/com/mdframe/forge/plugin/system/service/impl/SysFileMetadataServiceImpl.java`、`SystemFileMetadataPersistence.java`
 - 上传会话 DTO、Redis/对象存储 session、Flyway（如需表）
 
-- [x] 增加上传初始化合同：用户、租户、业务主体、总大小、分片数、TTL、私有属性和存储类型签名。
-- [x] 每片和合并阶段校验大小、连续分片、ETag、MIME、扩展名和配额；超时/异常清理临时数据。
-- [x] 集群节点之间可继续上传；uploadId 不能脱离绑定主体使用。
-- [x] 分片完成继承 `isPrivate`，默认私有；所有下载、URL、Base64、字节读取和内部消费统一调用授权函数。
-- [x] 修复 `removeBatch` 按字符串 `fileId` 查询；补充租户、私有文件、状态和过期过滤。
-- [x] 明确 `status` 逻辑删除语义，实体、Mapper、查询和迁移保持一致。
+- [ ] 增加上传初始化合同：用户、租户、业务主体、总大小、分片数、TTL、私有属性和存储类型签名。
+- [ ] 每片和合并阶段校验大小、连续分片、ETag、MIME、扩展名和配额；超时/异常清理临时数据。
+- [ ] 集群节点之间可继续上传；uploadId 不能脱离绑定主体使用。
+- [ ] 分片完成继承 `isPrivate`，默认私有；所有下载、URL、Base64、字节读取和内部消费统一调用授权函数。
+- [ ] 修复 `removeBatch` 按字符串 `fileId` 查询；补充租户、私有文件、状态和过期过滤。
+- [ ] 明确 `status` 逻辑删除语义，实体、Mapper、查询和迁移保持一致。
 
 ## Phase 3：数据正确性和输入校验
 
@@ -181,10 +179,10 @@
 - `forge-server/forge-framework/forge-plugin-parent/forge-plugin-data/src/main/java/com/mdframe/forge/plugin/data/support/DbDialect.java`、`MySqlDialect.java`、其他 dialect
 - `forge-server/forge-framework/forge-plugin-parent/forge-plugin-data/src/test/java/com/mdframe/forge/plugin/data/service/DataQueryExecutorTest.java`
 
-- [x] 先写 page 1/page 2 和 pageSize 上限测试。
-- [x] 为 dialect 增加 offset + limit API；按 `pageNum` 计算 offset，拒绝溢出和负数。
-- [x] 增加独立 count 查询或明确响应字段为 `pageTotal`；不能把当前页数量伪装成总数。
-- [x] 验证缓存键包含 pageNum/pageSize，避免不同页命中同一缓存。
+- [ ] 先写 page 1/page 2 和 pageSize 上限测试。
+- [ ] 为 dialect 增加 offset + limit API；按 `pageNum` 计算 offset，拒绝溢出和负数。
+- [ ] 增加独立 count 查询或明确响应字段为 `pageTotal`；不能把当前页数量伪装成总数。
+- [ ] 验证缓存键包含 pageNum/pageSize，避免不同页命中同一缓存。
 
 ### T3.2 SQL AST、元数据参数化和标识符校验
 
@@ -195,10 +193,10 @@
 - `forge-server/forge-framework/forge-plugin-parent/forge-plugin-data/src/main/java/com/mdframe/forge/plugin/data/support/TableQueryBuilder.java`、`DataQueryExecutor.java`
 - `forge-server/forge-framework/forge-plugin-parent/forge-plugin-data/src/main/java/com/mdframe/forge/plugin/data/controller/DataConnectionController.java` 元数据查询
 
-- [x] 新增注释、大小写、换行、多语句、锁、延时函数、文件函数、系统表、用户变量和 UNION 变体测试。
-- [x] 使用 SQL parser/AST 或受限数据库账号；只允许单条 SELECT。
-- [x] 所有 schema/keyword/table/column 参数改为 PreparedStatement 或严格标识符白名单。
-- [x] `quoteIdentifier` 正确拒绝反引号、控制字符、分号和注释，不依赖简单包裹。
+- [ ] 新增注释、大小写、换行、多语句、锁、延时函数、文件函数、系统表、用户变量和 UNION 变体测试。
+- [ ] 使用 SQL parser/AST 或受限数据库账号；只允许单条 SELECT。
+- [ ] 所有 schema/keyword/table/column 参数改为 PreparedStatement 或严格标识符白名单。
+- [ ] `quoteIdentifier` 正确拒绝反引号、控制字符、分号和注释，不依赖简单包裹。
 
 ### T3.3 注册、密码策略和找回密码边界
 
@@ -209,15 +207,13 @@
 - `forge-server/forge-framework/forge-starter-parent/forge-starter-config/src/main/java/com/mdframe/forge/starter/config/config/SecurityConfig.java` 的 `PasswordPolicyConfig`
 - `forge-server/forge-framework/forge-plugin-parent/forge-plugin-system/src/main/resources/mapper/SysUserMapper.xml`、密码历史/版本模型
 
-- [x] 校验确认密码、用户名长度/格式、手机号/邮箱格式与唯一性、租户状态和注册开关。
-- [x] 引入统一 `PasswordPolicyService`，覆盖注册、改密、找回、管理员重置、第三方建用户。
-- [x] 注册租户使用可信上下文、默认租户或邀请码，不接受任意客户端 tenantId。
-- [x] 找回密码查询过滤 `user_status=ENABLED`、`del_flag=0` 和目标租户；更新条件带状态/租户。
-- [x] 测试禁用用户、跨租户账号、弱密码、历史密码、过期密码和重放验证码。
+- [ ] 校验确认密码、用户名长度/格式、手机号/邮箱格式与唯一性、租户状态和注册开关。
+- [ ] 引入统一 `PasswordPolicyService`，覆盖注册、改密、找回、管理员重置、第三方建用户。
+- [ ] 注册租户使用可信上下文、默认租户或邀请码，不接受任意客户端 tenantId。
+- [ ] 找回密码查询过滤 `user_status=ENABLED`、`del_flag=0` 和目标租户；更新条件带状态/租户。
+- [ ] 测试禁用用户、跨租户账号、弱密码、历史密码、过期密码和重放验证码。
 
 ## Phase 4：依赖、测试和前端结构
-
-> 2026-09-28 用户收敛范围：只完成 T4.4、T4.5、T4.6；其余阶段跳过，不作为本轮阻断项。
 
 ### T4.1 依赖和构建质量门禁
 
@@ -227,14 +223,12 @@
 - JustAuth 版本和 exclusions
 - CI workflow、Maven Toolchain、依赖扫描配置
 
-- [x] 运行 `mvn dependency:tree`，确认 `fastjson:1.2.83` 是否进入运行时。
-- [x] 升级兼容版本或排除旧依赖，执行 API/社会化登录回归测试。
-- [ ] CI 固定 JDK 17，执行 compile/test、SCA、Secret scan、SAST、SBOM 和镜像扫描。（JDK 17 compile/test 门禁与 CycloneDX 1.6 SBOM 已落地；SCA、Secret scan、SAST 和镜像扫描仍待完成）
+- [ ] 运行 `mvn dependency:tree`，确认 `fastjson:1.2.83` 是否进入运行时。
+- [ ] 升级兼容版本或排除旧依赖，执行 API/社会化登录回归测试。
+- [ ] CI 固定 JDK 17，执行 compile/test、SCA、Secret scan、SAST、SBOM 和镜像扫描。
 - [ ] `pnpm audit` 工具异常需记录并替换可用审计工具，不能以命令异常作为无漏洞结论。
 
-### T4.2 巨型前端组件拆分（本轮排除）
-
-> 按用户要求，本轮只修复安全/正确性缺陷，不进行巨型前端组件改造。
+### T4.2 巨型前端组件拆分
 
 **修改范围：**
 
@@ -250,9 +244,7 @@
 - [ ] 为每个拆分面板增加状态初始化、取消、保存失败回滚和租户切换测试。
 - [ ] 执行 ESLint、Vitest、生产构建和窄屏/明暗主题浏览器检查。
 
-### T4.3 后端巨型类拆分与复杂度门禁（本轮排除）
-
-> 按用户要求，本轮只修复安全/正确性缺陷，不进行后端巨型类拆分。
+### T4.3 后端巨型类拆分与复杂度门禁
 
 **重点范围：**
 
@@ -268,28 +260,28 @@
 
 ### T4.4 低代码事件和运行态状态机
 
-- [x] 去除 `BusinessProcessOrchestrator`、`BusinessEventPublisher`、`BusinessTriggerExecutor` 在缺失可信租户时默认 `1L` 的行为；事件进入隔离失败队列或返回明确错误。
-- [x] 将未知事件条件操作符从 fail-open 改为 fail-closed；发布前校验操作符、字段类型、版本和表达式长度。
-- [x] 事件增加来源、版本、签名/可信上下文和幂等键；伪造其他 tenantId、重复事件、乱序事件均有测试。（可信信封、摘要、稳定事件 ID、聚合顺序、事务 Outbox、跨租户拒绝、重复收敛和迟到事件 fencing 已闭环）
-- [x] 为 `BusinessProcessOrchestrator` 增加 run lease/heartbeat/fencing token；节点 attempt claim 和 complete 均按 attemptId 原子更新并检查 claim 结果。（已增加数据库租约、单调 execution token、双线程心跳守卫、限界提交后执行池、过期接管、租约约束的 checkpoint/attempt CAS，并在事务提交后使用独立线程/连接认领执行）
-- [x] 为远程 FlowClient 启动、审批、回调和状态同步增加 Outbox、重试、补偿、超时接管和人工恢复记录。（启动/任务命令、回调 Inbox、状态对账、Redis pending 接管和 DEAD 人工重放均已闭环）
-- [x] 测试并发启动、并发执行、重复/乱序回调、不同租户回调、超时恢复和远程成功本地失败场景。（租约 CAS、幂等命令、顺序 fencing、跨租户拒绝、超时接管和本地失败恢复均已自动化覆盖）
+- [ ] 去除 `BusinessProcessOrchestrator`、`BusinessEventPublisher`、`BusinessTriggerExecutor` 在缺失可信租户时默认 `1L` 的行为；事件进入隔离失败队列或返回明确错误。
+- [ ] 将未知事件条件操作符从 fail-open 改为 fail-closed；发布前校验操作符、字段类型、版本和表达式长度。
+- [ ] 事件增加来源、版本、签名/可信上下文和幂等键；伪造其他 tenantId、重复事件、乱序事件均有测试。
+- [ ] 为 `BusinessProcessOrchestrator` 增加 run lease/heartbeat/fencing token；节点 attempt claim 和 complete 均按 attemptId 原子更新并检查 claim 结果。
+- [ ] 为远程 FlowClient 启动、审批、回调和状态同步增加 Outbox、重试、补偿、超时接管和人工恢复记录。
+- [ ] 测试并发启动、并发执行、重复/乱序回调、不同租户回调、超时恢复和远程成功本地失败场景。
 
 ### T4.5 低代码发布任务、DDL 与后置同步
 
-- [x] 将在线 DDL 从本地业务事务中拆出，增加发布任务/Outbox，记录 requestId、schemaHash、数据源、租户、版本、操作者和结果。（V1.0.202 任务现已承载 `DDL_PENDING -> CONFIG_PENDING -> POST_SYNC` 在线发布；任何 DDL 前先以 `REQUIRES_NEW` 持久化任务，DDL 显式 `NOT_SUPPORTED`，配置/版本以独立事务提交）
-- [x] 发布状态至少覆盖预检、DDL 待执行/执行中/成功/失败、配置待同步/成功/失败和人工重试；不以 `@Transactional` 声明提供跨数据源原子性。（发布规划先完成不可变命令/Schema/数据源预检，再以 `DDL_PENDING -> CONFIG_PENDING -> POST_SYNC` 和 `PENDING/PROCESSING/RETRY/COMPLETED/SUPERSEDED/DEAD` 表达阶段与执行结果；DDL 显式挂起本地事务，DEAD 任务可经独立高风险权限校验后人工重新入队）
-- [x] 菜单、应用入口和运行配置同步使用幂等键；增加指数退避、死信、对账和人工重放。（稳定 requestId、不可变命令摘要、幂等写入、版本 fencing/SUPERSEDED、指数退避和 DEAD 已闭环；V1.0.203 增加不自动授予角色的人工重放资源，租户级 DEAD CAS 在重放前复验命令摘要及数据源/Schema/版本身份并记录操作者、原因和时间）
-- [x] 测试 DDL 成功后配置失败、菜单成功后入口失败、重复 post processor 事件、重试耗尽和补偿/回滚脚本。（阶段恢复、失败重试、幂等收敛、DEAD 重放及审计 HTTP 恢复脚本已覆盖；反向 DDL 明确禁止自动执行）
+- [ ] 将在线 DDL 从本地业务事务中拆出，增加发布任务/Outbox，记录 requestId、schemaHash、数据源、租户、版本、操作者和结果。
+- [ ] 发布状态至少覆盖预检、DDL 待执行/执行中/成功/失败、配置待同步/成功/失败和人工重试；不以 `@Transactional` 声明提供跨数据源原子性。
+- [ ] 菜单、应用入口和运行配置同步使用幂等键；增加指数退避、死信、对账和人工重放。
+- [ ] 测试 DDL 成功后配置失败、菜单成功后入口失败、重复 post processor 事件、重试耗尽和补偿/回滚脚本。
 
 ### T4.6 流程监控、事件镜像与 BPMN 解析安全
 
-- [x] 所有 `FlowMonitorServiceImpl` 方法统一绑定 tenant context 和资源权限，删除/废弃未绑定租户的旧接口；流程变量按白名单和敏感级别脱敏并记录读取审计。
-- [x] 将 `FlowModelServiceImpl` 的 BPMN process key、sequenceFlow、结构和替换逻辑迁移到安全 DOM/StAX 解析器，复用关闭 DTD/外部实体的 `BpmnXmlUtils`。
-- [x] 将 `validateNoProcessData()` 从 Service 层 `LambdaQueryWrapper` 迁移到 Mapper XML，显式加入租户和逻辑删除条件。
-- [x] 为 Flowable 镜像、候选人、业务状态和通知事件增加唯一 event id、顺序/版本、幂等写入和补偿任务；避免 `fallbackExecution=true` 在无事务上下文直接发送不可回收通知。（通知事件已完成唯一 ID、协议版本、数据库顺序号、载荷摘要、事务 Outbox、租户 CAS、聚合顺序、指数退避、死信、定时补偿，以及按租户隔离的死信列表和带操作者/原因/时间审计的人工重放；任务镜像、初始候选人、业务状态和表单状态已完成独立投影 Outbox、不可变快照摘要、租户 CAS、聚合顺序、顺序 fencing、幂等写入、指数退避和定时补偿）
-- [x] 禁止日志输出原始 BPMN、流程变量和完整通知 URL；Webhook 继续使用出站场景 allowlist/private-network policy。（原始 BPMN/流程变量日志已移除；Webhook 日志仅保留 scheme/host/port 和异常类型，站内信/H5/协同卡片完整 URL 也已移除，请求仍统一走 `FLOW_API` 受控出站场景）
-- [x] 增加 XXE/DOCTYPE、CDATA、单引号、命名空间、属性重排、多 process、嵌套节点、非法引用和事件乱序测试。（部署和启动配置读取共用安全解析边界；通知/镜像 Outbox 覆盖聚合顺序、迟到拒绝、租约接管与补偿）
+- [ ] 所有 `FlowMonitorServiceImpl` 方法统一绑定 tenant context 和资源权限，删除/废弃未绑定租户的旧接口；流程变量按白名单和敏感级别脱敏并记录读取审计。
+- [ ] 将 `FlowModelServiceImpl` 的 BPMN process key、sequenceFlow、结构和替换逻辑迁移到安全 DOM/StAX 解析器，复用关闭 DTD/外部实体的 `BpmnXmlUtils`。
+- [ ] 将 `validateNoProcessData()` 从 Service 层 `LambdaQueryWrapper` 迁移到 Mapper XML，显式加入租户和逻辑删除条件。
+- [ ] 为 Flowable 镜像、候选人、业务状态和通知事件增加唯一 event id、顺序/版本、幂等写入和补偿任务；避免 `fallbackExecution=true` 在无事务上下文直接发送不可回收通知。
+- [ ] 禁止日志输出原始 BPMN、流程变量和完整通知 URL；Webhook 继续使用出站场景 allowlist/private-network policy。
+- [ ] 增加 XXE/DOCTYPE、CDATA、单引号、命名空间、属性重排、多 process、嵌套节点、非法引用和事件乱序测试。
 
 ## Phase 5：收尾和上线门禁
 

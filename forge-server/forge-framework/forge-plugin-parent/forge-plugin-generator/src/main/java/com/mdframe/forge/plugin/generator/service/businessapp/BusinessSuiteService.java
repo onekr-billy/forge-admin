@@ -47,17 +47,16 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
     private final BusinessApplicationMapper businessApplicationMapper;
 
     public Page<BusinessSuiteVO> page(Integer pageNum, Integer pageSize, BusinessSuiteQueryDTO query) {
-        Long tenantId = requireTenantId();
         Page<BusinessSuiteVO> page = new Page<>(normalizePageNum(pageNum), normalizePageSize(pageSize));
-        return baseMapper.selectSuitePage(page, tenantId, normalizeQuery(query));
+        return baseMapper.selectSuitePage(page, resolveTenantId(), normalizeQuery(query));
     }
 
     public List<BusinessSuiteVO> list(BusinessSuiteQueryDTO query) {
-        return baseMapper.selectSuiteList(requireTenantId(), normalizeQuery(query));
+        return baseMapper.selectSuiteList(resolveTenantId(), normalizeQuery(query));
     }
 
     public BusinessSuiteVO detail(Long id) {
-        BusinessSuiteVO vo = baseMapper.selectSuiteDetail(requireTenantId(), id);
+        BusinessSuiteVO vo = baseMapper.selectSuiteDetail(resolveTenantId(), id);
         if (vo == null) {
             throw new BusinessException("业务套件不存在");
         }
@@ -65,7 +64,7 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
     }
 
     public List<BusinessSuiteSummaryVO> summary() {
-        return baseMapper.selectSuiteSummary(requireTenantId());
+        return baseMapper.selectSuiteSummary(resolveTenantId());
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -73,9 +72,8 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
         if (dto == null) {
             throw new BusinessException("业务套件不能为空");
         }
-        Long tenantId = requireTenantId();
         AiBusinessSuite suite = new AiBusinessSuite();
-        copyDtoToEntity(dto, suite, true, tenantId);
+        copyDtoToEntity(dto, suite, true);
         save(suite);
         syncMenuStatusBySuiteStatus(suite);
         return suite.getId();
@@ -86,17 +84,15 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
         if (dto == null || dto.getId() == null) {
             throw new BusinessException("业务套件ID不能为空");
         }
-        Long tenantId = requireTenantId();
-        AiBusinessSuite suite = requireEntity(tenantId, dto.getId());
-        copyDtoToEntity(dto, suite, false, tenantId);
+        AiBusinessSuite suite = requireEntity(dto.getId());
+        copyDtoToEntity(dto, suite, false);
         updateById(suite);
         syncMenuStatusBySuiteStatus(suite);
     }
 
     @Transactional(rollbackFor = Exception.class)
     public void updateStatus(Long id, Integer status) {
-        Long tenantId = requireTenantId();
-        AiBusinessSuite suite = requireEntity(tenantId, id);
+        AiBusinessSuite suite = requireEntity(id);
         suite.setStatus(normalizeStatus(status));
         updateById(suite);
         syncMenuStatusBySuiteStatus(suite);
@@ -104,8 +100,8 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
 
     @Transactional(rollbackFor = Exception.class)
     public void delete(Long id, boolean cleanupOrphanResources) {
-        Long tenantId = requireTenantId();
-        AiBusinessSuite suite = requireEntity(tenantId, id);
+        AiBusinessSuite suite = requireEntity(id);
+        Long tenantId = resolveTenantId();
         if (baseMapper.countChildrenBySuite(tenantId, suite.getId()) > 0) {
             throw new BusinessException("该业务域已存在子业务域，不能删除");
         }
@@ -151,7 +147,7 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
         if (StringUtils.isBlank(code)) {
             throw new BusinessException("业务套件编码不能为空");
         }
-        AiBusinessSuite suite = baseMapper.selectBySuiteCode(requireTenantId(), code);
+        AiBusinessSuite suite = baseMapper.selectBySuiteCode(resolveTenantId(), code);
         if (suite == null) {
             throw new BusinessException("业务套件不存在: " + code);
         }
@@ -163,7 +159,7 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
         if (code == null) {
             return List.of();
         }
-        List<String> codes = baseMapper.selectSelfAndDescendantCodes(requireTenantId(), code);
+        List<String> codes = baseMapper.selectSelfAndDescendantCodes(resolveTenantId(), code);
         if (codes == null || codes.isEmpty()) {
             throw new BusinessException("业务套件不存在: " + code);
         }
@@ -174,22 +170,14 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
         if (id == null) {
             throw new BusinessException("业务套件ID不能为空");
         }
-        return requireEntity(requireTenantId(), id);
-    }
-
-    private AiBusinessSuite requireEntity(Long tenantId, Long id) {
-        if (id == null) {
-            throw new BusinessException("业务套件ID不能为空");
-        }
-        AiBusinessSuite suite = baseMapper.selectBySuiteId(tenantId, id);
+        AiBusinessSuite suite = getById(id);
         if (suite == null) {
             throw new BusinessException("业务套件不存在");
         }
         return suite;
     }
 
-    private void copyDtoToEntity(
-            BusinessSuiteDTO dto, AiBusinessSuite suite, boolean create, Long tenantId) {
+    private void copyDtoToEntity(BusinessSuiteDTO dto, AiBusinessSuite suite, boolean create) {
         String suiteCode = StringUtils.trimToNull(dto.getSuiteCode());
         String suiteName = StringUtils.trimToNull(dto.getSuiteName());
         if (StringUtils.isBlank(suiteCode) || !CODE_PATTERN.matcher(suiteCode).matches()) {
@@ -199,11 +187,11 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
             throw new BusinessException("套件名称不能为空");
         }
         Long excludeId = create ? null : suite.getId();
-        if (baseMapper.countBySuiteCode(tenantId, suiteCode, excludeId) > 0) {
+        if (baseMapper.countBySuiteCode(resolveTenantId(), suiteCode, excludeId) > 0) {
             throw new BusinessException("套件编码已存在: " + suiteCode);
         }
-        Long parentId = normalizeParentId(dto.getParentId(), excludeId, tenantId);
-        suite.setTenantId(tenantId);
+        Long parentId = normalizeParentId(dto.getParentId(), excludeId);
+        suite.setTenantId(resolveTenantId());
         suite.setParentId(parentId);
         suite.setSuiteCode(suiteCode);
         suite.setSuiteName(suiteName);
@@ -257,7 +245,7 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
         }
         Long parentMenuId = rootParentId;
         if (suite.getParentId() != null) {
-            AiBusinessSuite parent = requireEntity(suite.getTenantId(), suite.getParentId());
+            AiBusinessSuite parent = requireEntity(suite.getParentId());
             Long parentRootMenuId = rootParentId != null ? rootParentId : readConfiguredMenuParentId(parent);
             parentMenuId = resolveOrCreateSuiteMenuDirectory(parent, parentRootMenuId, resolvingIds);
         } else if (parentMenuId == null) {
@@ -277,10 +265,9 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
         if (root == null || StringUtils.isBlank(root.getSuiteCode())) {
             return List.of();
         }
-        Long tenantId = requireTenantId();
-        List<AiBusinessSuite> suites = baseMapper.selectSuiteList(tenantId, new BusinessSuiteQueryDTO())
+        List<AiBusinessSuite> suites = baseMapper.selectSuiteList(resolveTenantId(), new BusinessSuiteQueryDTO())
                 .stream()
-                .map(item -> toEntity(item, tenantId))
+                .map(this::toEntity)
                 .toList();
         Set<Long> descendantIds = new HashSet<>();
         if (root.getId() != null) {
@@ -312,10 +299,9 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
         if (suiteCodes == null || suiteCodes.isEmpty()) {
             return;
         }
-        Long tenantId = requireTenantId();
-        List<AiBusinessSuite> suites = baseMapper.selectSuiteList(tenantId, new BusinessSuiteQueryDTO())
+        List<AiBusinessSuite> suites = baseMapper.selectSuiteList(resolveTenantId(), new BusinessSuiteQueryDTO())
                 .stream()
-                .map(item -> toEntity(item, tenantId))
+                .map(this::toEntity)
                 .filter(item -> suiteCodes.contains(item.getSuiteCode()))
                 .toList();
         for (AiBusinessSuite suite : suites) {
@@ -375,7 +361,7 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
         if (suiteCodes == null || suiteCodes.isEmpty()) {
             return List.of();
         }
-        return businessAppMapper.selectAppsBySuiteCodes(requireTenantId(), suiteCodes);
+        return businessAppMapper.selectAppsBySuiteCodes(resolveTenantId(), suiteCodes);
     }
 
     private Long resolveAppMenuParentId(AiBusinessApp app, JSONObject options, JSONObject adminMenu, Long menuResourceId) {
@@ -538,11 +524,12 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
         return parentId;
     }
 
-    private Long normalizeParentId(Long parentId, Long currentId, Long tenantId) {
+    private Long normalizeParentId(Long parentId, Long currentId) {
         if (parentId == null) {
             return null;
         }
-        AiBusinessSuite parent = requireEntity(tenantId, parentId);
+        Long tenantId = resolveTenantId();
+        AiBusinessSuite parent = requireEntity(parentId);
         if (!Objects.equals(parent.getTenantId(), tenantId)) {
             throw new BusinessException("上级业务域不存在");
         }
@@ -555,7 +542,7 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
         Map<Long, AiBusinessSuite> suiteMap = baseMapper.selectSuiteList(tenantId, new BusinessSuiteQueryDTO())
                 .stream()
                 .filter(item -> item.getId() != null)
-                .map(item -> toEntity(item, tenantId))
+                .map(this::toEntity)
                 .collect(Collectors.toMap(AiBusinessSuite::getId, Function.identity(), (left, right) -> left));
         Long cursor = parentId;
         Set<Long> visited = new HashSet<>();
@@ -569,10 +556,10 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
         return parentId;
     }
 
-    private AiBusinessSuite toEntity(BusinessSuiteVO vo, Long tenantId) {
+    private AiBusinessSuite toEntity(BusinessSuiteVO vo) {
         AiBusinessSuite suite = new AiBusinessSuite();
         suite.setId(vo.getId());
-        suite.setTenantId(tenantId);
+        suite.setTenantId(resolveTenantId());
         suite.setParentId(vo.getParentId());
         suite.setSuiteCode(vo.getSuiteCode());
         suite.setSuiteName(vo.getSuiteName());
@@ -717,16 +704,13 @@ public class BusinessSuiteService extends ServiceImpl<BusinessSuiteMapper, AiBus
         return Math.min(pageSize, 100);
     }
 
-    private Long requireTenantId() {
+    private Long resolveTenantId() {
         Long tenantId;
         try {
             tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
             tenantId = null;
         }
-        if (tenantId == null || tenantId <= 0) {
-            throw new BusinessException("业务套件操作缺少可信租户上下文");
-        }
-        return tenantId;
+        return tenantId != null ? tenantId : 1L;
     }
 }

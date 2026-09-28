@@ -23,7 +23,7 @@
 |---|---|---|---|
 | A-01 | P0 | 报表 UI 通过 `new Function`/`AsyncFunction` 执行配置脚本，黑名单可绕过 | `forge-report-ui/src/hooks/useLifeHandler.hook.ts`、`src/api/http.ts`、图表事件/过滤器组件 |
 | A-02 | P0/P1 | 外部 `ScriptAdapter` 在主 JVM `engine.eval`，没有沙箱与资源限制 | `forge-plugin-external/.../ScriptAdapter.java` |
-| A-03 | P1 | API 权限资源必须按显式配置生效；隐藏 API 资源查询与用户权限列表不一致 | `forge-starter-auth/.../ApiPermissionInterceptor.java`、system Mapper |
+| A-03 | P1 | API 权限资源未配置时拦截器 fail-open；隐藏 API 资源查询与用户权限列表不一致 | `forge-starter-auth/.../ApiPermissionInterceptor.java`、system Mapper |
 | A-04 | P1 | 外部系统/API/代理/日志 Controller 没有统一硬权限，外部 API 默认配置可能关闭权限检查 | `forge-plugin-external/.../*Controller.java`、迁移/初始化 SQL |
 | A-05 | P1 | 密码修改/重置后未统一吊销旧会话；登录时改 Sa-Token 全局配置导致并发串配置 | `SystemAuthServiceImpl.java` |
 | A-06 | P1 | 幂等 Token 校验与消费分离，竞态下可重复执行业务；日志记录完整 Token | `RedisTokenService.java`、`TokenRequiredStrategyHandler.java` |
@@ -129,7 +129,7 @@
 
 ### S2 权限默认拒绝与外部连接器保护（P1）
 
-- `ApiPermissionInterceptor` 仅对 `sys_resource` 中明确配置的 API 资源执行资源权限校验；未配置资源跳过该层但仍受登录、权限注解和数据权限约束。资源查询异常、已配置但用户不匹配时拒绝；匿名接口只能通过显式白名单放行。
+- `ApiPermissionInterceptor` 在资源未配置、缓存异常、匹配失败时默认拒绝；匿名接口只能通过显式白名单放行。
 - 启动或 CI 阶段扫描 Controller 路由与 `sys_resource`/API 配置的覆盖关系，缺失资源必须报警或阻止发布。
 - 隐藏 API 也必须参与受控接口匹配；资源可见性不能改变权限校验语义。
 - `ExternalSystemController`、`ExternalApiController`、`ExternalProxyController`、`ExternalApiLogController` 增加硬权限和平台管理员边界；`permissionCheckEnabled` 只能作为额外策略，不能替代 Controller 权限。
@@ -207,7 +207,7 @@
 ### P0/P1 阻断条件
 
 - 不能通过报表配置执行 `window`、网络、存储、DOM 或原型链访问；主 JVM 不执行外部配置脚本。
-- 已配置 API 权限但用户未授权、权限缓存异常或外部资源缺失时请求被拒绝；未配置 API 资源不启用该层控制；外部系统/API/代理/日志普通用户无法调用。
+- 未配置 API 权限、权限缓存异常、外部资源缺失时请求被拒绝；外部系统/API/代理/日志普通用户无法调用。
 - 密码修改/重置后旧 Token 立即失效；并发登录不会改变其他用户/client 的会话策略。
 - 同一幂等 Token、验证码和发送间隔在并发请求下最多成功一次。
 - 临时 JDBC 无法访问未允许的主机/端口，`preview-sql` 无法绕过数据集 ACL。
@@ -231,7 +231,7 @@
 
 ## 8. 实施顺序
 
-1. P0：动态脚本隔离、显式 API 资源权限、外部接口硬权限、开放网关默认关闭。
+1. P0：动态脚本隔离、API 权限 fail-closed、外部接口硬权限、开放网关默认关闭。
 2. P1：密码会话、幂等、验证码、临时 JDBC、`preview-sql`、文件私有权限。
 3. P2：数据集分页、SQL AST/标识符、注册/密码策略、文件元数据逻辑删除、依赖清理。
 4. P3：测试门禁、SCA、JDK/SQL 路径统一、巨型前端组件拆分。

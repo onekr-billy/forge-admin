@@ -1,16 +1,11 @@
 package com.mdframe.forge.starter.flow.listener;
 
 import com.mdframe.forge.starter.flow.entity.FlowBusiness;
-import com.mdframe.forge.starter.flow.entity.FlowProjectionOutbox;
 import com.mdframe.forge.starter.flow.entity.FlowTask;
 import com.mdframe.forge.starter.flow.enums.FlowTaskStatus;
-import com.mdframe.forge.starter.flow.event.FlowProjectionEvent;
-import com.mdframe.forge.starter.flow.event.FlowProjectionOutboxPersistenceException;
 import com.mdframe.forge.starter.flow.mapper.FlowBusinessMapper;
 import com.mdframe.forge.starter.flow.mapper.FlowTaskMapper;
 import com.mdframe.forge.starter.flow.service.FlowErrorLogService;
-import com.mdframe.forge.starter.flow.service.FlowProjectionHandler;
-import com.mdframe.forge.starter.flow.service.FlowProjectionOutboxService;
 import org.flowable.common.engine.api.delegate.event.FlowableEngineEventType;
 import org.flowable.common.engine.api.delegate.event.FlowableEntityEvent;
 import org.flowable.engine.HistoryService;
@@ -31,13 +26,10 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.doThrow;
 
 /**
  * 创建时直接指定处理人（assignee 非空）的任务应自动签收为 CLAIMED；
@@ -50,7 +42,6 @@ class FlowTaskEventListenerCreatedAutoClaimTest {
     private FlowTaskEventListener listener;
     private FlowTaskMapper flowTaskMapper;
     private TaskService taskService;
-    private FlowProjectionOutboxService projectionOutboxService;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -60,11 +51,6 @@ class FlowTaskEventListenerCreatedAutoClaimTest {
         taskService = mock(TaskService.class);
         RuntimeService runtimeService = mock(RuntimeService.class);
         HistoryService historyService = mock(HistoryService.class);
-        projectionOutboxService = mock(FlowProjectionOutboxService.class);
-        FlowProjectionOutbox projectionOutbox = new FlowProjectionOutbox();
-        projectionOutbox.setId(1L);
-        projectionOutbox.setTenantId(1L);
-        projectionOutbox.setEventId("projection-event-1");
 
         inject("flowTaskMapper", flowTaskMapper);
         inject("flowBusinessMapper", flowBusinessMapper);
@@ -74,11 +60,6 @@ class FlowTaskEventListenerCreatedAutoClaimTest {
         inject("eventPublisher", mock(ApplicationEventPublisher.class));
         // 无 assignee 且无候选人的边界用例会触发「审批人分配失败」错误日志分支，需注入避免 NPE
         inject("flowErrorLogService", mock(FlowErrorLogService.class));
-        inject("flowProjectionOutboxService", projectionOutboxService);
-        inject("flowProjectionHandler", mock(FlowProjectionHandler.class));
-
-        when(projectionOutboxService.append(any(FlowProjectionEvent.class))).thenReturn(projectionOutbox);
-        when(projectionOutboxService.markAppliedImmediately(any(), any())).thenReturn(true);
 
         when(flowTaskMapper.selectByTaskId(anyString())).thenReturn(null);
         when(flowBusinessMapper.selectByProcessInstanceId(anyString())).thenReturn(business());
@@ -138,16 +119,6 @@ class FlowTaskEventListenerCreatedAutoClaimTest {
         assertNull(inserted.getClaimTime());
     }
 
-    @Test
-    @DisplayName("projection outbox persistence failure aborts the engine event")
-    void shouldPropagateProjectionOutboxPersistenceFailure() {
-        doThrow(new IllegalStateException("database unavailable"))
-                .when(projectionOutboxService).append(any(FlowProjectionEvent.class));
-
-        assertThrows(FlowProjectionOutboxPersistenceException.class,
-                () -> dispatchCreated("1", null, List.of()));
-    }
-
     private FlowTask dispatchCreated(String assignee, String owner, List<IdentityLink> identityLinks) {
         TaskEntity task = mock(TaskEntity.class);
         when(task.getId()).thenReturn("task-auto-claim-001");
@@ -165,9 +136,9 @@ class FlowTaskEventListenerCreatedAutoClaimTest {
 
         listener.onEvent(event);
 
-        ArgumentCaptor<FlowProjectionEvent> captor = ArgumentCaptor.forClass(FlowProjectionEvent.class);
-        verify(projectionOutboxService).append(captor.capture());
-        return captor.getValue().getTask();
+        ArgumentCaptor<FlowTask> captor = ArgumentCaptor.forClass(FlowTask.class);
+        verify(flowTaskMapper).insert(captor.capture());
+        return captor.getValue();
     }
 
     private static FlowBusiness business() {

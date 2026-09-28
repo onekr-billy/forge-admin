@@ -8,19 +8,13 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessQuantityBalanceMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessQuantityLedgerMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessQuantityLockMapper;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessQuantityOperationResultVO;
-import com.mdframe.forge.starter.core.context.ExecutionIdentity;
-import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.exception.BusinessException;
-import com.mdframe.forge.starter.core.session.LoginUser;
 import org.mockito.ArgumentCaptor;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -36,32 +30,11 @@ import static org.mockito.Mockito.when;
 @DisplayName("BusinessQuantityLedgerService")
 class BusinessQuantityLedgerServiceTest {
 
-    private ExecutionIdentityContextHolder.Scope identityScope;
-
     private final BusinessQuantityBalanceMapper balanceMapper = Mockito.mock(BusinessQuantityBalanceMapper.class);
     private final BusinessQuantityLedgerMapper ledgerMapper = Mockito.mock(BusinessQuantityLedgerMapper.class);
     private final BusinessQuantityLockMapper lockMapper = Mockito.mock(BusinessQuantityLockMapper.class);
     private final BusinessQuantityLedgerService service = new BusinessQuantityLedgerService(
             new ObjectMapper(), balanceMapper, ledgerMapper, lockMapper);
-
-    @BeforeEach
-    void setUpIdentity() {
-        LoginUser loginUser = new LoginUser();
-        loginUser.setUserId(7L);
-        loginUser.setTenantId(1L);
-        identityScope = ExecutionIdentityContextHolder.open(
-                new ExecutionIdentity(loginUser, "USER", 7L, null, 1L,
-                        "pc", "quantity-ledger-test", Set.of()));
-    }
-
-    @AfterEach
-    void clearIdentity() {
-        if (identityScope != null) {
-            identityScope.close();
-            identityScope = null;
-        }
-        ExecutionIdentityContextHolder.clear();
-    }
 
     @Test
     @DisplayName("inbound returns existing result when idempotency key was already used")

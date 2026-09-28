@@ -37,12 +37,6 @@ public interface BusinessProcessNodeRunMapper extends BaseMapper<AiBusinessProce
     int claimAttempt(@Param("tenantId") Long tenantId,
                      @Param("id") Long id);
 
-    int claimAttemptWithLease(@Param("tenantId") Long tenantId,
-                              @Param("id") Long id,
-                              @Param("runId") Long runId,
-                              @Param("executionToken") Long executionToken,
-                              @Param("leaseOwner") String leaseOwner);
-
     int completeAttempt(@Param("tenantId") Long tenantId,
                         @Param("id") Long id,
                         @Param("expectedStatus") String expectedStatus,
@@ -53,18 +47,4 @@ public interface BusinessProcessNodeRunMapper extends BaseMapper<AiBusinessProce
                         @Param("errorCode") String errorCode,
                         @Param("errorSummary") String errorSummary,
                         @Param("nextRetryTime") LocalDateTime nextRetryTime);
-
-    int completeAttemptWithLease(@Param("tenantId") Long tenantId,
-                                 @Param("id") Long id,
-                                 @Param("runId") Long runId,
-                                 @Param("executionToken") Long executionToken,
-                                 @Param("leaseOwner") String leaseOwner,
-                                 @Param("expectedStatus") String expectedStatus,
-                                 @Param("expectedCorrelationId") String expectedCorrelationId,
-                                 @Param("nextStatus") String nextStatus,
-                                 @Param("correlationId") String correlationId,
-                                 @Param("outputSummary") String outputSummary,
-                                 @Param("errorCode") String errorCode,
-                                 @Param("errorSummary") String errorSummary,
-                                 @Param("nextRetryTime") LocalDateTime nextRetryTime);
 }

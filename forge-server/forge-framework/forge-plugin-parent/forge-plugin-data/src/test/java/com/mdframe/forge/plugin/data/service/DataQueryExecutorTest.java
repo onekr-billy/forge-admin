@@ -54,11 +54,8 @@ class DataQueryExecutorTest {
         runtimeCache = mock(DataQueryRuntimeCache.class);
         when(dialectFactory.getDialect("mysql")).thenReturn(dialect);
         when(dialect.quoteIdentifier(anyString())).thenAnswer(invocation -> "`" + invocation.getArgument(0) + "`");
-        when(dialect.buildPageSql(anyString(), org.mockito.ArgumentMatchers.anyLong(), anyInt())).thenAnswer(
-                invocation -> invocation.getArgument(0) + " LIMIT " + invocation.getArgument(1)
-                        + ", " + invocation.getArgument(2));
-        when(dialect.buildCountSql(anyString())).thenAnswer(
-                invocation -> "SELECT COUNT(*) FROM (" + invocation.getArgument(0) + ") forge_dataset_count");
+        when(dialect.buildLimitSql(anyString(), anyInt())).thenAnswer(
+                invocation -> invocation.getArgument(0) + " LIMIT " + invocation.getArgument(1));
         when(runtimeCache.get(any(), any(), any(), anyInt(), anyInt())).thenReturn(Optional.empty());
         DataDatasetRowScopeService rowScopeService = mock(DataDatasetRowScopeService.class);
         when(rowScopeService.buildCondition(any(), any())).thenReturn(DataDatasetRowScopeCondition.disabled());
@@ -78,20 +75,12 @@ class DataQueryExecutorTest {
     @Test
     void shouldUseReadOnlyConnectionAndClampRowsAndTimeout() throws Exception {
         Connection connection = mock(Connection.class);
-        PreparedStatement countStatement = mock(PreparedStatement.class);
-        PreparedStatement pageStatement = mock(PreparedStatement.class);
-        ResultSet countResultSet = mock(ResultSet.class);
+        PreparedStatement statement = mock(PreparedStatement.class);
         ResultSet resultSet = mock(ResultSet.class);
         ResultSetMetaData metadata = mock(ResultSetMetaData.class);
         when(dataSourceProvider.getConnection(any())).thenReturn(connection);
-        when(connection.prepareStatement(org.mockito.ArgumentMatchers.startsWith("SELECT COUNT")))
-                .thenReturn(countStatement);
-        when(connection.prepareStatement(org.mockito.ArgumentMatchers.argThat(
-                sql -> !sql.startsWith("SELECT COUNT")))).thenReturn(pageStatement);
-        when(countStatement.executeQuery()).thenReturn(countResultSet);
-        when(countResultSet.next()).thenReturn(true);
-        when(countResultSet.getLong(1)).thenReturn(37L);
-        when(pageStatement.executeQuery()).thenReturn(resultSet);
+        when(connection.prepareStatement(anyString())).thenReturn(statement);
+        when(statement.executeQuery()).thenReturn(resultSet);
         when(resultSet.getMetaData()).thenReturn(metadata);
         when(metadata.getColumnCount()).thenReturn(1);
         when(metadata.getColumnLabel(1)).thenReturn("memberName");
@@ -102,64 +91,13 @@ class DataQueryExecutorTest {
                 List.of(field()), query(20000, 20000));
 
         assertEquals(1, result.getSource().size());
-        assertEquals(37L, result.getTotal());
         assertEquals(10000, result.getPageSize());
         verify(connection).setReadOnly(true);
-        verify(countStatement).setQueryTimeout(120);
-        verify(pageStatement).setQueryTimeout(120);
-        verify(dialect).buildPageSql(anyString(), eq(0L), eq(10000));
+        verify(statement).setQueryTimeout(120);
+        verify(dialect).buildLimitSql(anyString(), eq(10000));
         verify(connection).close();
-        verify(countStatement).close();
-        verify(pageStatement).close();
-        verify(countResultSet).close();
+        verify(statement).close();
         verify(resultSet).close();
-    }
-
-    @Test
-    void shouldUsePageOffsetAndIndependentTotalCount() throws Exception {
-        Connection connection = mock(Connection.class);
-        PreparedStatement countStatement = mock(PreparedStatement.class);
-        PreparedStatement pageStatement = mock(PreparedStatement.class);
-        ResultSet countResultSet = mock(ResultSet.class);
-        ResultSet pageResultSet = mock(ResultSet.class);
-        ResultSetMetaData metadata = mock(ResultSetMetaData.class);
-        when(dataSourceProvider.getConnection(any())).thenReturn(connection);
-        when(connection.prepareStatement(org.mockito.ArgumentMatchers.startsWith("SELECT COUNT")))
-                .thenReturn(countStatement);
-        when(connection.prepareStatement(org.mockito.ArgumentMatchers.argThat(
-                sql -> !sql.startsWith("SELECT COUNT")))).thenReturn(pageStatement);
-        when(countStatement.executeQuery()).thenReturn(countResultSet);
-        when(countResultSet.next()).thenReturn(true);
-        when(countResultSet.getLong(1)).thenReturn(25L);
-        when(pageStatement.executeQuery()).thenReturn(pageResultSet);
-        when(pageResultSet.getMetaData()).thenReturn(metadata);
-        when(metadata.getColumnCount()).thenReturn(1);
-        when(metadata.getColumnLabel(1)).thenReturn("memberName");
-        when(pageResultSet.next()).thenReturn(true, false);
-        when(pageResultSet.getObject(1)).thenReturn("第二页");
-
-        DataDatasetQueryDTO query = query(10, 10);
-        query.setPageNum(2);
-        DataDatasetQueryResultVO result = executor.execute(
-                dataset(100, 30), connection(), List.of(field()), query);
-
-        assertEquals("第二页", result.getSource().get(0).get("memberName"));
-        assertEquals(25L, result.getTotal());
-        assertEquals(2, result.getPageNum());
-        verify(dialect).buildPageSql(anyString(), eq(10L), eq(10));
-    }
-
-    @Test
-    void shouldRejectNonPositivePagination() {
-        DataDatasetQueryDTO query = query(10, 10);
-        query.setPageNum(0);
-        assertThrows(BusinessException.class, () -> executor.execute(
-                dataset(100, 30), connection(), List.of(field()), query));
-
-        query.setPageNum(1);
-        query.setPageSize(-1);
-        assertThrows(BusinessException.class, () -> executor.execute(
-                dataset(100, 30), connection(), List.of(field()), query));
     }
 
     @Test

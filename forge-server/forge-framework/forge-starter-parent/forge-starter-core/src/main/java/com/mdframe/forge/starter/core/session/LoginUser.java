@@ -8,7 +8,6 @@ import java.util.List;
 import java.util.Set;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
-import com.fasterxml.jackson.annotation.JsonIgnore;
 
 /**
  * 登录用户信息
@@ -82,17 +81,6 @@ public class LoginUser implements Serializable {
      * 是否必须先修改密码
      */
     private Boolean forcePasswordChange;
-
-    /**
-     * 登录时的密码凭证版本，用于跨实例吊销旧会话。
-     */
-    private Long passwordVersion;
-
-    /**
-     * Password age reference used during password-based login only.
-     */
-    @JsonIgnore
-    private LocalDateTime passwordChangedTime;
 
     /**
      * 角色ID列表

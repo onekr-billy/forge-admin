@@ -12,11 +12,6 @@ import com.mdframe.forge.plugin.generator.service.lowcode.LowcodeDdlService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectTableFieldMappingVO;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessObjectTableMappingVO;
 import com.mdframe.forge.plugin.generator.vo.lowcode.LowcodeDdlPreviewVO;
-import com.mdframe.forge.starter.core.context.ExecutionIdentity;
-import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
-import com.mdframe.forge.starter.core.session.LoginUser;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -33,27 +28,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DisplayName("BusinessObjectTableMappingService")
 class BusinessObjectTableMappingServiceTest {
-
-    private ExecutionIdentityContextHolder.Scope identityScope;
-
-    @BeforeEach
-    void setUpIdentity() {
-        LoginUser loginUser = new LoginUser();
-        loginUser.setUserId(7L);
-        loginUser.setTenantId(1L);
-        identityScope = ExecutionIdentityContextHolder.open(new ExecutionIdentity(
-                loginUser, "USER", 7L, null, 1L,
-                "pc", "table-mapping-test", Set.of()));
-    }
-
-    @AfterEach
-    void clearIdentity() {
-        if (identityScope != null) {
-            identityScope.close();
-            identityScope = null;
-        }
-        ExecutionIdentityContextHolder.clear();
-    }
 
     @Test
     @DisplayName("table mapping exposes datasource table and three-way field mapping")
@@ -251,7 +225,6 @@ class BusinessObjectTableMappingServiceTest {
     static BusinessObjectDesignerService.DesignerContext context() {
         AiBusinessObject object = new AiBusinessObject();
         object.setId(201L);
-        object.setTenantId(1L);
         object.setObjectCode("customer");
         object.setObjectName("客户");
         object.setDesignerOptions("{}");

@@ -52,9 +52,8 @@ public class DataQueryExecutor {
         int configuredMaxRows = normalizeMaxRows(dataset.getMaxRows());
         int requestedMaxRows = query.getMaxRows() == null ? configuredMaxRows : normalizeMaxRows(query.getMaxRows());
         int maxRows = Math.min(requestedMaxRows, configuredMaxRows);
-        int pageNum = normalizePageNum(query.getPageNum());
-        int pageSize = normalizePageSize(query.getPageSize(), maxRows);
-        long offset = calculateOffset(pageNum, pageSize);
+        int pageNum = query.getPageNum() == null ? 1 : Math.max(1, query.getPageNum());
+        int pageSize = query.getPageSize() == null ? maxRows : Math.min(normalizeMaxRows(query.getPageSize()), maxRows);
         
         List<DataDatasetField> displayFields = fieldConfigs.stream()
                 .filter(f -> EnableStatus.ENABLED.matches(f.getDisplayEnabled()))
@@ -103,20 +102,18 @@ public class DataQueryExecutor {
         }
         buildResult = applyRowScope(dataset, dialect, buildResult);
 
-        String countSql = dialect.buildCountSql(buildResult.getSql());
-        String sql = dialect.buildPageSql(buildResult.getSql(), offset, pageSize);
+        String sql = dialect.buildLimitSql(buildResult.getSql(), pageSize);
         logQuerySql(dataset, pageNum, pageSize, dimensions.size(), buildResult.getParams(), sql);
 
-        QueryPage queryPage = executePagedQuery(connection, dataset.getId(), countSql, sql,
-                buildResult.getParams(), normalizeTimeout(dataset.getTimeoutSeconds()));
-        List<Map<String, Object>> rows = queryPage.rows();
+        List<Map<String, Object>> rows = executeQuery(connection, dataset.getId(), sql, buildResult.getParams(),
+                normalizeTimeout(dataset.getTimeoutSeconds()));
         
         rows = applyDimensionTranslation(rows, displayFields);
         rows = applyMasking(rows, displayFields);
         
         result.setDimensions(dimensions);
         result.setSource(rows);
-        result.setTotal(queryPage.total());
+        result.setTotal((long) rows.size());
         result.setPageNum(pageNum);
         result.setPageSize(pageSize);
         result.setFields(convertToFieldVOList(displayFields));
@@ -199,7 +196,7 @@ public class DataQueryExecutor {
         return new QueryBuildResult(scopedSql, params);
     }
 
-    private QueryPage executePagedQuery(DataConnection connection, Long datasetId, String countSql, String pageSql,
+    private List<Map<String, Object>> executeQuery(DataConnection connection, Long datasetId, String sql,
             Map<String, Object> params, int timeoutSeconds) {
         try (Connection conn = dataSourceProvider.getConnection(connection)) {
             try {
@@ -207,41 +204,23 @@ public class DataQueryExecutor {
             } catch (SQLException exception) {
                 log.warn("数据集连接不支持只读标记，datasetId={}", datasetId);
             }
-            long total;
-            try (PreparedStatement countStatement = prepareStatement(conn, countSql, params, timeoutSeconds);
-                 ResultSet countResult = countStatement.executeQuery()) {
-                if (!countResult.next()) {
-                    throw new SQLException("数据集总数查询未返回结果");
+            String preparedSql = parameterBinder.convertToPreparedStatement(sql);
+            try (PreparedStatement ps = conn.prepareStatement(preparedSql)) {
+                ps.setQueryTimeout(timeoutSeconds);
+                if (params != null && !params.isEmpty()) {
+                    Map<Integer, Object> indexMap = parameterBinder.buildParamIndexMap(sql, params);
+                    for (Map.Entry<Integer, Object> entry : indexMap.entrySet()) {
+                        ps.setObject(entry.getKey(), entry.getValue());
+                    }
                 }
-                total = countResult.getLong(1);
-            }
-            try (PreparedStatement pageStatement = prepareStatement(conn, pageSql, params, timeoutSeconds);
-                 ResultSet pageResult = pageStatement.executeQuery()) {
-                return new QueryPage(total, resultSetToMaps(pageResult));
+                try (ResultSet rs = ps.executeQuery()) {
+                    return resultSetToMaps(rs);
+                }
             }
         } catch (Exception exception) {
             log.warn("数据集查询失败，datasetId={}, datasetType={}, errorType={}", datasetId,
                     connection.getDbType(), exception.getClass().getSimpleName());
             throw new BusinessException("数据集查询失败，请检查连接、参数或查询超时配置");
-        }
-    }
-
-    private PreparedStatement prepareStatement(Connection connection, String sql, Map<String, Object> params,
-                                               int timeoutSeconds) throws SQLException {
-        String preparedSql = parameterBinder.convertToPreparedStatement(sql);
-        PreparedStatement statement = connection.prepareStatement(preparedSql);
-        try {
-            statement.setQueryTimeout(timeoutSeconds);
-            if (params != null && !params.isEmpty()) {
-                Map<Integer, Object> indexMap = parameterBinder.buildParamIndexMap(sql, params);
-                for (Map.Entry<Integer, Object> entry : indexMap.entrySet()) {
-                    statement.setObject(entry.getKey(), entry.getValue());
-                }
-            }
-            return statement;
-        } catch (RuntimeException | SQLException exception) {
-            statement.close();
-            throw exception;
         }
     }
 
@@ -272,34 +251,6 @@ public class DataQueryExecutor {
         return Math.min(value, MAX_TIMEOUT_SECONDS);
     }
 
-    private int normalizePageNum(Integer value) {
-        if (value == null) {
-            return 1;
-        }
-        if (value <= 0) {
-            throw new BusinessException("页码必须大于0");
-        }
-        return value;
-    }
-
-    private int normalizePageSize(Integer value, int maxRows) {
-        if (value == null) {
-            return maxRows;
-        }
-        if (value <= 0) {
-            throw new BusinessException("每页条数必须大于0");
-        }
-        return Math.min(Math.min(value, ABSOLUTE_MAX_ROWS), maxRows);
-    }
-
-    private long calculateOffset(int pageNum, int pageSize) {
-        try {
-            return Math.multiplyExact((long) pageNum - 1L, pageSize);
-        } catch (ArithmeticException exception) {
-            throw new BusinessException("分页偏移量超出允许范围");
-        }
-    }
-
     private String sqlDigest(String sql) {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
@@ -308,9 +259,6 @@ public class DataQueryExecutor {
         } catch (Exception exception) {
             throw new IllegalStateException("无法生成SQL摘要", exception);
         }
-    }
-
-    private record QueryPage(long total, List<Map<String, Object>> rows) {
     }
 
     private void appendSchemaConditions(DataDataset dataset, DbDialect dialect, StringBuilder sql,

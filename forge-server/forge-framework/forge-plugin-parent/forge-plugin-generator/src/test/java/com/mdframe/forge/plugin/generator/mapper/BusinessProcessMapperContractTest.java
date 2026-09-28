@@ -62,15 +62,6 @@ class BusinessProcessMapperContractTest {
         assertTrue(query.contains("JSON_TABLE"));
         assertTrue(query.contains("LEFT(node.node_type, 6) = 'START_'"));
         assertTrue(query.contains("Active_Application_And_Subject"));
-
-        String draftQuery = statement(resource("mapper/BusinessProcessMapper.xml"),
-                "select", "selectActiveDraftsBySubjectObjectCode");
-        assertTrue(draftQuery.contains("Base_Columns"));
-        assertTrue(draftQuery.contains("p.tenant_id = #{tenantId}"));
-        assertTrue(draftQuery.contains("p.subject_object_code = #{objectCode}"));
-        assertTrue(draftQuery.contains("p.status = 1"));
-        assertTrue(draftQuery.contains("p.del_flag = 0"));
-        assertTrue(draftQuery.contains("Active_Application_And_Subject"));
     }
 
     @Test

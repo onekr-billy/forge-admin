@@ -13,11 +13,9 @@ import java.util.List;
 @Mapper
 public interface FlowFillBatchItemMapper extends BaseMapper<FlowFillBatchItem> {
 
-    List<FlowFillBatchItem> selectByBatchId(@Param("tenantId") Long tenantId,
-                                           @Param("batchId") Long batchId);
+    List<FlowFillBatchItem> selectByBatchId(@Param("batchId") Long batchId);
 
-    FlowFillBatchItem selectByIdForUpdateAndTenant(@Param("id") Long id,
-                                                   @Param("tenantId") Long tenantId);
+    FlowFillBatchItem selectByIdForUpdate(@Param("id") Long id);
 
     int deleteByProcessInstanceIdLogically(@Param("processInstanceId") String processInstanceId,
                                            @Param("tenantId") Long tenantId);

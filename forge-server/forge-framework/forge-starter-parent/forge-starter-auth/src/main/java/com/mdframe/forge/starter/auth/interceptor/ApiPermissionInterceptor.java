@@ -67,28 +67,21 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
             enforcePasswordChange(request);
         }
 
+        ApiConfigInfo apiConfig = apiConfigManager.getApiConfig(request.getRequestURI(), request.getMethod());
+
         // 检查是否启用API权限校验。
         if (authProperties.getEnableApiPermission() == null || !authProperties.getEnableApiPermission()) {
             log.debug("API权限校验已禁用");
+            return true;
+        }
+        if (apiConfig != null && !apiConfig.getNeedAuth()) {
+            log.debug("匿名访问接口: {}", request.getRequestURI());
             return true;
         }
 
         // 注解豁免直接放行
         if (annotationExempt) {
             log.debug("注解豁免接口: {}", request.getRequestURI());
-            return true;
-        }
-
-        ApiConfigInfo apiConfig;
-        try {
-            apiConfig = apiConfigManager.getApiConfig(request.getRequestURI(), request.getMethod());
-        } catch (RuntimeException ex) {
-            log.error("读取API安全配置失败，拒绝访问: uri={}, method={}",
-                    request.getRequestURI(), request.getMethod(), ex);
-            throw denied(request.getRequestURI());
-        }
-        if (apiConfig != null && Boolean.FALSE.equals(apiConfig.getNeedAuth())) {
-            log.debug("匿名访问接口: {}", request.getRequestURI());
             return true;
         }
 
@@ -101,42 +94,22 @@ public class ApiPermissionInterceptor implements HandlerInterceptor {
             requestUri = requestUri.substring(contextPath.length());
         }
 
-        boolean permissionConfigured;
-        try {
-            permissionConfigured = permissionService.isApiPermissionConfigured(requestUri, request.getMethod());
-        } catch (RuntimeException ex) {
-            log.error("检查API权限资源配置失败，拒绝访问: uri={}, method={}",
-                    requestUri, request.getMethod(), ex);
-            throw denied(requestUri);
-        }
-        if (!permissionConfigured) {
-            log.debug("接口未配置API权限资源，跳过资源权限校验: uri={}, method={}",
-                    requestUri, request.getMethod());
+        if (!permissionService.isApiPermissionConfigured(requestUri, request.getMethod())) {
+            log.debug("接口未配置API权限资源，跳过权限校验: uri={}, method={}", requestUri, request.getMethod());
             return true;
         }
 
         // 4. 校验接口权限
-        boolean hasPermission;
-        try {
-            hasPermission = permissionService.hasApiPermission(requestUri, request.getMethod());
-        } catch (RuntimeException ex) {
-            log.error("API权限校验异常，拒绝访问: uri={}, method={}",
-                    requestUri, request.getMethod(), ex);
-            throw denied(requestUri);
-        }
+        boolean hasPermission = permissionService.hasApiPermission(requestUri, request.getMethod());
         
         if (!hasPermission) {
             log.warn("接口权限校验失败: uri={}, method={}, handler={}",
                     requestUri, request.getMethod(), handlerMethod.getMethod().getName());
-            throw denied(requestUri);
+            throw new NotPermissionException("无权限访问该接口: " + requestUri);
         }
 
         log.debug("接口权限校验通过: uri={}", requestUri);
         return true;
-    }
-
-    private NotPermissionException denied(String requestUri) {
-        return new NotPermissionException("无权限访问该接口: " + requestUri);
     }
 
     private void enforcePasswordChange(HttpServletRequest request) {

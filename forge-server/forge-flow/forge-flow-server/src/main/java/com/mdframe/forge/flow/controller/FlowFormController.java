@@ -69,7 +69,7 @@ public class FlowFormController {
      */
     @GetMapping("/{id}")
     public RespInfo getById(@PathVariable Long id) {
-        return RespInfo.success(flowFormService.getFormById(id));
+        return RespInfo.success(flowFormService.getById(id));
     }
 
     /**
@@ -151,7 +151,7 @@ public class FlowFormController {
      */
     @GetMapping("/{id}/preview")
     public RespInfo preview(@PathVariable Long id) {
-        FlowForm form = flowFormService.getFormById(id);
+        FlowForm form = flowFormService.getById(id);
         return RespInfo.success(form != null ? form.getFormSchema() : null);
     }
 

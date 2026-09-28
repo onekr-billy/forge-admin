@@ -30,7 +30,6 @@ import com.mdframe.forge.plugin.system.mapper.SysUserRoleMapper;
 import com.mdframe.forge.plugin.system.mapper.SysUserTenantMapper;
 import com.mdframe.forge.plugin.system.service.ISysUserService;
 import com.mdframe.forge.plugin.system.service.IUserLoadService;
-import com.mdframe.forge.plugin.system.service.PasswordPolicyService;
 import com.mdframe.forge.plugin.system.vo.SysUserTenantVO;
 import com.mdframe.forge.plugin.system.vo.UserOrgBindingVO;
 import com.mdframe.forge.starter.auth.util.PasswordUtil;
@@ -38,11 +37,9 @@ import com.mdframe.forge.starter.core.session.LoginUser;
 import com.mdframe.forge.starter.core.session.SessionHelper;
 import com.mdframe.forge.starter.tenant.context.TenantContextHolder;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
 
@@ -51,7 +48,6 @@ import java.util.Objects;
  */
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> implements ISysUserService {
 
     private final SysUserMapper userMapper;
@@ -67,7 +63,6 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     private final SysPostMapper postMapper;
     private final SysRegionMapper regionMapper;
     private final IUserLoadService userLoadService;
-    private final PasswordPolicyService passwordPolicyService;
 
     @Override
     public IPage<SysUser> selectUserPage(SysUserQuery query) {
@@ -100,9 +95,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         BeanUtil.copyProperties(dto, user);
         user.setTenantId(tenantId);
         user.setUserType(resolveWriteUserType(dto.getUserType()));
-        passwordPolicyService.validate(dto.getPassword());
         user.setPassword(PasswordUtil.encrypt(dto.getPassword()));
-        user.setPasswordChangedTime(LocalDateTime.now());
         user.setForcePasswordChange(true);
         boolean inserted = userMapper.insert(user) > 0;
         if (inserted) {
@@ -304,29 +297,14 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public boolean resetPassword(Long userId, String newPassword) {
         assertCanManageUser(userId);
         assertNotSelfManagementUnlessAdmin(userId);
-        SysUser user = TenantContextHolder.executeIgnore(() -> userMapper.selectById(userId));
-        if (user == null) {
-            return false;
-        }
-        passwordPolicyService.validateForUpdate(
-                userId, user.getTenantId(), newPassword, user.getPassword());
-        String encodedPassword = PasswordUtil.encrypt(newPassword);
-        LocalDateTime changedTime = LocalDateTime.now();
-        boolean updated = TenantContextHolder.executeIgnore(() -> userMapper.resetUserPassword(
-                userId, encodedPassword, changedTime)) > 0;
-        if (updated) {
-            passwordPolicyService.recordPasswordChange(
-                    userId, user.getTenantId(), user.getPassword(), changedTime);
-            StpUtil.kickout(userId);
-            LoginUser operator = SessionHelper.getLoginUser();
-            log.info("管理员重置密码完成: targetUserId={}, operatorUserId={}, keepCurrentSession=false",
-                    userId, operator == null ? null : operator.getUserId());
-        }
-        return updated;
+        SysUser user = new SysUser();
+        user.setId(userId);
+        user.setPassword(PasswordUtil.encrypt(newPassword));
+        user.setForcePasswordChange(true);
+        return TenantContextHolder.executeIgnore(() -> userMapper.updateById(user) > 0);
     }
 
     @Override

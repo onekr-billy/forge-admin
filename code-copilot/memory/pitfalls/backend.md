@@ -663,10 +663,3 @@ Surefire 的分组参数需要从测试 classpath 选择 JUnit 4、JUnit 5 或 T
 **解决方案**:
 `style` 对象允许安全的基础类型额外键并写入 canonical JSON；继续拒绝 `backgroundImage`/`url()` 等可执行 CSS。Java `Style` record 对未知字段 `ignoreUnknown`，避免模型转换把合法 JSON 打成「模板与协议模型不一致」。改插件后要先安装该模块再重启 Admin。
 
-## 图形验证码测试同时加载 Java agent 时必须启用 headless
-
-**发现日期**：2026-09-27
-
-`CaptchaServiceImplTest` 会通过 Hutool/AWT 生成图形验证码。在当前 macOS/JDK 17 环境中，为 Mockito inline 显式加载 Byte Buddy `-javaagent` 后，如果测试 JVM 未设置 headless，进程可能在用例启动后直接以 134 退出，Surefire 只报告 forked VM 异常，没有 Java 断言或业务堆栈。只跑不触发 AWT 的验证码风控用例可以通过，说明不是业务逻辑失败。
-
-验证码全量测试使用显式 Byte Buddy agent 时同时传入 `-Djava.awt.headless=true`；先确认 `Tests run` 计数后再记录结果。不要把退出码 134 误判成验证码实现失败，也不要为绕过环境问题删除图形验证码测试。

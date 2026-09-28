@@ -6,9 +6,6 @@ import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.session.LoginUser;
 import com.mdframe.forge.starter.file.model.FileMetadata;
 import com.mdframe.forge.starter.file.model.StorageConfig;
-import com.mdframe.forge.starter.file.multipart.InMemoryMultipartUploadSessionStore;
-import com.mdframe.forge.starter.file.multipart.MultipartUploadSession;
-import com.mdframe.forge.starter.file.multipart.MultipartUploadSessionStore;
 import com.mdframe.forge.starter.file.spi.FileMetadataPersistence;
 import com.mdframe.forge.starter.file.spi.StorageConfigProvider;
 import com.mdframe.forge.starter.file.storage.FileStorage;
@@ -29,11 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @DisplayName("FileManager upload policy")
@@ -182,208 +175,10 @@ class FileManagerTest {
         assertEquals("no-cache", response.getHeader("Pragma"));
     }
 
-    @Test
-    @DisplayName("rejects internal byte reads when private file permission is missing")
-    void rejectsPrivateFileBytesWhenCallerLacksPermission() throws Exception {
-        FileManager fileManager = new FileManager();
-        setPersistence(fileManager, new FileMetadataPersistence() {
-            @Override public void save(FileMetadata metadata) { }
-            @Override public FileMetadata getById(String fileId) {
-                return FileMetadata.builder().fileId(fileId).storageType("local").isPrivate(true).build();
-            }
-            @Override public FileMetadata getByMd5(String md5) { return null; }
-            @Override public void incrementDownloadCount(String fileId) { }
-            @Override public void delete(String fileId) { }
-            @Override public boolean checkPermission(String fileId, Long userId) { return false; }
-            @Override public boolean canModify(String fileId, Long userId) { return false; }
-        });
-
-        BusinessException exception = assertThrows(BusinessException.class,
-                () -> fileManager.getFileBytes("private-file"));
-
-        assertEquals(403, exception.getCode());
-    }
-
-    @Test
-    @DisplayName("binds multipart upload sessions to their user and tenant")
-    void rejectsMultipartSessionFromDifferentUser() throws Exception {
-        FileManager fileManager = fileManagerWithAllowedTypes("pdf");
-        FileStorage storage = mock(FileStorage.class);
-        when(storage.getStorageType()).thenReturn("local");
-        when(storage.initMultipartUpload("report.pdf", "report", "7")).thenReturn("upload-1");
-        fileManager.registerStorage(storage);
-        String sessionId = fileManager.initMultipartUpload(
-                "report.pdf", "report", "7", "local", 4L, 1, true);
-
-        identityScope.close();
-        LoginUser other = new LoginUser();
-        other.setUserId(2L);
-        other.setTenantId(1L);
-        identityScope = ExecutionIdentityContextHolder.open(
-                new ExecutionIdentity(other, "USER", 2L, null, 1L, "test", "other-token", java.util.Set.of()));
-
-        BusinessException exception = assertThrows(BusinessException.class,
-                () -> fileManager.uploadPart(sessionId, 1,
-                        new ByteArrayInputStream("part".getBytes()), "local", 4L));
-
-        assertEquals(403, exception.getCode());
-    }
-
-    @Test
-    @DisplayName("multipart completion keeps private visibility and uploader")
-    void multipartCompletionInheritsVisibilityAndUploader() throws Exception {
-        FileManager fileManager = fileManagerWithAllowedTypes("pdf");
-        FileStorage storage = mock(FileStorage.class);
-        when(storage.getStorageType()).thenReturn("local");
-        when(storage.initMultipartUpload("report.pdf", "report", "7")).thenReturn("upload-1");
-        when(storage.uploadPart(eq("upload-1"), eq(1), any(InputStream.class))).thenReturn("etag-1");
-        when(storage.completeMultipartUpload("upload-1", List.of("etag-1")))
-                .thenReturn(FileMetadata.builder().fileId("file-1").fileSize(4L)
-                        .extension("pdf").mimeType("application/pdf").storageType("local").build());
-        fileManager.registerStorage(storage);
-        String sessionId = fileManager.initMultipartUpload(
-                "report.pdf", "report", "7", "local", 4L, 1, true, "application/pdf");
-        fileManager.uploadPart(sessionId, 1, new ByteArrayInputStream("part".getBytes()),
-                "local", 4L, "application/octet-stream");
-
-        FileMetadata metadata = fileManager.completeMultipartUpload(sessionId, List.of("etag-1"), "local");
-
-        assertTrue(Boolean.TRUE.equals(metadata.getIsPrivate()));
-        assertEquals(1L, metadata.getUploaderId());
-        verify(storage).completeMultipartUpload("upload-1", List.of("etag-1"));
-    }
-
-    @Test
-    @DisplayName("requires total size and part count for multipart initialization")
-    void rejectsMultipartInitializationWithoutSignedLimits() throws Exception {
-        FileManager fileManager = fileManagerWithAllowedTypes("pdf");
-
-        BusinessException exception = assertThrows(BusinessException.class,
-                () -> fileManager.initMultipartUpload(
-                        "report.pdf", "report", "7", "local", null, null, true));
-
-        assertTrue(exception.getMessage().contains("总大小"));
-    }
-
-    @Test
-    @DisplayName("rejects completion when client ETag differs from server record")
-    void rejectsMultipartCompletionWithForgedEtag() throws Exception {
-        FileManager fileManager = fileManagerWithAllowedTypes("pdf");
-        FileStorage storage = multipartStorage();
-        fileManager.registerStorage(storage);
-        String sessionId = fileManager.initMultipartUpload(
-                "report.pdf", "report", "7", "local", 4L, 1, true, "application/pdf");
-        fileManager.uploadPart(sessionId, 1, new ByteArrayInputStream("part".getBytes()),
-                "local", 4L, "application/octet-stream");
-
-        BusinessException exception = assertThrows(BusinessException.class,
-                () -> fileManager.completeMultipartUpload(sessionId, List.of("forged"), "local"));
-
-        assertTrue(exception.getMessage().contains("ETag"));
-        verify(storage, never()).completeMultipartUpload(any(), any());
-    }
-
-    @Test
-    @DisplayName("rejects incomplete and over-quota multipart uploads")
-    void rejectsIncompleteAndOverQuotaMultipartUploads() throws Exception {
-        FileManager fileManager = fileManagerWithAllowedTypes("pdf");
-        FileStorage storage = multipartStorage();
-        fileManager.registerStorage(storage);
-        String sessionId = fileManager.initMultipartUpload(
-                "report.pdf", "report", "7", "local", 6L, 2, true, "application/pdf");
-        fileManager.uploadPart(sessionId, 1, new ByteArrayInputStream("part".getBytes()),
-                "local", 4L, "application/octet-stream");
-
-        BusinessException incomplete = assertThrows(BusinessException.class,
-                () -> fileManager.completeMultipartUpload(sessionId, List.of("etag-1", "etag-2"), "local"));
-        BusinessException quota = assertThrows(BusinessException.class,
-                () -> fileManager.uploadPart(sessionId, 2, new ByteArrayInputStream("more".getBytes()),
-                        "local", 4L, "application/octet-stream"));
-
-        assertTrue(incomplete.getMessage().contains("连续") || incomplete.getMessage().contains("全部"));
-        assertTrue(quota.getMessage().contains("超过"));
-    }
-
-    @Test
-    @DisplayName("shared session store allows another node to resume multipart upload")
-    void resumesMultipartUploadAcrossNodes() throws Exception {
-        MultipartUploadSessionStore sharedStore = new InMemoryMultipartUploadSessionStore();
-        FileManager firstNode = fileManagerWithAllowedTypes("pdf");
-        FileManager secondNode = fileManagerWithAllowedTypes("pdf");
-        setMultipartSessionStore(firstNode, sharedStore);
-        setMultipartSessionStore(secondNode, sharedStore);
-        FileStorage storage = multipartStorage();
-        when(storage.completeMultipartUpload("upload-1", List.of("etag-1")))
-                .thenReturn(FileMetadata.builder().fileId("file-1").fileSize(4L)
-                        .extension("pdf").mimeType("application/pdf").storageType("local").build());
-        firstNode.registerStorage(storage);
-        secondNode.registerStorage(storage);
-
-        String sessionId = firstNode.initMultipartUpload(
-                "report.pdf", "report", "7", "local", 4L, 1, true, "application/pdf");
-        secondNode.uploadPart(sessionId, 1, new ByteArrayInputStream("part".getBytes()),
-                "local", 4L, "application/octet-stream");
-        FileMetadata metadata = secondNode.completeMultipartUpload(sessionId, List.of("etag-1"), "local");
-
-        assertEquals("file-1", metadata.getFileId());
-        verify(storage).uploadPart(eq("upload-1"), eq(1), any(InputStream.class));
-    }
-
-    @Test
-    @DisplayName("expired multipart sessions abort provider uploads and delete state")
-    void cleansExpiredMultipartSession() throws Exception {
-        InMemoryMultipartUploadSessionStore store = new InMemoryMultipartUploadSessionStore();
-        FileManager fileManager = fileManagerWithAllowedTypes("pdf");
-        setMultipartSessionStore(fileManager, store);
-        FileStorage storage = multipartStorage();
-        fileManager.registerStorage(storage);
-        String sessionId = fileManager.initMultipartUpload(
-                "report.pdf", "report", "7", "local", 4L, 1, true, "application/pdf");
-        MultipartUploadSession session = store.getSession(sessionId);
-        session.setExpiresAtMillis(System.currentTimeMillis() - 1);
-
-        fileManager.cleanupExpiredMultipartSessions();
-
-        verify(storage).abortMultipartUpload("upload-1");
-        assertEquals(null, store.getSession(sessionId));
-    }
-
-    @Test
-    @DisplayName("rejects multipart MIME type changes")
-    void rejectsMultipartMimeTypeChanges() throws Exception {
-        FileManager fileManager = fileManagerWithAllowedTypes("pdf");
-        FileStorage storage = multipartStorage();
-        fileManager.registerStorage(storage);
-        String sessionId = fileManager.initMultipartUpload(
-                "report.pdf", "report", "7", "local", 4L, 1, true, "application/pdf");
-
-        BusinessException exception = assertThrows(BusinessException.class,
-                () -> fileManager.uploadPart(sessionId, 1, new ByteArrayInputStream("part".getBytes()),
-                        "local", 4L, "text/html"));
-
-        assertTrue(exception.getMessage().contains("高风险"));
-        verify(storage, never()).uploadPart(any(), any(Integer.class), any(InputStream.class));
-    }
-
     private void setPersistence(FileManager fileManager, FileMetadataPersistence persistence) throws Exception {
         Field field = FileManager.class.getDeclaredField("metadataPersistence");
         field.setAccessible(true);
         field.set(fileManager, persistence);
-    }
-
-    private void setMultipartSessionStore(FileManager fileManager, MultipartUploadSessionStore store) throws Exception {
-        Field field = FileManager.class.getDeclaredField("multipartSessionStore");
-        field.setAccessible(true);
-        field.set(fileManager, store);
-    }
-
-    private FileStorage multipartStorage() {
-        FileStorage storage = mock(FileStorage.class);
-        when(storage.getStorageType()).thenReturn("local");
-        when(storage.initMultipartUpload("report.pdf", "report", "7")).thenReturn("upload-1");
-        when(storage.uploadPart(eq("upload-1"), any(Integer.class), any(InputStream.class)))
-                .thenAnswer(invocation -> "etag-" + invocation.getArgument(1));
-        return storage;
     }
 
     private FileMetadataPersistence persistence(boolean allowedToModify, AtomicBoolean deleted) {

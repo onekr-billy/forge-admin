@@ -22,7 +22,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import com.mdframe.forge.starter.core.enums.EnableStatus;
 
@@ -47,14 +46,13 @@ public class BusinessRecordSelectorService {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public BusinessRecordSelectorResultVO query(BusinessRecordSelectorQueryDTO dto, PageQuery pageQuery) {
-        Long tenantId = requireTenantId();
         BusinessRecordSelectorQueryDTO query = dto == null ? new BusinessRecordSelectorQueryDTO() : dto;
         String objectCode = resolveObjectCode(query);
         query.setObjectCode(objectCode);
         if (StringUtils.isBlank(objectCode)) {
             throw new BusinessException("选择器缺少业务对象编码: " + describeObjectCodeFields(query));
         }
-        AiBusinessObject object = resolveObject(query, tenantId);
+        AiBusinessObject object = resolveObject(query);
         validateObjectViewPermission(object);
         if (StringUtils.isBlank(object.getConfigKey())) {
             throw new BusinessException("业务对象未发布运行配置: " + object.getObjectCode());
@@ -150,7 +148,7 @@ public class BusinessRecordSelectorService {
         if (normalized == null) {
             throw new BusinessException("业务对象编码不能为空");
         }
-        AiBusinessObject object = businessObjectMapper.selectFirstByObjectCode(requireTenantId(), normalized);
+        AiBusinessObject object = businessObjectMapper.selectFirstByObjectCode(resolveTenantId(), normalized);
         if (object == null) {
             throw new BusinessException("业务对象不存在: " + normalized);
         }
@@ -164,7 +162,6 @@ public class BusinessRecordSelectorService {
      * 供低代码查询源网关复用：返回对象可查询字段的编码→名称映射。
      */
     public Map<String, String> fieldLabels(AiBusinessObject object) {
-        validateObjectTenant(object);
         return resolveFieldLabels(object);
     }
 
@@ -177,7 +174,6 @@ public class BusinessRecordSelectorService {
         if (object == null) {
             return List.of();
         }
-        validateObjectTenant(object);
         if (StringUtils.isNotBlank(object.getConfigKey()) && dynamicCrudService != null) {
             try {
                 AiCrudConfig config = dynamicCrudService.getRuntimeConfig(object.getConfigKey());
@@ -279,10 +275,10 @@ public class BusinessRecordSelectorService {
                 + ", targetCode=" + StringUtils.defaultString(query.getTargetCode());
     }
 
-    private AiBusinessObject resolveObject(BusinessRecordSelectorQueryDTO query, Long tenantId) {
+    private AiBusinessObject resolveObject(BusinessRecordSelectorQueryDTO query) {
         AiBusinessObject object = StringUtils.isNotBlank(query.getSuiteCode())
-                ? businessObjectMapper.selectByObjectCode(tenantId, query.getSuiteCode().trim(), query.getObjectCode().trim())
-                : businessObjectMapper.selectFirstByObjectCode(tenantId, query.getObjectCode().trim());
+                ? businessObjectMapper.selectByObjectCode(resolveTenantId(), query.getSuiteCode().trim(), query.getObjectCode().trim())
+                : businessObjectMapper.selectFirstByObjectCode(resolveTenantId(), query.getObjectCode().trim());
         if (object == null) {
             throw new BusinessException("业务对象不存在: " + query.getObjectCode());
         }
@@ -298,16 +294,6 @@ public class BusinessRecordSelectorService {
         }
         if (!permissionService.hasDocumentActionPermission(object.getObjectCode(), "VIEW")) {
             throw new BusinessException("无权限查询选择器对象: " + object.getObjectName());
-        }
-    }
-
-    private void validateObjectTenant(AiBusinessObject object) {
-        if (object == null) {
-            return;
-        }
-        Long tenantId = requireTenantId();
-        if (!Objects.equals(tenantId, object.getTenantId())) {
-            throw new BusinessException("业务对象不属于当前租户");
         }
     }
 
@@ -667,16 +653,13 @@ public class BusinessRecordSelectorService {
         return builder.toString();
     }
 
-    private Long requireTenantId() {
+    private Long resolveTenantId() {
         Long tenantId;
         try {
             tenantId = SessionHelper.getTenantId();
         } catch (Exception e) {
             tenantId = null;
         }
-        if (tenantId == null || tenantId <= 0) {
-            throw new BusinessException("业务记录选择缺少可信租户上下文");
-        }
-        return tenantId;
+        return tenantId == null ? 1L : tenantId;
     }
 }

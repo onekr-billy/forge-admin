@@ -11,13 +11,7 @@
         <result column="object_code" property="objectCode"/>
         <result column="record_id" property="recordId"/>
         <result column="event_type" property="eventType"/>
-        <result column="event_id" property="eventId"/>
-        <result column="event_source" property="eventSource"/>
-        <result column="event_version" property="eventVersion"/>
-        <result column="event_digest" property="eventDigest"/>
         <result column="event_data" property="eventData"/>
-        <result column="trigger_snapshot" property="triggerSnapshot"/>
-        <result column="execution_digest" property="executionDigest"/>
         <result column="action_type" property="actionType"/>
         <result column="action_result" property="actionResult"/>
         <result column="execute_status" property="executeStatus"/>
@@ -27,9 +21,6 @@
         <result column="execute_time" property="executeTime"/>
         <result column="duration_ms" property="durationMs"/>
         <result column="retry_count" property="retryCount"/>
-        <result column="next_retry_time" property="nextRetryTime"/>
-        <result column="lock_owner" property="lockOwner"/>
-        <result column="lock_time" property="lockTime"/>
         <result column="create_time" property="createTime"/>
     </resultMap>
 
@@ -42,13 +33,7 @@
         object_code,
         record_id,
         event_type,
-        event_id,
-        event_source,
-        event_version,
-        event_digest,
         event_data,
-        trigger_snapshot,
-        execution_digest,
         action_type,
         action_result,
         execute_status,
@@ -58,9 +43,6 @@
         execute_time,
         duration_ms,
         retry_count,
-        next_retry_time,
-        lock_owner,
-        lock_time,
         create_time
     </sql>
 
@@ -85,77 +67,5 @@
           AND execute_status IN ('SUCCESS', 'TODO')
           AND execute_time &gt;= #{sinceTime}
     </select>
-
-    <update id="updateExecutionResult">
-        UPDATE ai_business_trigger_log
-        SET execute_status = #{log.executeStatus},
-            action_result = #{log.actionResult},
-            error_message = #{log.errorMessage},
-            todo_code = #{log.todoCode},
-            correlation_id = #{log.correlationId},
-            duration_ms = #{log.durationMs},
-            retry_count = #{log.retryCount},
-            next_retry_time = #{log.nextRetryTime},
-            lock_owner = NULL,
-            lock_time = NULL
-        WHERE id = #{log.id}
-          AND tenant_id = #{log.tenantId}
-          AND execute_status = 'PENDING'
-          AND lock_owner = #{log.lockOwner}
-    </update>
-
-    <select id="selectByExecutionKey" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Columns"/>
-        FROM ai_business_trigger_log
-        WHERE tenant_id = #{tenantId}
-          AND trigger_id = #{triggerId}
-          AND event_id = #{eventId}
-        LIMIT 1
-    </select>
-
-    <select id="selectByLogId" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Columns"/>
-        FROM ai_business_trigger_log
-        WHERE tenant_id = #{tenantId}
-          AND id = #{id}
-        LIMIT 1
-    </select>
-
-    <select id="selectRecoveryCandidates" resultMap="BaseResultMap">
-        SELECT <include refid="Base_Columns"/>
-        FROM ai_business_trigger_log
-        WHERE retry_count &lt; #{maxRetryCount}
-          AND event_source != 'LEGACY'
-          AND trigger_snapshot IS NOT NULL
-          AND execution_digest IS NOT NULL
-          AND (
-            (execute_status = 'PENDING' AND (lock_time IS NULL OR lock_time &lt;= #{staleBefore}))
-            OR (execute_status = 'FAILED' AND next_retry_time &lt;= #{now})
-          )
-        ORDER BY execute_time ASC, id ASC
-        LIMIT #{batchSize}
-    </select>
-
-    <update id="claimExecution">
-        UPDATE ai_business_trigger_log
-        SET execute_status = 'PENDING',
-            retry_count = retry_count + 1,
-            next_retry_time = NULL,
-            lock_owner = #{lockOwner},
-            lock_time = #{now},
-            execute_time = #{now},
-            action_result = NULL,
-            error_message = NULL,
-            todo_code = NULL,
-            correlation_id = NULL,
-            duration_ms = NULL
-        WHERE tenant_id = #{tenantId}
-          AND id = #{id}
-          AND retry_count &lt; #{maxRetryCount}
-          AND (
-            (execute_status = 'PENDING' AND (lock_time IS NULL OR lock_time &lt;= #{staleBefore}))
-            OR (execute_status = 'FAILED' AND next_retry_time &lt;= #{now})
-          )
-    </update>
 
 </mapper>

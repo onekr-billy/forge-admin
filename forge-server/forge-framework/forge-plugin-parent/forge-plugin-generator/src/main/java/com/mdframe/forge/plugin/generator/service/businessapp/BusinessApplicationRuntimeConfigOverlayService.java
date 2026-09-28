@@ -55,17 +55,15 @@ public class BusinessApplicationRuntimeConfigOverlayService {
         if (renderConfig == null || StringUtils.isBlank(configKey)) {
             return renderConfig;
         }
-        Long tenantId = requireTenantId();
-        Long applicationId = resolveApplicationId(tenantId, configKey, appId, requestedApplicationId);
+        Long applicationId = resolveApplicationId(configKey, appId, requestedApplicationId);
         overlayFlowInteraction(configKey, appId, applicationId, renderConfig);
         overlayProcessActions(configKey, renderConfig, applicationId, designPreview);
         return renderConfig;
     }
 
-    private Long resolveApplicationId(
-            Long tenantId, String configKey, Long appId, Long requestedApplicationId) {
+    private Long resolveApplicationId(String configKey, Long appId, Long requestedApplicationId) {
         if (appId != null && appId > 0) {
-            AiBusinessApp entry = businessAppMapper.selectEntityById(tenantId, appId);
+            AiBusinessApp entry = businessAppMapper.selectEntityById(resolveTenantId(), appId);
             if (entry != null && StringUtils.equals(configKey, entry.getConfigKey())) {
                 return entry.getApplicationId();
             }
@@ -289,16 +287,12 @@ public class BusinessApplicationRuntimeConfigOverlayService {
         return fallback;
     }
 
-    private Long requireTenantId() {
-        Long tenantId;
+    private Long resolveTenantId() {
         try {
-            tenantId = SessionHelper.getTenantId();
+            Long tenantId = SessionHelper.getTenantId();
+            return tenantId == null ? 1L : tenantId;
         } catch (Exception ignored) {
-            tenantId = null;
+            return 1L;
         }
-        if (tenantId == null || tenantId <= 0) {
-            throw new BusinessException("应用运行配置叠加缺少可信租户上下文");
-        }
-        return tenantId;
     }
 }

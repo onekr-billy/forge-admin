@@ -15,7 +15,6 @@ import com.mdframe.forge.plugin.capability.identity.external.OidcExternalIdentit
 import com.mdframe.forge.plugin.capability.identity.mapper.AiCapabilityAccessTokenMapper;
 import com.mdframe.forge.plugin.capability.identity.mapper.AiCapabilityExternalIdentityMapper;
 import com.mdframe.forge.plugin.capability.identity.mapper.AiCapabilityOAuthRedirectUriMapper;
-import com.mdframe.forge.plugin.capability.identity.mapper.CapabilityIdentityStartupMapper;
 import com.mdframe.forge.plugin.capability.identity.oauth.DatabaseExactRedirectUriRegistry;
 import com.mdframe.forge.plugin.capability.identity.oauth.DelegationAuthorizationCodeStore;
 import com.mdframe.forge.plugin.capability.identity.oauth.ExactRedirectUriRegistry;
@@ -64,13 +63,6 @@ public class CapabilityIdentityAutoConfiguration {
             CapabilityIdentityProperties identityProperties,
             CapabilityControlPlaneProperties controlPlaneProperties) {
         return new CapabilityIdentityStartupGuard(identityProperties, controlPlaneProperties);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public CapabilityIdentityDataStartupGuard capabilityIdentityDataStartupGuard(
-            CapabilityIdentityStartupMapper startupMapper) {
-        return new CapabilityIdentityDataStartupGuard(startupMapper);
     }
 
     @Bean

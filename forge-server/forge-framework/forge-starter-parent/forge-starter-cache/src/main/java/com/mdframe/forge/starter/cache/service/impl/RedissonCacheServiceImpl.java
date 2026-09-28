@@ -8,13 +8,11 @@ import org.redisson.api.RKeys;
 import org.redisson.api.RMap;
 import org.redisson.api.RSet;
 import org.redisson.api.RList;
-import org.redisson.api.RScript;
 import org.redisson.api.RType;
 import org.redisson.api.RedissonClient;
 import org.redisson.api.NodeType;
 import org.redisson.api.NodesGroup;
 import org.redisson.api.Node;
-import org.redisson.client.codec.StringCodec;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -29,14 +27,6 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class RedissonCacheServiceImpl implements ICacheService {
-
-    private static final String INCREMENT_WITH_EXPIRY_SCRIPT = """
-            local current = redis.call('INCRBY', KEYS[1], ARGV[1])
-            if current == tonumber(ARGV[1]) then
-                redis.call('PEXPIRE', KEYS[1], ARGV[2])
-            end
-            return current
-            """;
 
     private final RedissonClient redissonClient;
 
@@ -185,22 +175,6 @@ public class RedissonCacheServiceImpl implements ICacheService {
     @Override
     public long increment(String key, long delta) {
         return redissonClient.getAtomicLong(key).addAndGet(delta);
-    }
-
-    @Override
-    public long incrementWithExpiry(String key, long delta, long timeout, TimeUnit timeUnit) {
-        if (timeout <= 0) {
-            throw new IllegalArgumentException("缓存计数器过期时间必须大于0");
-        }
-        long timeoutMillis = Math.max(1L, timeUnit.toMillis(timeout));
-        Number result = redissonClient.getScript(StringCodec.INSTANCE).eval(
-                RScript.Mode.READ_WRITE,
-                INCREMENT_WITH_EXPIRY_SCRIPT,
-                RScript.ReturnType.INTEGER,
-                List.of(key),
-                delta,
-                timeoutMillis);
-        return result.longValue();
     }
 
     @Override

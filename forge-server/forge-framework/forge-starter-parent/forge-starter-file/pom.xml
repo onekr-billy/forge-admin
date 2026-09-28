@@ -16,11 +16,6 @@
             <groupId>com.mdframe.forge</groupId>
             <artifactId>forge-starter-core</artifactId>
         </dependency>
-
-        <dependency>
-            <groupId>com.mdframe.forge</groupId>
-            <artifactId>forge-starter-cache</artifactId>
-        </dependency>
         
         <!-- Web支持 -->
         <dependency>

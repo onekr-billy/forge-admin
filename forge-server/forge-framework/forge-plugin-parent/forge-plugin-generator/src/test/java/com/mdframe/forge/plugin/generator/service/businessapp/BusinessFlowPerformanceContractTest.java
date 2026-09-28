@@ -82,22 +82,12 @@ class BusinessFlowPerformanceContractTest {
     void businessTaskActionMustPersistSubmittedFormDataBeforeCallingFlow() throws IOException {
         String source = Files.readString(resolveSource(
                 "src/main/java/com/mdframe/forge/plugin/generator/service/businessapp/BusinessFlowTaskCommandCoordinator.java"));
-        String service = serviceSource();
         String method = method(source, "BusinessFlowRuntimeVO completeBusinessTask",
-                "    private BusinessFlowRemoteTaskRequest prepareTaskAction", 0);
-        String preparation = method(source, "private BusinessFlowRemoteTaskRequest prepareTaskAction",
                 "    BusinessFlowRuntimeVO recoverCapabilityTaskAction", 0);
-        int serviceMethod = service.indexOf("public BusinessFlowRuntimeVO completeBusinessTask");
 
-        assertTrue(serviceMethod > 80);
-        assertFalse(service.substring(serviceMethod - 80, serviceMethod).contains("@Transactional"));
-        assertTrue(method.contains("requiresNew(() -> prepareTaskAction("));
-        assertTrue(method.indexOf("prepareTaskAction(") < method.indexOf("remoteCommandService.prepareTask("));
-        assertTrue(method.indexOf("remoteCommandService.prepareTask(")
-                < method.indexOf("remoteCommandService.executeTask("));
-        assertTrue(method.contains("requiresNew(() -> persistRecoveredTaskCommand("));
-        assertTrue(preparation.contains("dto.getData() != null && !dto.getData().isEmpty()"));
-        assertTrue(preparation.contains("persistTaskFormData("));
+        assertTrue(method.contains("dto.getData() != null && !dto.getData().isEmpty()"));
+        assertTrue(method.contains("persistTaskFormData("));
+        assertTrue(method.indexOf("persistTaskFormData(") < method.indexOf("flowClient.approve("));
         assertTrue(source.contains("dynamicCrudService.updateTaskEditableData"));
     }
 

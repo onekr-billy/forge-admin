@@ -230,10 +230,4 @@ public class FlowTask {
      * 最终执行的受控动作类型（APPROVE/REJECT）。
      */
     private String actionType;
-
-    /** 最近成功应用的 Flowable 镜像投影事件。 */
-    private String projectionEventId;
-
-    /** 最近成功应用的投影顺序号，用于拒绝迟到事件覆盖新状态。 */
-    private Long projectionSequence;
 }

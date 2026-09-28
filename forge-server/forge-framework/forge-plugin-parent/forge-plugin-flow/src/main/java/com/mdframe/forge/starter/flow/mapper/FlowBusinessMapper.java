@@ -83,29 +83,9 @@ public interface FlowBusinessMapper extends BaseMapper<FlowBusiness> {
     Map<String, Object> selectProcessInstanceStats(@Param("tenantId") Long tenantId,
                                                    @Param("processDefinitionKey") String processDefinitionKey);
 
-    /** 删除流程模型前，按可信租户统计关联业务数据。 */
-    long countByProcessDefKeyAndTenantId(@Param("processDefKey") String processDefKey,
-                                         @Param("tenantId") Long tenantId);
-
     int updateStatusByProcessInstanceId(@Param("processInstanceId") String processInstanceId,
                                         @Param("status") String status,
                                         @Param("tenantId") Long tenantId);
-
-    int markWithdrawn(@Param("tenantId") Long tenantId,
-                      @Param("processInstanceId") String processInstanceId,
-                      @Param("status") String status,
-                      @Param("endTime") LocalDateTime endTime,
-                      @Param("idempotencyKey") String idempotencyKey,
-                      @Param("requestDigest") String requestDigest,
-                      @Param("actionType") String actionType);
-
-    int applyProjection(@Param("tenantId") Long tenantId,
-                        @Param("processInstanceId") String processInstanceId,
-                        @Param("status") String status,
-                        @Param("endTime") LocalDateTime endTime,
-                        @Param("duration") Long duration,
-                        @Param("eventId") String eventId,
-                        @Param("eventSequence") Long eventSequence);
 
     int deleteByProcessInstanceIdPhysically(@Param("processInstanceId") String processInstanceId,
                                             @Param("tenantId") Long tenantId);

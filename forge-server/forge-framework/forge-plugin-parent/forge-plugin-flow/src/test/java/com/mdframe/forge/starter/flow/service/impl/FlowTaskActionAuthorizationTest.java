@@ -63,18 +63,6 @@ class FlowTaskActionAuthorizationTest {
     }
 
     @Test
-    void shouldReturnIdempotentSuccessForSameReturnedRequest() {
-        FlowTask task = task(1L, "101", FlowTaskStatus.RETURNED);
-        task.setActionIdempotencyKey("return-key-1");
-        task.setActionRequestDigest("sha256:return-digest");
-        task.setActionType("RETURN");
-
-        assertThat(FlowTaskActionAuthorization.authorize(
-                task, "101", 1L, "RETURN", "return-key-1", "sha256:return-digest",
-                FlowTaskStatus.RETURNED)).isTrue();
-    }
-
-    @Test
     void shouldNotExposeIdempotentSuccessToAnotherActor() {
         FlowTask task = task(1L, "101", FlowTaskStatus.APPROVED);
         task.setActionIdempotencyKey("key-1");

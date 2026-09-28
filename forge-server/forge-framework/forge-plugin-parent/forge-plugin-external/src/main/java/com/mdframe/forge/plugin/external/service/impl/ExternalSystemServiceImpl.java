@@ -47,12 +47,12 @@ public class ExternalSystemServiceImpl extends ServiceImpl<ExternalSystemMapper,
 
     @Override
     public ExternalSystem getManagementById(Long id) {
-        return secretService.forManagement(systemMapper.selectSystemById(id, SessionHelper.getTenantId()));
+        return secretService.forManagement(systemMapper.selectById(id));
     }
 
     @Override
     public ExternalSystem getRuntimeById(Long id) {
-        return secretService.forRuntime(systemMapper.selectSystemById(id, SessionHelper.getTenantId()));
+        return secretService.forRuntime(systemMapper.selectById(id));
     }
 
     @Override
@@ -69,18 +69,12 @@ public class ExternalSystemServiceImpl extends ServiceImpl<ExternalSystemMapper,
         if (entity == null || entity.getId() == null) {
             throw new BusinessException("外部系统ID不能为空");
         }
-        ExternalSystem existing = systemMapper.selectSystemById(entity.getId(), SessionHelper.getTenantId());
+        ExternalSystem existing = systemMapper.selectById(entity.getId());
         if (existing == null) {
             throw new BusinessException("外部系统不存在");
         }
         ExternalSystem persisted = secretService.prepareForPersistence(entity, existing);
         persisted.setTenantId(SessionHelper.getTenantId());
         return systemMapper.updateById(persisted) == 1;
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public boolean removeSystem(Long id) {
-        return systemMapper.deleteSystemById(id, SessionHelper.getTenantId()) == 1;
     }
 }

@@ -59,10 +59,6 @@ public class FlowTaskCandidate {
     /** 1 有效，0 已移除。 */
     private Integer status;
 
-    private String projectionEventId;
-
-    private Long projectionSequence;
-
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;

@@ -14,7 +14,6 @@ import com.mdframe.forge.plugin.generator.mapper.BusinessProcessNodeRunMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessProcessRunMapper;
 import com.mdframe.forge.plugin.generator.mapper.BusinessProcessVersionMapper;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessEvent;
-import com.mdframe.forge.plugin.generator.service.businessapp.BusinessEventEnvelope;
 import com.mdframe.forge.plugin.generator.service.businessapp.BusinessFlowService;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessFlowRuntimeVO;
 import com.mdframe.forge.plugin.generator.vo.businessprocess.BusinessProcessRunVO;
@@ -56,8 +55,6 @@ class BusinessProcessOrchestratorTest {
     private final BusinessProcessNodeRunMapper nodeRunMapper = mock(BusinessProcessNodeRunMapper.class);
     private final BusinessFlowService flowService = mock(BusinessFlowService.class);
     private final BusinessProcessActionExecutor actionExecutor = mock(BusinessProcessActionExecutor.class);
-    private final BusinessProcessRunLeaseCoordinator leaseCoordinator =
-            new BusinessProcessRunLeaseCoordinator(runMapper);
     private final BusinessProcessOrchestrator orchestrator = new BusinessProcessOrchestrator(
             applicationMapper,
             processMapper,
@@ -66,8 +63,7 @@ class BusinessProcessOrchestratorTest {
             nodeRunMapper,
             new BusinessProcessSchemaValidator(new ObjectMapper()),
             flowService,
-            actionExecutor,
-            leaseCoordinator);
+            actionExecutor);
 
     private ExecutionIdentityContextHolder.Scope identityScope;
     private final AtomicReference<AiBusinessProcessRun> storedRun = new AtomicReference<>();
@@ -89,33 +85,6 @@ class BusinessProcessOrchestratorTest {
             return 1;
         });
         when(runMapper.selectRunById(eq(1L), anyLong())).thenAnswer(invocation -> copy(storedRun.get()));
-        when(runMapper.claimExecution(eq(1L), anyLong(), any(), any())).thenAnswer(invocation -> {
-            AiBusinessProcessRun run = storedRun.get();
-            if (run == null) {
-                return 0;
-            }
-            run.setStatus("RUNNING");
-            run.setExecutionToken(run.getExecutionToken() == null ? 1L : run.getExecutionToken() + 1L);
-            run.setLeaseOwner(invocation.getArgument(2));
-            storedRun.set(run);
-            return 1;
-        });
-        when(runMapper.renewLease(eq(1L), anyLong(), anyLong(), any(), any())).thenReturn(1);
-        when(runMapper.transitionWithLease(
-                eq(1L), anyLong(), anyLong(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
-                .thenAnswer(invocation -> {
-                    AiBusinessProcessRun run = storedRun.get();
-                    if (run == null) {
-                        return 0;
-                    }
-                    run.setStatus(invocation.getArgument(8));
-                    run.setCurrentNodeId(invocation.getArgument(9));
-                    run.setFlowProcessInstanceId(invocation.getArgument(10));
-                    run.setErrorCode(invocation.getArgument(12));
-                    run.setErrorSummary(invocation.getArgument(13));
-                    storedRun.set(run);
-                    return 1;
-                });
         when(runMapper.compareAndSetStatus(eq(1L), anyLong(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenAnswer(invocation -> {
                     AiBusinessProcessRun run = storedRun.get();
@@ -133,11 +102,8 @@ class BusinessProcessOrchestratorTest {
         when(nodeRunMapper.selectMaxAttemptNo(anyLong(), anyLong(), any())).thenReturn(0);
         when(nodeRunMapper.insertAttempt(any())).thenReturn(1);
         when(nodeRunMapper.claimAttempt(anyLong(), anyLong())).thenReturn(1);
-        when(nodeRunMapper.claimAttemptWithLease(anyLong(), anyLong(), anyLong(), anyLong(), any())).thenReturn(1);
+        when(nodeRunMapper.selectLatestAttempt(anyLong(), anyLong(), any())).thenReturn(null);
         when(nodeRunMapper.completeAttempt(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(), any(), any()))
-                .thenReturn(1);
-        when(nodeRunMapper.completeAttemptWithLease(
-                anyLong(), anyLong(), anyLong(), anyLong(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(1);
         when(runMapper.selectByIdempotencyKey(eq(1L), anyLong(), any())).thenReturn(null);
     }
@@ -145,7 +111,6 @@ class BusinessProcessOrchestratorTest {
     @AfterEach
     void tearDown() {
         identityScope.close();
-        leaseCoordinator.destroy();
     }
 
     @Test
@@ -161,54 +126,6 @@ class BusinessProcessOrchestratorTest {
         assertEquals("SUCCESS", result.getStatus());
         assertEquals("order:9001", result.getBusinessKey());
         assertEquals("submit_approval", result.getProcessCode());
-        verify(nodeRunMapper, never()).selectLatestAttempt(anyLong(), anyLong(), any());
-    }
-
-    @Test
-    void nodeSideEffectDoesNotRunWhenAttemptClaimFails() {
-        stubPublishedProcess(manualSchema());
-        when(nodeRunMapper.claimAttemptWithLease(anyLong(), anyLong(), anyLong(), anyLong(), any())).thenReturn(0);
-        BusinessProcessManualStartDTO dto = new BusinessProcessManualStartDTO();
-        dto.setRecordId("9001");
-        dto.setObjectCode("order");
-
-        assertThrows(BusinessException.class,
-                () -> orchestrator.start("CRM_APP", "submit_approval", dto));
-
-        verifyNoInteractions(actionExecutor);
-        verify(nodeRunMapper, never()).completeAttemptWithLease(
-                anyLong(), anyLong(), anyLong(), anyLong(), any(), any(), any(), any(), any(), any(), any(), any(), any());
-    }
-
-    @Test
-    void runSideEffectDoesNotStartWhenLeaseClaimFails() {
-        stubPublishedProcess(manualSchema());
-        when(runMapper.claimExecution(eq(1L), anyLong(), any(), any())).thenReturn(0);
-        BusinessProcessManualStartDTO dto = new BusinessProcessManualStartDTO();
-        dto.setRecordId("9001");
-        dto.setObjectCode("order");
-
-        BusinessProcessRunVO result = orchestrator.start("CRM_APP", "submit_approval", dto);
-
-        assertEquals("PENDING", result.getStatus());
-        verify(nodeRunMapper, never()).insertAttempt(any());
-        verifyNoInteractions(actionExecutor);
-    }
-
-    @Test
-    void leaseRenewalFailureStopsBeforeNodeClaim() {
-        stubPublishedProcess(manualSchema());
-        when(runMapper.renewLease(eq(1L), anyLong(), anyLong(), any(), any())).thenReturn(0);
-        BusinessProcessManualStartDTO dto = new BusinessProcessManualStartDTO();
-        dto.setRecordId("9001");
-        dto.setObjectCode("order");
-
-        BusinessException exception = assertThrows(BusinessException.class,
-                () -> orchestrator.start("CRM_APP", "submit_approval", dto));
-
-        assertEquals(409, exception.getCode());
-        verify(nodeRunMapper, never()).insertAttempt(any());
-        verifyNoInteractions(actionExecutor);
     }
 
     @Test
@@ -265,7 +182,7 @@ class BusinessProcessOrchestratorTest {
         AiBusinessProcessVersion version = publishedEventVersion(eventSchema());
         when(versionMapper.selectCurrentPublishedBySubjectObjectCode(1L, "order"))
                 .thenReturn(java.util.List.of(version));
-        BusinessEvent event = BusinessEventEnvelope.stamp(BusinessEvent.builder()
+        BusinessEvent event = BusinessEvent.builder()
                 .eventType(BusinessEvent.RECORD_CREATED)
                 .objectCode("order")
                 .recordId("9001")
@@ -275,46 +192,13 @@ class BusinessProcessOrchestratorTest {
                 .operatorId(101L)
                 .operatorName("operator")
                 .tenantId(1L)
-                .build(), BusinessEventEnvelope.SOURCE_DYNAMIC_CRUD);
+                .build();
 
         orchestrator.startEvent(event);
 
         assertEquals("SUCCESS", storedRun.get().getStatus());
         assertEquals("EVENT", storedRun.get().getTriggerType());
         assertEquals("order:9001", storedRun.get().getBusinessKey());
-        assertEquals(event.getEventId(), storedRun.get().getSourceEventId());
-        assertEquals(BusinessEventEnvelope.processIdempotencyKey(event), storedRun.get().getIdempotencyKey());
-    }
-
-    @Test
-    void eventStartRejectsMissingTenantInsteadOfFallingBackToDefaultTenant() {
-        BusinessEvent event = BusinessEvent.builder()
-                .eventType(BusinessEvent.RECORD_CREATED)
-                .objectCode("order")
-                .recordId("9001")
-                .build();
-
-        assertThrows(BusinessException.class, () -> orchestrator.startEvent(event));
-        verifyNoInteractions(versionMapper);
-    }
-
-    @Test
-    void eventStartRejectsUnknownConditionOperator() {
-        AiBusinessProcessVersion version = publishedEventVersion(
-                eventSchema().replace("\"operator\":\"EQ\"", "\"operator\":\"UNKNOWN\""));
-        when(versionMapper.selectCurrentPublishedBySubjectObjectCode(1L, "order"))
-                .thenReturn(java.util.List.of(version));
-        BusinessEvent event = BusinessEventEnvelope.stamp(BusinessEvent.builder()
-                .eventType(BusinessEvent.RECORD_CREATED)
-                .objectCode("order")
-                .recordId("9001")
-                .recordData(Map.of("main", Map.of("approval_status", "DRAFT")))
-                .tenantId(1L)
-                .build(), BusinessEventEnvelope.SOURCE_DYNAMIC_CRUD);
-
-        orchestrator.startEvent(event);
-
-        verify(runMapper, never()).insert(any(AiBusinessProcessRun.class));
     }
 
     @Test
@@ -514,10 +398,6 @@ class BusinessProcessOrchestratorTest {
         copy.setStatus(source.getStatus());
         copy.setCurrentNodeId(source.getCurrentNodeId());
         copy.setFlowProcessInstanceId(source.getFlowProcessInstanceId());
-        copy.setExecutionToken(source.getExecutionToken());
-        copy.setLeaseOwner(source.getLeaseOwner());
-        copy.setLeaseExpireTime(source.getLeaseExpireTime());
-        copy.setHeartbeatTime(source.getHeartbeatTime());
         copy.setContextSnapshot(source.getContextSnapshot());
         copy.setRetryCount(source.getRetryCount());
         copy.setErrorCode(source.getErrorCode());

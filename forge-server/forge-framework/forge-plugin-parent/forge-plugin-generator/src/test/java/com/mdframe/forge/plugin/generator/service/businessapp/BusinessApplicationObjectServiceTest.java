@@ -8,12 +8,7 @@ import com.mdframe.forge.plugin.generator.domain.entity.AiBusinessObject;
 import com.mdframe.forge.plugin.generator.dto.businessapp.BusinessApplicationObjectDTO;
 import com.mdframe.forge.plugin.generator.mapper.BusinessApplicationObjectMapper;
 import com.mdframe.forge.plugin.generator.vo.businessapp.BusinessApplicationObjectVO;
-import com.mdframe.forge.starter.core.context.ExecutionIdentity;
-import com.mdframe.forge.starter.core.context.ExecutionIdentityContextHolder;
 import com.mdframe.forge.starter.core.exception.BusinessException;
-import com.mdframe.forge.starter.core.session.LoginUser;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -21,7 +16,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -33,50 +27,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DisplayName("BusinessApplicationObjectService")
 class BusinessApplicationObjectServiceTest {
-
-    private ExecutionIdentityContextHolder.Scope identityScope;
-
-    @BeforeEach
-    void setUpIdentity() {
-        LoginUser loginUser = new LoginUser();
-        loginUser.setUserId(7L);
-        loginUser.setTenantId(1L);
-        identityScope = ExecutionIdentityContextHolder.open(
-                new ExecutionIdentity(loginUser, "USER", 7L, null, 1L,
-                        "pc", "application-object-test", Set.of()));
-    }
-
-    @AfterEach
-    void clearIdentity() {
-        if (identityScope != null) {
-            identityScope.close();
-            identityScope = null;
-        }
-        ExecutionIdentityContextHolder.clear();
-    }
-
-    @Test
-    @DisplayName("missing tenant is rejected before application object access")
-    void missingTenantIsRejectedBeforeDataAccess() throws Exception {
-        AtomicBoolean applicationRead = new AtomicBoolean();
-        StubApplicationService applicationService = new StubApplicationService(application()) {
-            @Override
-            public AiBusinessApplication requireEntity(Long id) {
-                applicationRead.set(true);
-                return super.requireEntity(id);
-            }
-        };
-        BusinessApplicationObjectService service = service(
-                applicationService, new StubObjectService(Map.of()),
-                proxy(BusinessApplicationObjectServiceTest::defaultValue));
-        identityScope.close();
-        identityScope = null;
-        ExecutionIdentityContextHolder.clear();
-
-        assertThrows(BusinessException.class, () -> service.list(10L));
-
-        assertFalse(applicationRead.get());
-    }
 
     @Test
     @DisplayName("draft version changes do not pretend the database is out of sync")

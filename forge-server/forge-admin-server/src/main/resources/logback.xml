@@ -2,8 +2,6 @@
 <configuration>
     <!-- 日志存放路径 -->
     <property name="log.path" value="./var/logs" />
-    <property name="app.log.level" value="${FORGE_LOG_LEVEL:-INFO}" />
-    <property name="sql.log.level" value="${FORGE_SQL_LOG_LEVEL:-INFO}" />
     <!-- 日志输出格式（包含traceId） -->
     <property name="log.pattern" value="traceId:[%X{traceId}], %d{HH:mm:ss.SSS} [%thread] %-5level %logger{20} - [%method,%line] - %msg%n" />
     <!-- 控制台输出 -->
@@ -28,17 +26,23 @@
         </encoder>
     </appender>
     
-    <!-- 应用默认使用 INFO；需要临时诊断时通过 FORGE_LOG_LEVEL 显式开启 DEBUG。 -->
-    <logger name="com.mdframe.forge" level="${app.log.level}" additivity="false">
+    <!-- 系统模块日志级别控制  -->
+    <logger name="com.mdframe.forge" level="info" />
+    <!-- Spring日志级别控制  -->
+    <logger name="org.springframework" level="info" />
+    <!-- MyBatis SQL日志打印 -->
+    <logger name="com.mdframe.forge.plugin.system.mapper" level="debug" />
+    <logger name="com.mdframe.forge" level="debug" additivity="false">
         <appender-ref ref="console" />
         <appender-ref ref="file_info" />
     </logger>
-    <!-- SQL 默认不输出 DEBUG 明细；可通过 FORGE_SQL_LOG_LEVEL 单独开启。 -->
-    <logger name="com.mdframe.forge.plugin.system.mapper" level="${sql.log.level}" />
-    <logger name="com.mdframe.forge.plugin.generator.mapper" level="${sql.log.level}" />
-
+    
     <root level="info">
         <appender-ref ref="console" />
+    </root>
+    
+    <!--系统操作日志-->
+    <root level="info">
         <appender-ref ref="file_info" />
     </root>
 </configuration>
