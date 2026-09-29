@@ -16,7 +16,7 @@
   - `forge-plugin-print/mapper/PrintBusinessSourceMapper.java`
   - `forge-plugin-print/resources/mapper/PrintBusinessSourceMapper.xml`
 - **验证**：迁移静态扫描、Mapper 合同测试、print 插件编译。
-- **结果**：模型、Mapper、V1.0.204 迁移和合同测试已完成；XML/占位符/diff 静态检查通过，本机缺少 Maven 可执行文件，Java 编译留阶段聚合环境补跑。
+- **结果**：模型、Mapper、V1.0.204 迁移和合同测试已完成；XML/占位符/diff 静态检查、打印模块 JUnit 和 Admin 聚合打包均通过。
 
 ## Task 2：来源协议、CRUD 与授权 ✅
 
@@ -89,4 +89,4 @@
   - 低代码/采购 Provider 兼容调整
   - 当前变更文档
 - **验证**：后端聚合 package、前端 build、相关打印单测和 `git diff --check`。
-- **结果**：打印中心菜单/权限和接入文档已补齐；268 项打印相关前端测试全部通过，生产构建通过。后端 JUnit 已新增但本机缺少 Maven，聚合 package 留 CI/具备 Maven 的环境补跑。
+- **结果**：打印中心菜单/权限和接入文档已补齐；268 项前端测试、146 项打印后端测试、2 项数据集打印测试和 Admin 46 模块聚合打包全部通过。

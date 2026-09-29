@@ -3,6 +3,7 @@ package com.mdframe.forge.plugin.print.dto;
 import jakarta.validation.constraints.*;
 import static com.mdframe.forge.plugin.print.protocol.PrintProtocolLimits.DOCUMENT_BYTES;
 import com.mdframe.forge.plugin.print.enums.PrintSourceType;
+import com.mdframe.forge.plugin.print.spi.PrintSourceRequest;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 /**

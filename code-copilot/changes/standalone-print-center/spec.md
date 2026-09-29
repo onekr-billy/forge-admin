@@ -130,14 +130,14 @@
 
 | Task | 状态 | 实际改动文件 | 备注 |
 |---|---|---|---|
-| Task 1 | 完成 | V1.0.204、PrintBusinessSource、Mapper、三张现有实体/Mapper、合同测试 | Maven 基线因本机无 `mvn` 未执行，静态检查通过 |
+| Task 1 | 完成 | V1.0.204、PrintBusinessSource、Mapper、三张现有实体/Mapper、合同测试 | 静态检查、JUnit 与 Java 17 聚合编译通过 |
 | Task 2 | 完成 | 来源 DTO/VO/枚举、Service、Controller、配置校验、权限字典 | API 保持固定 DTO，API 来源仅保留协议值未开放 |
 | Task 3 | 完成 | 双来源协议、模板 Access/Service/Mapper、兼容测试 | 旧来源摘要保持稳定，独立来源身份服务端规范化 |
 | Task 4 | 完成 | 绑定 DTO/Service/Mapper、运行版本解析、执行审计 | 独立来源固定发布版本，不回退最新版本 |
 | Task 5 | 完成 | 参数校验器、SERVICE 适配器、DATASET Provider、采购示例接入 | 参数白名单；数据集复用 ACL/行范围/脱敏 |
 | Task 6 | 完成 | 打印中心主从工作台、来源表单/列表、模板管理兼容 | 标准布局；来源/模板权限分离；固定版本可显式升级 |
 | Task 7 | 完成 | BusinessPrintButton、useBusinessPrint、运行时来源解析 | 页面可只配置 sourceCode；受控参数不进 URL |
-| Task 8 | 完成 | 菜单权限、接入文档、兼容测试与生产构建 | 前端验证通过；后端 Maven 因环境缺失未执行 |
+| Task 8 | 完成 | 菜单权限、接入文档、兼容测试与生产构建 | 前端验证、打印/数据集 JUnit 和 Admin 聚合 package 通过 |
 
 ## 12. 审查结论
 

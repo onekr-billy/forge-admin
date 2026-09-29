@@ -6,14 +6,15 @@
 |---|---|---|---|
 | 2026-09-29 | propose/apply | 用户确认按平台级独立打印中心方案开始实施 | 分支 `codex/standalone-print-center` |
 | 2026-09-29 | research | 完成现有打印、数据集、应用发布快照和前端入口调查 | 不重写打印引擎 |
-| 2026-09-29 | Task 1 | 新增业务来源表、独立来源引用列、实体和 Mapper | 静态检查通过；本机 `mvn` 不可用 |
+| 2026-09-29 | Task 1 | 新增业务来源表、独立来源引用列、实体和 Mapper | 静态检查、JUnit 与聚合编译通过 |
 | 2026-09-29 | Task 2 | 新增来源 CRUD、配置校验、权限和来源类型字典 | SERVICE/DATASET 可配置，API 明确失败关闭 |
 | 2026-09-29 | Task 3 | 模板管理接通应用来源与独立业务来源双路径 | 旧 LOWCODE/CODE 来源 key 保持兼容；独立来源身份由后端重新解析 |
 | 2026-09-29 | Task 4 | 独立来源绑定固定已发布模板版本并接入运行时解析 | 不回退最新版本；应用来源保持发布快照语义 |
 | 2026-09-29 | Task 5 | 增加受控参数、SERVICE Provider 分发和 DATASET Provider | 复用数据集发布状态、ACL、行范围与脱敏；禁止动态 SQL/Bean 名透传 |
 | 2026-09-29 | Task 6 | 完成独立打印中心主从工作台和来源维护 | 来源、模板、接入信息同屏；标准滚动和响应式布局 |
 | 2026-09-29 | Task 7 | 增加统一业务打印按钮/composable 和运行时来源解析 | 页面只需稳定 sourceCode；参数不携带正文或模板版本 |
-| 2026-09-29 | Task 8 | 完成权限、文档、低代码兼容回归和生产构建 | 268 项前端测试通过；后端 Maven 仍受环境阻塞 |
+| 2026-09-29 | Task 8 | 完成权限、文档、低代码兼容回归和生产构建 | 前端 268 项、后端 148 项测试及 Admin 聚合打包通过 |
+| 2026-09-29 | verify | 使用临时 JDK 17/Maven 补齐后端验证 | 修复缺失导入和两处测试协议同步问题；未改系统运行时 |
 
 ## 技术决策
 
@@ -31,6 +32,7 @@
 |---|---|---|---|
 | 前端首次构建缺少 `html-to-image` | node_modules 未完整物化锁文件依赖 | 使用冻结锁文件补齐依赖后构建 | 是；构建前检查依赖完整性 |
 | 独立模板重发后场景没变 | 场景同步只比较场景集合 | 同时比较固定 templateVersionId，提供显式升级入口 | 是；独立绑定版本不可静默漂移 |
+| Mockito 在临时 JDK 上无法自附加 | macOS/JDK 的 Agent attach 机制不可用 | 测试 JVM 显式加载 Byte Buddy Agent | 是；只影响测试启动方式 |
 
 ## 知识发现
 
@@ -47,5 +49,7 @@
 
 - 保持 print 插件不反向依赖 generator/data；适配器由上层插件实现。
 - 不修改用户已有 `.DS_Store`。
-- Task 1 已执行 `git diff --check`、Flyway `${...}` 扫描和四个 Mapper XML 解析；Maven 命令因 `mvn: command not found` 未运行，不能表述为 Java 编译通过。
+- Task 1 已执行 `git diff --check`、Flyway `${...}` 扫描、四个 Mapper XML 解析、打印/数据集 JUnit 和 Admin 聚合打包。
 - Task 6-8 已执行打印相关 268 项 Vitest、变更文件 ESLint 和前端生产构建；Vite/CSS 警告来自存量配置和样式。
+- 后端结果：打印插件 146 项、数据集打印 2 项测试通过；Admin 46 个 reactor 模块 `package -DskipTests` 通过。
+- 未执行真实数据库/Flyway 和浏览器后端联调：本地无 MySQL、Redis 和 8580 服务，按用户既定分工留部署环境验收。

@@ -253,7 +253,7 @@
 - 167. DAG 分支路由必须同时处理跨层穿卡和三种顺序一致性
 - 183. 捕获参与当前事务的下游异常不能清除 rollback-only
 
-### [后端框架 / Spring / Maven](pitfalls/backend.md)（37）
+### [后端框架 / Spring / Maven](pitfalls/backend.md)（38）
 
 - 打印关系外键 businessObject0eq3Id 对不上是设计器列名+model_schema 漏字段
 - 冷缓存 Maven 并行构建出现依赖锁获取失败
@@ -294,6 +294,7 @@
 - 181. Mockito 匹配重载方法时必须指定参数类型
 - 打印执行事件新增枚举必须同步 Jackson/DTO/Mapper/字典
 - 打印 style 不能用封闭白名单拦展示属性
+- Mockito 内联 MockMaker 在受限 JDK 上需要预加载 Byte Buddy Agent
 
 ### [安全 / 加密 / 租户 / 鉴权](pitfalls/security.md)（19）
 
