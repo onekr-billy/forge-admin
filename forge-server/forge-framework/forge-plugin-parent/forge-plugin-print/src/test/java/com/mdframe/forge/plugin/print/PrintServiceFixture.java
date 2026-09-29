@@ -96,10 +96,13 @@ abstract class PrintServiceFixture {
         }
         jdbc.execute("ALTER TABLE sys_print_template MODIFY page_id VARCHAR(128)");
         jdbc.execute("ALTER TABLE sys_print_template ADD business_source_id BIGINT");
+        jdbc.execute("ALTER TABLE sys_print_template ADD source_code VARCHAR(80)");
         jdbc.execute("ALTER TABLE sys_print_binding MODIFY page_id VARCHAR(128)");
         jdbc.execute("ALTER TABLE sys_print_binding ADD business_source_id BIGINT");
+        jdbc.execute("ALTER TABLE sys_print_binding ADD source_code VARCHAR(80)");
         jdbc.execute("ALTER TABLE sys_print_binding ADD template_version_id BIGINT");
         jdbc.execute("ALTER TABLE sys_print_execution ADD business_source_id BIGINT");
+        jdbc.execute("ALTER TABLE sys_print_execution ADD source_code VARCHAR(80)");
         jdbc.execute("ALTER TABLE sys_print_execution ADD source_revision BIGINT");
         jdbc.execute("CREATE TABLE synthetic_application (id BIGINT PRIMARY KEY,tenant_id BIGINT)");
         jdbc.update("INSERT INTO synthetic_application VALUES (2,1)");
@@ -123,7 +126,7 @@ abstract class PrintServiceFixture {
         };
         adapter = new Adapter();
         registry = new PrintProviderRegistry(List.of(adapter), List.of(adapter));
-        access = new PrintTemplateAccess(templates, registry, identity);
+        access = new PrintTemplateAccess(templates, mock(PrintBusinessSourceMapper.class), registry, identity);
         var documents = new PrintDocumentAccess(json);
         service = transactional(new PrintTemplateService(identity, templates, bindingMapper, access, registry, protocol, documents));
         publication = transactional(new PrintTemplateVersionService(identity, access, templates, versions, protocol, documents, json));

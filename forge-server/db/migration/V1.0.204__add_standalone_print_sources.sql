@@ -37,6 +37,15 @@ PREPARE print_source_stmt FROM @print_source_ddl;
 EXECUTE print_source_stmt;
 DEALLOCATE PREPARE print_source_stmt;
 
+SET @print_source_ddl := IF(EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sys_print_template'
+      AND COLUMN_NAME = 'source_code'
+), 'SELECT 1', 'ALTER TABLE sys_print_template ADD COLUMN source_code VARCHAR(80) NULL COMMENT ''独立业务来源编码'' AFTER business_source_id');
+PREPARE print_source_stmt FROM @print_source_ddl;
+EXECUTE print_source_stmt;
+DEALLOCATE PREPARE print_source_stmt;
+
 INSERT INTO sys_dict_data (
     tenant_id, dict_sort, dict_label, dict_value, dict_type, css_class, list_class, is_default,
     dict_status, remark, create_by, create_time, update_by, update_time, create_dept
@@ -120,6 +129,15 @@ DEALLOCATE PREPARE print_source_stmt;
 SET @print_source_ddl := IF(EXISTS (
     SELECT 1 FROM information_schema.COLUMNS
     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sys_print_binding'
+      AND COLUMN_NAME = 'source_code'
+), 'SELECT 1', 'ALTER TABLE sys_print_binding ADD COLUMN source_code VARCHAR(80) NULL COMMENT ''独立业务来源编码'' AFTER business_source_id');
+PREPARE print_source_stmt FROM @print_source_ddl;
+EXECUTE print_source_stmt;
+DEALLOCATE PREPARE print_source_stmt;
+
+SET @print_source_ddl := IF(EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sys_print_binding'
       AND COLUMN_NAME = 'template_version_id'
 ), 'SELECT 1', 'ALTER TABLE sys_print_binding ADD COLUMN template_version_id BIGINT NULL COMMENT ''独立来源固定模板版本'' AFTER template_id');
 PREPARE print_source_stmt FROM @print_source_ddl;
@@ -131,6 +149,15 @@ SET @print_source_ddl := IF(EXISTS (
     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sys_print_execution'
       AND COLUMN_NAME = 'business_source_id'
 ), 'SELECT 1', 'ALTER TABLE sys_print_execution ADD COLUMN business_source_id BIGINT NULL COMMENT ''独立业务来源 ID'' AFTER application_id');
+PREPARE print_source_stmt FROM @print_source_ddl;
+EXECUTE print_source_stmt;
+DEALLOCATE PREPARE print_source_stmt;
+
+SET @print_source_ddl := IF(EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sys_print_execution'
+      AND COLUMN_NAME = 'source_code'
+), 'SELECT 1', 'ALTER TABLE sys_print_execution ADD COLUMN source_code VARCHAR(80) NULL COMMENT ''独立业务来源编码'' AFTER business_source_id');
 PREPARE print_source_stmt FROM @print_source_ddl;
 EXECUTE print_source_stmt;
 DEALLOCATE PREPARE print_source_stmt;

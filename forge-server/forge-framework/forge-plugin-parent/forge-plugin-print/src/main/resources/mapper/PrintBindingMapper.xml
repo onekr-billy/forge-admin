@@ -6,6 +6,7 @@
         <result column="tenant_id" property="tenantId"/>
         <result column="application_id" property="applicationId"/>
         <result column="business_source_id" property="businessSourceId"/>
+        <result column="source_code" property="sourceCode"/>
         <result column="source_type" property="sourceType"/>
         <result column="source_key" property="sourceKey"/>
         <result column="page_id" property="pageId"/>
@@ -25,10 +26,10 @@
         <result column="update_by" property="updateBy"/>
         <result column="update_time" property="updateTime"/>
     </resultMap>
-    <sql id="Columns">id, tenant_id, application_id, business_source_id, source_type, source_key, page_id, form_key, object_code, template_id, template_version_id, scene, is_default, sort_order, status, binding_revision, del_flag, create_by, create_time, create_dept, update_by, update_time</sql>
+    <sql id="Columns">id, tenant_id, application_id, business_source_id, source_code, source_type, source_key, page_id, form_key, object_code, template_id, template_version_id, scene, is_default, sort_order, status, binding_revision, del_flag, create_by, create_time, create_dept, update_by, update_time</sql>
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO sys_print_binding (tenant_id, application_id, business_source_id, source_type, source_key, page_id, form_key, object_code, template_id, template_version_id, scene, is_default, sort_order, status, binding_revision, del_flag, create_by, create_time, create_dept, update_by, update_time)
-        VALUES (#{tenantId}, #{applicationId}, #{businessSourceId}, #{sourceType}, #{sourceKey}, #{pageId}, #{formKey}, #{objectCode}, #{templateId}, #{templateVersionId}, #{scene}, #{isDefault}, #{sortOrder}, #{status}, #{bindingRevision}, #{delFlag}, #{createBy}, #{createTime}, #{createDept}, #{updateBy}, #{updateTime})
+        INSERT INTO sys_print_binding (tenant_id, application_id, business_source_id, source_code, source_type, source_key, page_id, form_key, object_code, template_id, template_version_id, scene, is_default, sort_order, status, binding_revision, del_flag, create_by, create_time, create_dept, update_by, update_time)
+        VALUES (#{tenantId}, #{applicationId}, #{businessSourceId}, #{sourceCode}, #{sourceType}, #{sourceKey}, #{pageId}, #{formKey}, #{objectCode}, #{templateId}, #{templateVersionId}, #{scene}, #{isDefault}, #{sortOrder}, #{status}, #{bindingRevision}, #{delFlag}, #{createBy}, #{createTime}, #{createDept}, #{updateBy}, #{updateTime})
     </insert>
     <select id="selectScoped" resultMap="Row">
         SELECT <include refid="Columns"/> FROM sys_print_binding

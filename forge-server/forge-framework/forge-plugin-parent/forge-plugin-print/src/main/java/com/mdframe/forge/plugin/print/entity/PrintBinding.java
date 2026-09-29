@@ -30,6 +30,11 @@ public class PrintBinding extends TenantEntity {
     private Long businessSourceId;
 
     /**
+     * 独立业务来源编码。
+     */
+    private String sourceCode;
+
+    /**
      * 来源类型。
      */
     private String sourceType;

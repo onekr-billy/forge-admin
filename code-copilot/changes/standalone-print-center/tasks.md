@@ -29,7 +29,7 @@
 - **验证**：DTO 校验、权限拒绝、逻辑删除引用保护测试。
 - **结果**：已实现来源类型、固定 DTO/VO、JSON 配置校验、来源 CRUD、修订号/逻辑删除/引用保护和独立权限资源。
 
-## Task 3：双来源身份与模板管理兼容
+## Task 3：双来源身份与模板管理兼容 ✅
 
 - **目标**：`PrintSourceRequest` 同时支持应用来源和独立 `sourceCode`；模板分页、创建和访问双路径工作。
 - **涉及文件**：
@@ -37,6 +37,7 @@
   - `PrintTemplateAccess.java`、`PrintTemplateService.java`
   - `PrintTemplateMapper.java/xml`、`PrintTemplateVO.java`
 - **验证**：旧 LOWCODE/CODE 请求回归；独立来源模板 CRUD 测试。
+- **结果**：模板协议、访问控制、分页、持久化已支持应用/独立来源双路径；独立来源按租户从服务端重新解析规范身份，旧来源摘要算法保持不变。
 
 ## Task 4：独立绑定版本解析
 
