@@ -17,9 +17,10 @@ const scenes = ref([...DEFAULT_PRINT_SCENES])
 const busy = ref(false)
 const error = ref('')
 const sceneOptions = computed(() => dict.value.sys_print_scene?.length ? dict.value.sys_print_scene : FALLBACK_PRINT_SCENE_OPTIONS)
+const standalone = computed(() => Boolean(props.source?.businessSourceId))
 watch(() => props.show, () => {
   name.value = ''
-  scenes.value = [...DEFAULT_PRINT_SCENES]
+  scenes.value = standalone.value ? [] : [...DEFAULT_PRINT_SCENES]
   error.value = ''
 })
 async function create() {
@@ -48,10 +49,13 @@ async function create() {
       {{ error }}
     </NAlert>
     <p class="create-hint">
-      模板自动关联当前表单。勾选场景后，随应用发布即可打印。
+      {{ standalone
+        ? '模板自动关联当前业务来源。完成设计并发布版本后，再绑定使用场景。'
+        : '模板自动关联当前表单。勾选场景后，随应用发布即可打印。' }}
     </p>
     <NInput v-model:value="name" :input-props="{ 'aria-label': '打印模板名称' }" placeholder="模板名称" :maxlength="100" :disabled="busy" />
     <NSelect
+      v-if="!standalone"
       v-model:value="scenes"
       multiple
       :options="sceneOptions"

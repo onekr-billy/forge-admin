@@ -46,13 +46,17 @@ export const usePrintTemplateStore = defineStore('printTemplates', {
       this.saving = false
       this.panel = null
     },
-    async list(applicationId, pageNum = 1, pageId) {
+    async list(sourceOrApplicationId, pageNum = 1, pageId) {
       const generation = ++this.listGeneration
       this.listing = true
       this.error = ''
       try {
-        const query = { applicationId, pageNum, pageSize: 20 }
-        if (pageId)
+        const standaloneId = sourceOrApplicationId?.businessSourceId
+        const applicationId = sourceOrApplicationId?.applicationId || sourceOrApplicationId
+        const query = standaloneId
+          ? { businessSourceId: standaloneId, pageNum, pageSize: 20 }
+          : { applicationId, pageNum, pageSize: 20 }
+        if (!standaloneId && pageId)
           query.pageId = pageId
         const { data } = await api.printTemplates(query)
         if (generation !== this.listGeneration)
@@ -106,6 +110,8 @@ export const usePrintTemplateStore = defineStore('printTemplates', {
         throw new Error('打印来源无效')
       const { data } = await api.createPrintTemplate({ ...payload, templateName: name, templateCode: newPrintTemplateCode(), schemaJson: JSON.stringify(schema) })
       try {
+        if (payload.businessSourceId)
+          return data
         await syncPrintTemplateScenes({
           source: printSourcePayload(data.source) || payload,
           templateId: data.id,
@@ -206,7 +212,19 @@ export const usePrintTemplateStore = defineStore('printTemplates', {
       if (!payload)
         throw new Error('打印来源无效')
       const binding = this.bindings.find(item => String(item.templateId) === String(row.id) && item.scene === this.scene)
-      await api.savePrintBinding({ source: payload, templateId: row.id, scene: this.scene, id: binding?.id, expectedRevision: binding?.bindingRevision, isDefault, status, sortOrder: binding?.sortOrder ?? 0 })
+      if (payload.businessSourceId && !row.publishedVersionId)
+        throw new Error('请先发布模板，再绑定到业务场景')
+      await api.savePrintBinding({
+        source: payload,
+        templateId: row.id,
+        templateVersionId: payload.businessSourceId ? row.publishedVersionId : undefined,
+        scene: this.scene,
+        id: binding?.id,
+        expectedRevision: binding?.bindingRevision,
+        isDefault,
+        status,
+        sortOrder: binding?.sortOrder ?? 0,
+      })
       if (generation === this.generation)
         await this.loadBindings()
     },

@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS sys_print_business_source (
     catalog_json MEDIUMTEXT NULL COMMENT '发布时字段目录快照',
     catalog_hash CHAR(64) NULL COMMENT '字段目录 SHA-256',
     source_revision BIGINT NOT NULL DEFAULT 1 COMMENT '来源并发修订号',
-    status TINYINT NOT NULL DEFAULT 1 COMMENT '启停',
+    status TINYINT NOT NULL DEFAULT 0 COMMENT '启停；新来源默认停用',
     del_flag BIGINT NOT NULL DEFAULT 0 COMMENT '删除墓碑：有效为 0，删除写主键',
     create_by BIGINT NOT NULL,
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

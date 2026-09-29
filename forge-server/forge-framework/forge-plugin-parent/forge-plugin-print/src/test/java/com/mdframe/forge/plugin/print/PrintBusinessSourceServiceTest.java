@@ -11,6 +11,7 @@ import com.mdframe.forge.plugin.print.service.PrintIdentity;
 import com.mdframe.forge.plugin.print.service.PrintParameterValidator;
 import com.mdframe.forge.plugin.print.service.PrintSourceConfigValidator;
 import com.mdframe.forge.plugin.print.spi.PrintActor;
+import com.mdframe.forge.starter.core.enums.EnableStatus;
 import com.mdframe.forge.starter.core.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -40,6 +41,7 @@ class PrintBusinessSourceServiceTest {
                 new PrintSourceConfigValidator(
                         objectMapper, new PrintParameterValidator(objectMapper)));
         when(identity.require("print:source:manage")).thenReturn(new PrintActor(1L, 9L, 2L));
+        when(identity.require("print:execute")).thenReturn(new PrintActor(1L, 9L, 2L));
         doAnswer(invocation -> invocation.getArgument(0)).when(identity).validate(any());
     }
 
@@ -83,6 +85,28 @@ class PrintBusinessSourceServiceTest {
         assertThatThrownBy(() -> service.status(12L, new PrintBusinessSourceStatusDTO(2L, 1)))
                 .isInstanceOfSatisfying(BusinessException.class,
                         error -> assertThat(error.getCode()).isEqualTo(409));
+    }
+
+    @Test
+    void shouldResolveEnabledRuntimeSourceByStableCode() {
+        PrintBusinessSource row = source();
+        row.setStatus(EnableStatus.ENABLED.getCode());
+        when(mapper.selectByCode(1L, "purchase_order")).thenReturn(row);
+
+        var result = service.resolveRuntime("purchase_order");
+
+        assertThat(result.id()).isEqualTo(12L);
+        assertThat(result.sourceCode()).isEqualTo("purchase_order");
+        assertThat(result.objectCode()).isEqualTo("purchase_order");
+    }
+
+    @Test
+    void shouldHideDisabledRuntimeSource() {
+        when(mapper.selectByCode(1L, "purchase_order")).thenReturn(source());
+
+        assertThatThrownBy(() -> service.resolveRuntime("purchase_order"))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        error -> assertThat(error.getCode()).isEqualTo(404));
     }
 
     private PrintBusinessSource source() {

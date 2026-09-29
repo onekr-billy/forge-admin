@@ -42,12 +42,12 @@
 
 ## 3. 执行计划
 
-- [ ] 运行现有 print 后端与前端测试基线。
-- [ ] 每个 Task 先补失败测试，再实现通过。
-- [ ] 运行 print/data 相关 Maven 测试。
-- [ ] 运行打印相关 Vitest。
-- [ ] 运行 admin 聚合 package 和前端 build。
-- [ ] 浏览器验证独立打印中心主要交互。
+- [x] 运行现有 print 前端测试基线；后端基线受 Maven 缺失阻塞。
+- [x] 每个 Task 补增量测试后实现。
+- [ ] 运行 print/data 相关 Maven 测试（本机无 `mvn`/`mvnw`）。
+- [x] 运行打印相关 Vitest。
+- [x] 运行前端 build；admin 聚合 package 受 Maven 缺失阻塞。
+- [ ] 浏览器连接真实后端验证独立打印中心主要交互（本机未启动 8580 后端）。
 
 ## 4. 历史验证基线
 
@@ -64,6 +64,7 @@
 | 2026-09-29 | Task 3 双来源模板 | 旧摘要兼容、独立来源防伪、Mapper XML | `git diff --check`、`xmllint --noout`、`${...}` 扫描、Java 形态扫描 | 通过 | 新增 JUnit 未执行，原因同上 |
 | 2026-09-29 | Task 4 固定版本绑定 | DTO 条件校验、固定版本解析、禁止最新版本兜底 | `git diff --check`、`xmllint --noout`、`${...}` 扫描、Java 形态扫描 | 通过 | 新增 JUnit 未执行，原因同上 |
 | 2026-09-29 | Task 5 多数据源运行时 | 参数白名单、SERVICE 分发、DATASET ACL/查询映射 | `git diff --check`、POM XML 解析、Java 形态扫描 | 通过 | 新增 JUnit 未执行，原因同上 |
+| 2026-09-29 | Task 6-8 前端与兼容 | 来源工作台、统一入口、旧低代码/流程打印 | `vitest run ...`、`vite build`、ESLint、`git diff --check` | 通过 | 46 个测试文件、268 项前端测试通过；构建仅有存量 Vite/CSS 警告 |
 
 ## 6. 执行证据
 

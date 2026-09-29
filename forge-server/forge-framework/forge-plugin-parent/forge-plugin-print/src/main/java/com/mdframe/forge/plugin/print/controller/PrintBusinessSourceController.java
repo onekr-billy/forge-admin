@@ -52,6 +52,14 @@ public class PrintBusinessSourceController {
         return RespInfo.success(sources.options());
     }
 
+    @GetMapping("/resolve/{sourceCode}")
+    @SaCheckPermission("print:execute")
+    @OperationLog(module = "打印", type = OperationType.QUERY, desc = "解析运行时打印来源",
+            saveRequestParams = false, saveResponseResult = false)
+    public RespInfo<PrintBusinessSourceVO.Option> resolveRuntime(@PathVariable String sourceCode) {
+        return RespInfo.success(sources.resolveRuntime(sourceCode));
+    }
+
     @GetMapping("/{id}")
     @SaCheckPermission("print:source:view")
     @OperationLog(module = "打印", type = OperationType.QUERY, desc = "查询打印来源详情",

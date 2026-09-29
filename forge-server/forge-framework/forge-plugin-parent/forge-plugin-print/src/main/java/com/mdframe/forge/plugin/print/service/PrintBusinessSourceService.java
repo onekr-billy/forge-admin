@@ -51,6 +51,22 @@ public class PrintBusinessSourceService {
                 .toList();
     }
 
+    /**
+     * 业务页面只保存稳定来源编码，运行时再在当前租户内解析服务端身份。
+     */
+    public PrintBusinessSourceVO.Option resolveRuntime(String sourceCode) {
+        var actor = identity.require("print:execute");
+        String code = normalize(sourceCode);
+        if (code == null || !code.matches("[A-Za-z][A-Za-z0-9_-]{0,79}")) {
+            throw missing();
+        }
+        PrintBusinessSource row = sources.selectByCode(actor.tenantId(), code);
+        if (row == null || !EnableStatus.ENABLED.matches(row.getStatus())) {
+            throw missing();
+        }
+        return PrintBusinessSourceVO.Option.from(row);
+    }
+
     public PrintBusinessSourceVO detail(Long id) {
         var actor = identity.require("print:source:view");
         return PrintBusinessSourceVO.from(require(actor.tenantId(), id, false));
