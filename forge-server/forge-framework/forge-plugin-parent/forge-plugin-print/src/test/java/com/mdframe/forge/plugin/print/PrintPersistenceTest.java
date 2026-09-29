@@ -217,11 +217,12 @@ class PrintPersistenceTest {
         binding.setDelFlag(0L);
         var bindings = session.getMapper(PrintBindingMapper.class);
         bindings.insert(binding);
-        assertThat(bindings.clearDefault(2L, 2L, "page:3", "DETAIL", 9L)).isZero();
-        assertThat(bindings.clearDefault(1L, 2L, "page:3", "LIST", 9L)).isZero();
-        assertThat(bindings.clearDefault(1L, 2L, "page:3", "DETAIL", 9L)).isEqualTo(1);
+        assertThat(bindings.clearDefault(2L, 2L, null, "page:3", "DETAIL", 9L)).isZero();
+        assertThat(bindings.clearDefault(1L, 2L, null, "page:3", "LIST", 9L)).isZero();
+        assertThat(bindings.clearDefault(1L, 2L, null, "page:3", "DETAIL", 9L)).isEqualTo(1);
         assertThat(bindings.updateBinding(binding, 1L)).isZero();
-        assertThat(bindings.selectSource(1L, 2L, "page:3", "DETAIL").get(0).getIsDefault()).isFalse();
+        assertThat(bindings.selectSource(1L, 2L, null, "page:3", "DETAIL")
+                .get(0).getIsDefault()).isFalse();
         assertThat(bindings.softDelete(1L, binding.getId(), 2L, 9L)).isEqualTo(1);
         assertThat(templates.softDelete(1L, row.getId(), 1L, 9L)).isEqualTo(1);
     }

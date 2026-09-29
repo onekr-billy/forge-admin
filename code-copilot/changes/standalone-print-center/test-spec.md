@@ -62,6 +62,7 @@
 | 2026-09-29 | Task 1 数据模型与迁移 | diff、Flyway 占位符、Mapper XML | `git diff --check`、`rg`、`xmllint --noout` | 通过 | Java 编译待可用 Maven 环境补跑 |
 | 2026-09-29 | Task 2 来源 CRUD | DTO/配置/修订号/权限静态检查 | `git diff --check`、`xmllint`、Java 形态扫描 | 通过 | 新增单测未执行，原因同上 |
 | 2026-09-29 | Task 3 双来源模板 | 旧摘要兼容、独立来源防伪、Mapper XML | `git diff --check`、`xmllint --noout`、`${...}` 扫描、Java 形态扫描 | 通过 | 新增 JUnit 未执行，原因同上 |
+| 2026-09-29 | Task 4 固定版本绑定 | DTO 条件校验、固定版本解析、禁止最新版本兜底 | `git diff --check`、`xmllint --noout`、`${...}` 扫描、Java 形态扫描 | 通过 | 新增 JUnit 未执行，原因同上 |
 
 ## 6. 执行证据
 

@@ -59,6 +59,8 @@ abstract class PrintServiceFixture {
 
     PrintTemplateAccess access;
 
+    PrintRuntimeBindingResolver runtimeBindings;
+
     PrintTemplateMapper templates;
 
     PrintTemplateVersionMapper versions;
@@ -127,12 +129,17 @@ abstract class PrintServiceFixture {
         adapter = new Adapter();
         registry = new PrintProviderRegistry(List.of(adapter), List.of(adapter));
         access = new PrintTemplateAccess(templates, mock(PrintBusinessSourceMapper.class), registry, identity);
+        runtimeBindings = mock(PrintRuntimeBindingResolver.class);
+        when(runtimeBindings.resolve(any())).thenAnswer(invocation -> invocation.getArgument(0));
         var documents = new PrintDocumentAccess(json);
         service = transactional(new PrintTemplateService(identity, templates, bindingMapper, access, registry, protocol, documents));
         publication = transactional(new PrintTemplateVersionService(identity, access, templates, versions, protocol, documents, json));
-        bindings = transactional(new PrintBindingService(identity, access, bindingMapper, templates));
+        bindings = transactional(new PrintBindingService(
+                identity, access, bindingMapper, templates, versions));
         events = transactional(new PrintExecutionService(identity, executionMapper));
-        runtime = transactional(new PrintPrepareService(identity, registry, access, templates, versions, protocol, documents, new PrintDataProjector(json, documents), events));
+        runtime = transactional(new PrintPrepareService(
+                identity, registry, access, runtimeBindings, templates, versions, protocol, documents,
+                new PrintDataProjector(json, documents), events));
         try (var input = getClass().getResourceAsStream("/print/valid-document.json")) {
             schema = new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
         }
