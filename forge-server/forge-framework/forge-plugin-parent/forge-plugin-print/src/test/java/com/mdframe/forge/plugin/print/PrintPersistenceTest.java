@@ -45,7 +45,12 @@ class PrintPersistenceTest {
         }
         try (var statement = session.getConnection().createStatement()) {
             statement.execute("ALTER TABLE sys_print_template MODIFY page_id VARCHAR(128)");
+            statement.execute("ALTER TABLE sys_print_template ADD business_source_id BIGINT");
             statement.execute("ALTER TABLE sys_print_binding MODIFY page_id VARCHAR(128)");
+            statement.execute("ALTER TABLE sys_print_binding ADD business_source_id BIGINT");
+            statement.execute("ALTER TABLE sys_print_binding ADD template_version_id BIGINT");
+            statement.execute("ALTER TABLE sys_print_execution ADD business_source_id BIGINT");
+            statement.execute("ALTER TABLE sys_print_execution ADD source_revision BIGINT");
         }
         templates = session.getMapper(PrintTemplateMapper.class);
         versions = session.getMapper(PrintTemplateVersionMapper.class);

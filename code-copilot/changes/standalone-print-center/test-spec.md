@@ -53,11 +53,13 @@
 
 | 时间 | 范围 | 命令 | 结果 | 备注 |
 |---|---|---|---|---|
+| 2026-09-29 | print 持久化基线 | `mvn ... -Dtest=PrintMapperContractTest,PrintPersistenceTest` | 阻塞 | 本机未安装/未暴露 Maven，命令返回 127 |
 
 ## 5. 本轮增量验证
 
 | 时间 | 变更范围 | 必跑项 | 实际命令 | 结果 | 跳过/警告 |
 |---|---|---|---|---|---|
+| 2026-09-29 | Task 1 数据模型与迁移 | diff、Flyway 占位符、Mapper XML | `git diff --check`、`rg`、`xmllint --noout` | 通过 | Java 编译待可用 Maven 环境补跑 |
 
 ## 6. 执行证据
 

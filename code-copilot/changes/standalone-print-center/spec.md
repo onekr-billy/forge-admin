@@ -130,6 +130,7 @@
 
 | Task | 状态 | 实际改动文件 | 备注 |
 |---|---|---|---|
+| Task 1 | 完成 | V1.0.204、PrintBusinessSource、Mapper、三张现有实体/Mapper、合同测试 | Maven 基线因本机无 `mvn` 未执行，静态检查通过 |
 
 ## 12. 审查结论
 

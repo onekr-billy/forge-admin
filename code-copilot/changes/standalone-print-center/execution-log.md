@@ -6,6 +6,7 @@
 |---|---|---|---|
 | 2026-09-29 | propose/apply | 用户确认按平台级独立打印中心方案开始实施 | 分支 `codex/standalone-print-center` |
 | 2026-09-29 | research | 完成现有打印、数据集、应用发布快照和前端入口调查 | 不重写打印引擎 |
+| 2026-09-29 | Task 1 | 新增业务来源表、独立来源引用列、实体和 Mapper | 静态检查通过；本机 `mvn` 不可用 |
 
 ## 技术决策
 
@@ -34,3 +35,4 @@
 
 - 保持 print 插件不反向依赖 generator/data；适配器由上层插件实现。
 - 不修改用户已有 `.DS_Store`。
+- Task 1 已执行 `git diff --check`、Flyway `${...}` 扫描和四个 Mapper XML 解析；Maven 命令因 `mvn: command not found` 未运行，不能表述为 Java 编译通过。

@@ -7,7 +7,7 @@
 - [x] 创建隔离分支 `codex/standalone-print-center`。
 - [x] 阅读 `AGENTS.md`、`forge-admin-ui/DESIGN.md`、编码和自动测试规范。
 
-## Task 1：业务数据源模型与迁移
+## Task 1：业务数据源模型与迁移 ✅
 
 - **目标**：建立独立来源持久化模型，并使模板/绑定/执行表兼容无应用来源。
 - **涉及文件**：
@@ -16,6 +16,7 @@
   - `forge-plugin-print/mapper/PrintBusinessSourceMapper.java`
   - `forge-plugin-print/resources/mapper/PrintBusinessSourceMapper.xml`
 - **验证**：迁移静态扫描、Mapper 合同测试、print 插件编译。
+- **结果**：模型、Mapper、V1.0.204 迁移和合同测试已完成；XML/占位符/diff 静态检查通过，本机缺少 Maven 可执行文件，Java 编译留阶段聚合环境补跑。
 
 ## Task 2：来源协议、CRUD 与授权
 

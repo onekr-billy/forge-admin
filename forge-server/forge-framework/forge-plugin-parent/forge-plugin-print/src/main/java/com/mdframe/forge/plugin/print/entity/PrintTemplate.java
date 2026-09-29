@@ -25,6 +25,11 @@ public class PrintTemplate extends TenantEntity {
     private Long applicationId;
 
     /**
+     * 独立业务来源 ID；低代码应用来源为空。
+     */
+    private Long businessSourceId;
+
+    /**
      * 应用内模板编码。
      */
     private String templateCode;
