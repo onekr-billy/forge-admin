@@ -95,7 +95,12 @@ abstract class PrintServiceFixture {
             }
         }
         jdbc.execute("ALTER TABLE sys_print_template MODIFY page_id VARCHAR(128)");
+        jdbc.execute("ALTER TABLE sys_print_template ADD business_source_id BIGINT");
         jdbc.execute("ALTER TABLE sys_print_binding MODIFY page_id VARCHAR(128)");
+        jdbc.execute("ALTER TABLE sys_print_binding ADD business_source_id BIGINT");
+        jdbc.execute("ALTER TABLE sys_print_binding ADD template_version_id BIGINT");
+        jdbc.execute("ALTER TABLE sys_print_execution ADD business_source_id BIGINT");
+        jdbc.execute("ALTER TABLE sys_print_execution ADD source_revision BIGINT");
         jdbc.execute("CREATE TABLE synthetic_application (id BIGINT PRIMARY KEY,tenant_id BIGINT)");
         jdbc.update("INSERT INTO synthetic_application VALUES (2,1)");
         var config = PrintMapperContractTest.configuration();

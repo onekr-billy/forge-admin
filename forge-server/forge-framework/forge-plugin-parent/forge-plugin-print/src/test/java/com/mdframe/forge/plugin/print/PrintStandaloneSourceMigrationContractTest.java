@@ -22,6 +22,9 @@ class PrintStandaloneSourceMigrationContractTest {
         assertThat(sql).contains("MODIFY COLUMN application_id BIGINT NULL");
         assertThat(sql).contains("uk_print_template_source_code");
         assertThat(sql).contains("uk_print_binding_source_template");
+        assertThat(sql).contains("'print:source:view'");
+        assertThat(sql).contains("'print:source:manage'");
+        assertThat(sql).contains("resource_name = '打印中心', visible = 1");
         assertThat(sql).doesNotContain("tenant_id = 0");
         assertThat(sql).doesNotContain("${");
     }

@@ -37,6 +37,77 @@ PREPARE print_source_stmt FROM @print_source_ddl;
 EXECUTE print_source_stmt;
 DEALLOCATE PREPARE print_source_stmt;
 
+INSERT INTO sys_dict_data (
+    tenant_id, dict_sort, dict_label, dict_value, dict_type, css_class, list_class, is_default,
+    dict_status, remark, create_by, create_time, update_by, update_time, create_dept
+)
+SELECT 1, 3, '业务服务', 'SERVICE', 'sys_print_source_type', NULL, 'default', 'N',
+       1, '独立打印中心', 1, NOW(), 1, NOW(), 1
+WHERE NOT EXISTS (
+    SELECT 1 FROM sys_dict_data
+    WHERE tenant_id = 1 AND dict_type = 'sys_print_source_type' AND dict_value = 'SERVICE'
+);
+
+INSERT INTO sys_dict_data (
+    tenant_id, dict_sort, dict_label, dict_value, dict_type, css_class, list_class, is_default,
+    dict_status, remark, create_by, create_time, update_by, update_time, create_dept
+)
+SELECT 1, 4, '数据集', 'DATASET', 'sys_print_source_type', NULL, 'default', 'N',
+       1, '独立打印中心', 1, NOW(), 1, NOW(), 1
+WHERE NOT EXISTS (
+    SELECT 1 FROM sys_dict_data
+    WHERE tenant_id = 1 AND dict_type = 'sys_print_source_type' AND dict_value = 'DATASET'
+);
+
+INSERT INTO sys_dict_data (
+    tenant_id, dict_sort, dict_label, dict_value, dict_type, css_class, list_class, is_default,
+    dict_status, remark, create_by, create_time, update_by, update_time, create_dept
+)
+SELECT 1, 5, '受管接口', 'API', 'sys_print_source_type', NULL, 'default', 'N',
+       0, '协议保留，接入受管连接后开放', 1, NOW(), 1, NOW(), 1
+WHERE NOT EXISTS (
+    SELECT 1 FROM sys_dict_data
+    WHERE tenant_id = 1 AND dict_type = 'sys_print_source_type' AND dict_value = 'API'
+);
+
+UPDATE sys_resource
+SET resource_name = '打印中心', visible = 1, update_by = 1, update_time = NOW()
+WHERE tenant_id = 1 AND path = '/print' AND resource_type = 2 AND del_flag = 0;
+
+SET @print_center_resource_id = (
+    SELECT id FROM sys_resource
+    WHERE tenant_id = 1 AND path = '/print' AND resource_type = 2 AND del_flag = 0
+    ORDER BY id LIMIT 1
+);
+
+INSERT INTO sys_resource (
+    tenant_id, resource_name, parent_id, resource_type, sort, is_external, open_target, is_public,
+    menu_status, visible, perms, keep_alive, always_show, remark, create_by, create_time, update_by,
+    update_time, create_dept, client_code
+)
+SELECT 1, '查看打印来源', @print_center_resource_id, 3, 1, 0, '_self', 0,
+       1, 1, 'print:source:view', 0, 0, '打印来源仍需租户和数据权限校验',
+       1, NOW(), 1, NOW(), 1, 'pc'
+WHERE @print_center_resource_id IS NOT NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM sys_resource
+      WHERE tenant_id = 1 AND perms = 'print:source:view' AND del_flag = 0
+  );
+
+INSERT INTO sys_resource (
+    tenant_id, resource_name, parent_id, resource_type, sort, is_external, open_target, is_public,
+    menu_status, visible, perms, keep_alive, always_show, remark, create_by, create_time, update_by,
+    update_time, create_dept, client_code
+)
+SELECT 1, '管理打印来源', @print_center_resource_id, 3, 2, 0, '_self', 0,
+       1, 1, 'print:source:manage', 0, 0, '不能配置任意 SQL、URL 或 Bean 名',
+       1, NOW(), 1, NOW(), 1, 'pc'
+WHERE @print_center_resource_id IS NOT NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM sys_resource
+      WHERE tenant_id = 1 AND perms = 'print:source:manage' AND del_flag = 0
+  );
+
 SET @print_source_ddl := IF(EXISTS (
     SELECT 1 FROM information_schema.COLUMNS
     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sys_print_binding'
@@ -153,4 +224,3 @@ SET @print_source_ddl := IF(EXISTS (
 PREPARE print_source_stmt FROM @print_source_ddl;
 EXECUTE print_source_stmt;
 DEALLOCATE PREPARE print_source_stmt;
-

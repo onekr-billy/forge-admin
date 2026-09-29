@@ -81,6 +81,11 @@
         WHERE <include refid="Filters"/>
     </select>
 
+    <select id="countTemplateReferences" resultType="long">
+        SELECT COUNT(*) FROM sys_print_template
+        WHERE tenant_id = #{tenantId} AND business_source_id = #{id} AND del_flag = 0
+    </select>
+
     <update id="updateSource">
         UPDATE sys_print_business_source
         SET source_name = #{row.sourceName}, provider_code = #{row.providerCode}, dataset_id = #{row.datasetId},
@@ -103,11 +108,5 @@
         SET del_flag = id, source_revision = source_revision + 1, update_by = #{actor}, update_time = NOW()
         WHERE tenant_id = #{tenantId} AND id = #{id} AND del_flag = 0
           AND source_revision = #{expectedRevision}
-          AND NOT EXISTS (
-              SELECT 1 FROM sys_print_template template
-              WHERE template.tenant_id = #{tenantId}
-                AND template.business_source_id = #{id}
-                AND template.del_flag = 0
-          )
     </update>
 </mapper>

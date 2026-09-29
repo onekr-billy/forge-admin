@@ -18,7 +18,7 @@
 - **验证**：迁移静态扫描、Mapper 合同测试、print 插件编译。
 - **结果**：模型、Mapper、V1.0.204 迁移和合同测试已完成；XML/占位符/diff 静态检查通过，本机缺少 Maven 可执行文件，Java 编译留阶段聚合环境补跑。
 
-## Task 2：来源协议、CRUD 与授权
+## Task 2：来源协议、CRUD 与授权 ✅
 
 - **目标**：提供固定 DTO 的来源管理 API，支持 SERVICE/DATASET 配置与修订号控制。
 - **涉及文件**：
@@ -27,6 +27,7 @@
   - `forge-plugin-print/service/PrintBusinessSourceService.java`
   - `forge-plugin-print/controller/PrintBusinessSourceController.java`
 - **验证**：DTO 校验、权限拒绝、逻辑删除引用保护测试。
+- **结果**：已实现来源类型、固定 DTO/VO、JSON 配置校验、来源 CRUD、修订号/逻辑删除/引用保护和独立权限资源。
 
 ## Task 3：双来源身份与模板管理兼容
 

@@ -60,6 +60,7 @@
 | 时间 | 变更范围 | 必跑项 | 实际命令 | 结果 | 跳过/警告 |
 |---|---|---|---|---|---|
 | 2026-09-29 | Task 1 数据模型与迁移 | diff、Flyway 占位符、Mapper XML | `git diff --check`、`rg`、`xmllint --noout` | 通过 | Java 编译待可用 Maven 环境补跑 |
+| 2026-09-29 | Task 2 来源 CRUD | DTO/配置/修订号/权限静态检查 | `git diff --check`、`xmllint`、Java 形态扫描 | 通过 | 新增单测未执行，原因同上 |
 
 ## 6. 执行证据
 

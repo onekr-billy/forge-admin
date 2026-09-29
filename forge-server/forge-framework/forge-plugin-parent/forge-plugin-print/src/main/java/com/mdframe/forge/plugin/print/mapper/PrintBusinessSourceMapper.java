@@ -29,6 +29,8 @@ public interface PrintBusinessSourceMapper {
                    @Param("sourceType") String sourceType,
                    @Param("status") Integer status);
 
+    long countTemplateReferences(@Param("tenantId") Long tenantId, @Param("id") Long id);
+
     int updateSource(@Param("row") PrintBusinessSource row,
                      @Param("expectedRevision") Long expectedRevision);
 
