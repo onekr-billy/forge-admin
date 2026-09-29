@@ -43,12 +43,12 @@
 
 ## 3. 功能点
 
-- [ ] F01 新增打印业务数据源注册表，支持 `SERVICE`、`DATASET`，保留 `LOWCODE/CODE` 兼容。
-- [ ] F02 打印来源协议支持独立 `sourceCode`，旧应用来源保持原协议可用。
-- [ ] F03 独立来源模板、绑定、版本解析和执行审计不再要求 `applicationId`。
-- [ ] F04 新增业务数据源管理 API，固定 DTO、权限、租户、逻辑删除和修订号控制。
-- [ ] F05 新增数据集打印 Provider，复用已发布数据集的 ACL、行范围、参数和字段元数据。
-- [ ] F06 运行请求支持受控 `params`，只接受数据源参数协议声明的键和值类型。
+- [x] F01 新增打印业务数据源注册表，支持 `SERVICE`、`DATASET`，保留 `LOWCODE/CODE` 兼容。
+- [x] F02 打印来源协议支持独立 `sourceCode`，旧应用来源保持原协议可用。
+- [x] F03 独立来源模板、绑定、版本解析和执行审计不再要求 `applicationId`。
+- [x] F04 新增业务数据源管理 API，固定 DTO、权限、租户、逻辑删除和修订号控制。
+- [x] F05 新增数据集打印 Provider，复用已发布数据集的 ACL、行范围、参数和字段元数据。
+- [x] F06 运行请求支持受控 `params`，只接受数据源参数协议声明的键和值类型。
 - [ ] F07 新增独立打印中心页面：数据源导航、模板资产列表和数据源配置。
 - [ ] F08 新增 `BusinessPrintButton` 与 `useBusinessPrint`，业务页面只传来源编码、场景、记录 ID 和可选参数。
 - [ ] F09 解耦低代码专属水印读取，水印元数据由 prepare 响应决定；低代码仍可返回原页面水印。
@@ -132,6 +132,9 @@
 |---|---|---|---|
 | Task 1 | 完成 | V1.0.204、PrintBusinessSource、Mapper、三张现有实体/Mapper、合同测试 | Maven 基线因本机无 `mvn` 未执行，静态检查通过 |
 | Task 2 | 完成 | 来源 DTO/VO/枚举、Service、Controller、配置校验、权限字典 | API 保持固定 DTO，API 来源仅保留协议值未开放 |
+| Task 3 | 完成 | 双来源协议、模板 Access/Service/Mapper、兼容测试 | 旧来源摘要保持稳定，独立来源身份服务端规范化 |
+| Task 4 | 完成 | 绑定 DTO/Service/Mapper、运行版本解析、执行审计 | 独立来源固定发布版本，不回退最新版本 |
+| Task 5 | 完成 | 参数校验器、SERVICE 适配器、DATASET Provider、采购示例接入 | 参数白名单；数据集复用 ACL/行范围/脱敏 |
 
 ## 12. 审查结论
 

@@ -49,7 +49,7 @@
 - **验证**：默认模板唯一、未发布模板拒绝、模板 ID 越权拒绝测试。
 - **结果**：独立来源绑定强制选择已发布版本，运行时仅解析启用绑定中的固定版本；应用来源继续使用应用发布快照，不允许两种版本所有权混用。
 
-## Task 5：受控参数与数据集 Provider
+## Task 5：受控参数与数据集 Provider ✅
 
 - **目标**：复用数据集 ACL、行范围和参数 schema，输出统一打印字段与数据。
 - **涉及文件**：
@@ -57,6 +57,7 @@
   - `forge-plugin-data/printing/DatasetPrintDataProvider.java`
   - `forge-plugin-data/pom.xml`
 - **验证**：未知参数、未发布/禁用数据集、无 QUERY 权限、字段投影和记录匹配测试。
+- **结果**：运行请求支持受控标量参数；DATASET Provider 复用数据集元数据、ACL、行范围和脱敏；SERVICE 通过服务端 Provider code 分发，采购示例已提供接入实现。
 
 ## Task 6：独立打印中心前端
 

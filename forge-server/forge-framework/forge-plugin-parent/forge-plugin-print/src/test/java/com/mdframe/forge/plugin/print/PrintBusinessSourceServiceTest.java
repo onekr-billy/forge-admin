@@ -8,6 +8,7 @@ import com.mdframe.forge.plugin.print.enums.PrintBusinessSourceType;
 import com.mdframe.forge.plugin.print.mapper.PrintBusinessSourceMapper;
 import com.mdframe.forge.plugin.print.service.PrintBusinessSourceService;
 import com.mdframe.forge.plugin.print.service.PrintIdentity;
+import com.mdframe.forge.plugin.print.service.PrintParameterValidator;
 import com.mdframe.forge.plugin.print.service.PrintSourceConfigValidator;
 import com.mdframe.forge.plugin.print.spi.PrintActor;
 import com.mdframe.forge.starter.core.exception.BusinessException;
@@ -34,8 +35,10 @@ class PrintBusinessSourceServiceTest {
 
     @BeforeEach
     void setUp() {
+        var objectMapper = new ObjectMapper();
         service = new PrintBusinessSourceService(identity, mapper,
-                new PrintSourceConfigValidator(new ObjectMapper()));
+                new PrintSourceConfigValidator(
+                        objectMapper, new PrintParameterValidator(objectMapper)));
         when(identity.require("print:source:manage")).thenReturn(new PrintActor(1L, 9L, 2L));
         doAnswer(invocation -> invocation.getArgument(0)).when(identity).validate(any());
     }
@@ -49,7 +52,8 @@ class PrintBusinessSourceServiceTest {
         }).when(mapper).insert(any());
         var dto = new PrintBusinessSourceCreateDTO(
                 "purchase_order", "采购单", PrintBusinessSourceType.DATASET, null, 21L,
-                "purchase_order", "{\"recordId\":{\"type\":\"string\"}}", "{}");
+                "purchase_order", "{\"status\":{\"type\":\"string\"}}",
+                "{\"recordIdParam\":\"id\",\"maxRows\":100}");
 
         var created = service.create(dto);
 
@@ -65,7 +69,7 @@ class PrintBusinessSourceServiceTest {
                 "external_order", "{}", "{}");
         var badJson = new PrintBusinessSourceCreateDTO(
                 "purchase_order", "采购单", PrintBusinessSourceType.DATASET, null, 21L,
-                "purchase_order", "[]", "{}");
+                "purchase_order", "[]", "{\"recordIdParam\":\"id\"}");
 
         assertThatThrownBy(() -> service.create(api)).isInstanceOf(BusinessException.class);
         assertThatThrownBy(() -> service.create(badJson)).isInstanceOf(BusinessException.class);

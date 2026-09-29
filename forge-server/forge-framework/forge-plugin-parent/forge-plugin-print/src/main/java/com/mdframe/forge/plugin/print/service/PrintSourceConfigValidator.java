@@ -15,6 +15,8 @@ public class PrintSourceConfigValidator {
 
     private final ObjectMapper objectMapper;
 
+    private final PrintParameterValidator parameterValidator;
+
     public void validate(PrintBusinessSourceType type,
                          String providerCode,
                          Long datasetId,
@@ -25,7 +27,11 @@ public class PrintSourceConfigValidator {
         }
         validateType(type, providerCode, datasetId);
         requireObject(parameterSchemaJson, "参数协议");
+        parameterValidator.validateSchema(parameterSchemaJson);
         requireObject(mappingJson, "数据映射");
+        if (type == PrintBusinessSourceType.DATASET) {
+            validateDatasetMapping(mappingJson);
+        }
     }
 
     private void validateType(PrintBusinessSourceType type, String providerCode, Long datasetId) {
@@ -59,6 +65,25 @@ public class PrintSourceConfigValidator {
             }
         } catch (JsonProcessingException error) {
             throw invalid(label + "不是合法 JSON");
+        }
+    }
+
+    private void validateDatasetMapping(String json) {
+        try {
+            JsonNode node = json == null || json.isBlank()
+                    ? objectMapper.createObjectNode()
+                    : objectMapper.readTree(json);
+            String recordIdParam = node.path("recordIdParam").asText("");
+            String childrenKey = node.path("childrenKey").asText("");
+            int maxRows = node.path("maxRows").asInt(1000);
+            if (!recordIdParam.matches("[A-Za-z][A-Za-z0-9_]{0,79}")
+                    || !childrenKey.isEmpty()
+                    && !childrenKey.matches("[A-Za-z][A-Za-z0-9_]{0,79}")
+                    || maxRows < 1 || maxRows > 10000) {
+                throw invalid("数据集来源必须配置有效的记录参数和行数限制");
+            }
+        } catch (JsonProcessingException error) {
+            throw invalid("数据映射不是合法 JSON");
         }
     }
 

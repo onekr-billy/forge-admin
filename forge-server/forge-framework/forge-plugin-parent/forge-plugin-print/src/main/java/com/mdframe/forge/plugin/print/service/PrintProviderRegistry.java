@@ -61,6 +61,7 @@ public class PrintProviderRegistry {
                 && Objects.equals(request.processInstanceId(), context.record().processInstanceId())
                 && (request.processRunId() == null
                 || Objects.equals(request.processRunId(), context.record().processRunId()))
+                && Objects.equals(request.params(), context.record().params())
                 && context.catalog() != null;
     }
 
@@ -71,6 +72,9 @@ public class PrintProviderRegistry {
         }
         if (!standalone
                 && (context.applicationVersionId() == null || context.applicationVersionId() <= 0)) {
+            throw PrintFailure.denied();
+        }
+        if (!standalone && !context.record().params().isEmpty()) {
             throw PrintFailure.denied();
         }
     }
