@@ -315,11 +315,20 @@ public class SamplePurchaseOrderPrintDataProvider
 
     private void requireBusinessSource(PrintActor actor, PrintBusinessSource source) {
         if (actor == null || source == null
-                || !PrintSourceType.SERVICE.matches(source.getSourceType())
-                || !SamplePurchaseOrderFlowDefinition.BUSINESS_TYPE.equals(source.getObjectCode())
-                || !BUSINESS_PROVIDER_CODE.equals(source.getProviderCode())) {
+                || !PrintSourceType.SERVICE.matches(source.getSourceType())) {
             throw PrintFailure.denied();
         }
+        if (!BUSINESS_PROVIDER_CODE.equals(source.getProviderCode())
+                || !SamplePurchaseOrderFlowDefinition.BUSINESS_TYPE.equals(source.getObjectCode())) {
+            throw PrintFailure.of(403, "PRINT_ACCESS_DENIED",
+                    "示例采购单打印要求：对接业务填 sample-purchase-order，业务标识填 sample_purchase_order。"
+                            + "当前对接业务=" + nullToDash(source.getProviderCode())
+                            + "，业务标识=" + nullToDash(source.getObjectCode()));
+        }
+    }
+
+    private static String nullToDash(String value) {
+        return value == null || value.isBlank() ? "（空）" : value;
     }
 
     private void requireSource(PrintSourceRequest source) {

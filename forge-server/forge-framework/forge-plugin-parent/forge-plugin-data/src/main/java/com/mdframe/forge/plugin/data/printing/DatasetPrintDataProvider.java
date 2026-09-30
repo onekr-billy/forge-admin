@@ -29,6 +29,7 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -295,13 +296,44 @@ public class DatasetPrintDataProvider implements PrintDataProvider {
     private PrintData mapData(DataDatasetQueryResultVO result, SourceMapping mapping) {
         List<Map<String, Object>> rows = new ArrayList<>();
         if (result.getSource() != null) {
-            result.getSource().forEach(row -> rows.add(new LinkedHashMap<>(row)));
+            result.getSource().forEach(row -> rows.add(scalarRow(row)));
         }
         Map<String, Object> main = rows.isEmpty() ? Map.of() : rows.get(0);
         Map<String, Object> children = mapping.childrenKey() == null
                 ? Map.of()
                 : Map.of(mapping.childrenKey(), rows);
         return new PrintData(main, children, Map.of());
+    }
+
+    /** 把 JDBC 时间等收敛成打印投影可接受的标量，避免 PRINT_DATA_LIMIT。 */
+    private Map<String, Object> scalarRow(Map<String, Object> row) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (row == null) {
+            return result;
+        }
+        row.forEach((key, value) -> result.put(key, scalarValue(value)));
+        return result;
+    }
+
+    private Object scalarValue(Object value) {
+        if (value == null
+                || value instanceof String
+                || value instanceof Number
+                || value instanceof Boolean) {
+            return value;
+        }
+        if (value instanceof Character character) {
+            return String.valueOf(character);
+        }
+        if (value instanceof Enum<?> enumerated) {
+            return enumerated.name();
+        }
+        if (value instanceof java.time.temporal.TemporalAccessor
+                || value instanceof java.util.Date
+                || value instanceof Calendar) {
+            return String.valueOf(value);
+        }
+        return String.valueOf(value);
     }
 
     private void requireRuntimeScene(PrintScene scene) {

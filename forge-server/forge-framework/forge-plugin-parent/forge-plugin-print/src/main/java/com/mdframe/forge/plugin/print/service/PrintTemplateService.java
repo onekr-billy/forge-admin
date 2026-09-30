@@ -38,7 +38,8 @@ public class PrintTemplateService {
         String scopedPageId = pageId == null || pageId.isBlank() ? null : pageId;
         long offset = (long) (pageNum - 1) * pageSize;
         if (businessSourceId != null) {
-            access.source(actor, businessSourceId, PrintDesignAction.VIEW, false);
+            // 列模板只确认来源在本租户存在；对接业务/数据集是否配齐在设计与取数时再校验。
+            access.requireBusinessSource(actor, businessSourceId);
             return standalonePage(actor, businessSourceId, pageNum, pageSize, offset);
         }
         registry.application().authorize(actor, applicationId, PrintDesignAction.VIEW);

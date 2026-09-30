@@ -43,7 +43,8 @@ public class PrintBindingService {
     public List<Binding> list(PrintBindingQueryDTO dto) {
         identity.validate(dto);
         var actor = identity.require(PrintDesignAction.VIEW.permission());
-        var source = access.source(actor, dto.source(), PrintDesignAction.VIEW, false).source();
+        // 列绑定只核对来源身份；业务 Provider 是否可取数在保存/运行时再校验。
+        PrintSourceRequest source = viewSource(actor, dto.source());
         var rows = dto.scene() == null
                 ? bindings.selectBySource(actor.tenantId(), source.applicationId(),
                 source.businessSourceId(), source.key())
@@ -52,6 +53,18 @@ public class PrintBindingService {
         return rows.stream()
                 .map(row -> Binding.from(row, templateName(actor.tenantId(), row.getTemplateId())))
                 .toList();
+    }
+
+    private PrintSourceRequest viewSource(PrintActor actor, PrintSourceRequest requested) {
+        if (requested.sourceType() != null && requested.sourceType().isStandalone()) {
+            PrintSourceRequest canonical = access.requireBusinessSource(actor, requested.businessSourceId());
+            if (!canonical.equals(requested)) {
+                throw PrintFailure.of(403, "PRINT_ACCESS_DENIED",
+                        "打印来源身份与登记信息不一致，请刷新页面后重试");
+            }
+            return canonical;
+        }
+        return access.source(actor, requested, PrintDesignAction.VIEW, false).source();
     }
 
     @Transactional(rollbackFor = Exception.class)

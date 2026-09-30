@@ -43,16 +43,19 @@ const busyRowId = ref(null)
 const bindings = ref([])
 const bindingGeneration = ref(0)
 const sceneOptions = computed(() => dict.value.sys_print_scene?.length ? dict.value.sys_print_scene : FALLBACK_PRINT_SCENE_OPTIONS)
-watch(scopeKey, () => {
+watch(scopeKey, async () => {
   store.listGeneration++
   store.items = []
   store.total = 0
   creating.value = false
   bindings.value = []
   if (hasContext.value)
-    store.list(listSource.value, 1, source.value?.pageId)
-  if (props.showBindings)
-    loadBindings()
+    await store.list(listSource.value, 1, source.value?.pageId)
+  // 业务打印虽隐藏挂载 UI，仍需加载并补齐 DETAIL 绑定
+  if (props.showBindings || standaloneId.value)
+    await loadBindings()
+  if (standaloneId.value)
+    await ensureStandaloneDetailBindings()
 }, { immediate: true })
 onBeforeUnmount(() => {
   store.listGeneration++
@@ -78,6 +81,42 @@ async function loadBindings() {
       store.error = error.message || '无法读取打印场景'
     }
   }
+}
+/** 业务打印固定详情场景：已发布却未绑 DETAIL 的模板自动补上。 */
+async function ensureStandaloneDetailBindings() {
+  if (!standaloneId.value || !canManage.value)
+    return
+  const payload = printSourcePayload(source.value)
+  if (!payload)
+    return
+  const activeScope = scopeKey.value
+  let next = bindings.value
+  let changed = false
+  for (const row of store.items) {
+    if (!row?.publishedVersionId)
+      continue
+    if (scenesOfTemplate(next, row.id).includes('DETAIL'))
+      continue
+    try {
+      next = await syncPrintTemplateScenes({
+        source: payload,
+        templateId: row.id,
+        templateVersionId: row.publishedVersionId,
+        scenes: ['DETAIL'],
+        bindings: next,
+        save: api.savePrintBinding,
+        remove: api.deletePrintBinding,
+      })
+      changed = true
+    }
+    catch (error) {
+      if (scopeKey.value === activeScope)
+        store.error = error.message || '自动绑定详情场景失败'
+      return
+    }
+  }
+  if (changed && scopeKey.value === activeScope)
+    bindings.value = next
 }
 function rowScenes(row) {
   return scenesOfTemplate(bindings.value, row.id)
@@ -235,8 +274,10 @@ function isEnabled(row) {
 async function refresh() {
   if (hasContext.value)
     await store.list(listSource.value, store.pageNum, source.value?.pageId)
-  if (props.showBindings)
+  if (props.showBindings || standaloneId.value)
     await loadBindings()
+  if (standaloneId.value)
+    await ensureStandaloneDetailBindings()
 }
 </script>
 
@@ -245,9 +286,15 @@ async function refresh() {
     <template v-if="!lockSource" #header-extra>
       <NSpace>
         <NButton :disabled="!hasContext || busy" @click="refresh">
+          <template #icon>
+            <i class="i-lucide:refresh-cw" />
+          </template>
           刷新
         </NButton>
         <NButton v-if="canManage && allowCreate" type="primary" :disabled="!source || busy" @click="creating = true">
+          <template #icon>
+            <i class="i-lucide:file-plus" />
+          </template>
           新建模板
         </NButton>
       </NSpace>
@@ -259,9 +306,15 @@ async function refresh() {
     <template v-else>
       <div v-if="lockSource" class="print-list-actions">
         <NButton :disabled="!hasContext || busy" @click="refresh">
+          <template #icon>
+            <i class="i-lucide:refresh-cw" />
+          </template>
           刷新
         </NButton>
         <NButton v-if="canManage && allowCreate" type="primary" :disabled="!source || busy" @click="creating = true">
+          <template #icon>
+            <i class="i-lucide:file-plus" />
+          </template>
           新建模板
         </NButton>
       </div>
@@ -347,6 +400,7 @@ async function refresh() {
               </div>
               <div class="print-card__actions">
                 <button type="button" class="print-card__action" @click="design(row)">
+                  <i :class="canManage ? 'i-lucide:pen-line' : 'i-lucide:eye'" />
                   {{ canManage ? '设计' : '查看' }}
                 </button>
                 <template v-if="canManage">
@@ -598,6 +652,12 @@ async function refresh() {
   font-size: 12px;
   line-height: 20px;
   cursor: pointer;
+}
+
+.print-card__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 .print-card__action:hover,
 .print-card__more:hover {

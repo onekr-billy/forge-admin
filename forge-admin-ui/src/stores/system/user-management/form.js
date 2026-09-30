@@ -1,5 +1,6 @@
 import { computed, h } from 'vue'
 import SystemTableCell from '@/components/common/SystemTableCell.vue'
+import BusinessPrintButton from '@/components/print/runtime/BusinessPrintButton.vue'
 import { FORM_MAIN_ORG_ID_EXPR, FORM_TENANT_ID_EXPR, normalizeNumberList, normalizeSingleNumber, renderDictTag, resolveOptionLabel, resolveUserAccountLabel, resolveUserDisplayName, splitTableCellValues } from './utils'
 
 // 共享状态由 Pinia 创建；跨领域调用通过同一工作台实例协调。
@@ -99,6 +100,23 @@ export function createUserForm(state, runtime, workspace) {
       label: '状态',
       width: 90,
       render: row => renderDictTag(workspace.userStatusOptions.value, normalizeSingleNumber(row.userStatus), 'user-status-tag'),
+    },
+    {
+      // 演示：对接打印中心 DATASET 来源 user_code（模板「用户打印」）
+      prop: 'printDemo',
+      label: '打印',
+      width: 88,
+      fixed: 'right',
+      render: row => h(BusinessPrintButton, {
+        sourceCode: 'user_code',
+        sourceType: 'DATASET',
+        objectCode: 'user_code',
+        recordId: row.id,
+        scene: 'DETAIL',
+        size: 'tiny',
+        label: '打印',
+        title: '用户打印',
+      }),
     },
     {
       prop: 'action',

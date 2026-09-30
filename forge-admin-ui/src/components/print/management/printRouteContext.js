@@ -94,7 +94,7 @@ export function printPreviewFallbackLocation(record) {
   if (applicationId)
     return { path: `/app-center/app/${applicationId}` }
   if (record?.source?.businessSourceId)
-    return { path: '/print/templates', query: { businessSourceId: record.source.businessSourceId } }
+    return { path: '/print', query: { businessSourceId: record.source.businessSourceId } }
   return { path: '/app-center' }
 }
 
@@ -113,7 +113,7 @@ export function leavePrintDesigner({
   }
   if (source?.businessSourceId) {
     router.replace({
-      path: '/print/templates',
+      path: '/print',
       query: { businessSourceId: String(source.businessSourceId) },
     })
     return 'source'

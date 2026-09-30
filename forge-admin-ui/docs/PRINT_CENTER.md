@@ -1,73 +1,87 @@
-# 独立打印中心接入
+# 打印中心怎么用（人话版）
 
-## 管理端配置
+打印中心解决一件事：**业务页面点「打印」→ 选模板 → 出纸/预览**。  
+数据不直接用页面表格那一行，而是按「可打印业务」到后端重新取数，再套模板。
 
-“打印中心”是与“应用中心”平级的独立一级目录，包含三个菜单：
+侧栏只有一个入口：**打印中心 → 打印工作台**（旧的「业务数据源 / 打印模板 / 场景绑定」已合并）。
 
-- “业务数据源”：登记并维护 SERVICE / DATASET 来源。
-- “打印模板”：创建、设计和发布来源对应的打印模板。
-- “场景绑定”：将已发布版本绑定到列表、详情或流程场景。
+---
 
-配置顺序为：先新建业务来源，再创建、设计并发布模板，最后为发布版本绑定业务场景。
+## 1. 一个页面做完
 
-- `SERVICE`：`Provider 编码`必须与后端 `PrintBusinessDataProvider.code()` 一致。
-- `DATASET`：只能选择已发布、已启用且当前用户有查询权限的数据集；`recordIdParam`声明记录 ID 对应的数据集参数。
-- 来源新建后默认停用。模板发布、场景绑定完成后再启用。
-- 独立来源的绑定固定发布版本；模板重新发布后，在绑定面板中手动升级版本。
+左侧选「可打印业务」，右侧在同一页：
 
-参数协议示例：
+1. **新增业务**（左上角）— 登记哪种单据能打  
+2. **新建模板 → 设计 → 发布**  
+3. 模板卡片上勾选 **挂载位置**（列表 / 详情 / 流程等）  
+4. 右上角 **启用** 该业务  
 
-```json
-{
-  "version": { "type": "integer", "required": true, "min": 1 },
-  "language": { "type": "string", "enum": ["zh-CN", "en-US"] }
-}
-```
+业务页再挂打印按钮。不用再在三个菜单之间跳。
 
-## 业务页面调用
+新建业务默认**停用**；没启用前，业务页调打印会失败。
 
-页面只需要保存稳定的来源编码。组件会按当前租户向后端解析来源身份，再复用统一的模板选择、预览、PDF 和打印事件链路。
+---
 
-```vue
-<script setup>
-import BusinessPrintButton from '@/components/print/runtime/BusinessPrintButton.vue'
+## 2. 「对接业务 / 适配器」是什么
 
-defineProps({ row: { type: Object, required: true } })
-</script>
+= **后端已经写好的取数代码**，不是随便填的名字。
 
-<template>
-  <BusinessPrintButton
-    source-code="purchase_order"
-    :record-id="row.id"
-    scene="DETAIL"
-    :params="{ version: row.version }"
-  />
-</template>
-```
+当前现成只有 **示例采购单**：
 
-需要自定义按钮或弹层时，可以复用 composable：
+- 对接业务：`sample-purchase-order`  
+- 业务标识：必须 `sample_purchase_order`  
+- 只能打采购单样例，**不能**打用户管理
+
+打用户等系统页：用「数据集」登记，或让开发写新的取数程序。
+
+---
+
+## 3. 先跑通示例采购单
+
+1. 打印工作台 → 新增 → 选「示例采购单」（业务标识会自动带上）  
+2. 新建模板 → 设计字段 → 发布  
+3. 卡片上勾选挂载场景（如详情）  
+4. 点 **启用**  
+5. 采购单样例页：
 
 ```vue
-<script setup>
-import { NModal } from 'naive-ui'
-import PrintTemplatePicker from '@/components/print/runtime/PrintTemplatePicker.vue'
-import { useBusinessPrint } from '@/components/print/runtime/useBusinessPrint'
-
-const { visible, record, open, close } = useBusinessPrint({
-  sourceCode: 'purchase_order',
-  scene: 'LIST',
-})
-
-async function printRow(row) {
-  await open({ recordId: row.id, params: { version: row.version } })
-}
-</script>
-
-<template>
-  <NModal :show="visible" preset="card" @update:show="value => !value && close()">
-    <PrintTemplatePicker v-if="record" :record="record" @back="close" />
-  </NModal>
-</template>
+<BusinessPrintButton
+  source-code="sample_purchase_order"
+  :record-id="row.id"
+  scene="DETAIL"
+/>
 ```
 
-`params` 只用于向后端 Provider 传递参数协议中声明的标量值。它不携带页面正文，也不能覆盖租户、用户、模板或流程身份；业务数据始终由后端重新查询和鉴权。
+---
+
+## 4. 用户管理列表要打印
+
+**A. 数据集（不用写 Java）**  
+数据中心做已发布用户数据集 → 工作台新增选「数据集」→ 模板 + 挂载 + 启用 → 按钮 `source-code` 用你的调用编码。
+
+**B. 代码适配器（开发）**  
+仿 `SamplePurchaseOrderPrintDataProvider` 写用户 Provider。没写之前不能靠「示例采购单」硬打用户。
+
+---
+
+## 5. 业务页挂按钮
+
+```vue
+<BusinessPrintButton
+  source-code="调用编码"
+  :record-id="row.id"
+  scene="DETAIL"
+/>
+```
+
+`scene` 须与卡片上勾选的挂载位置一致。
+
+---
+
+## 6. 常见报错
+
+| 现象 | 常见原因 |
+|------|----------|
+| 403 提示业务标识 | 示例采购单业务标识不是 `sample_purchase_order` |
+| 404 | 后端未部署独立打印中心分支 |
+| 业务页找不到来源 | 调用编码错，或业务仍停用 |

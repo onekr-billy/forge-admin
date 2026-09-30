@@ -43,6 +43,11 @@ public class PrintTemplateAccess {
         return new AuthorizedPrintSource(actor, source);
     }
 
+    /** 独立来源是否存在（列表场景不强制走业务 Provider 鉴权）。 */
+    public PrintSourceRequest requireBusinessSource(PrintActor actor, Long businessSourceId) {
+        return standaloneSource(actor, businessSourceId, false);
+    }
+
     private PrintSourceRequest applicationSource(PrintActor actor, PrintSourceRequest source,
                                                  PrintDesignAction action, boolean lock) {
         var application = registry.application();

@@ -8,8 +8,8 @@ defineEmits(['create'])
 
 const store = usePrintCenterStore()
 const typeOptions = [
-  { label: '全部来源', value: null },
-  { label: '业务服务', value: 'SERVICE' },
+  { label: '全部', value: null },
+  { label: '代码业务', value: 'SERVICE' },
   { label: '数据集', value: 'DATASET' },
 ]
 const countText = computed(() => `${store.total} 个来源`)
@@ -24,10 +24,13 @@ function iconOf(type) {
     <!-- 来源工具栏 -->
     <header class="source-list-panel__head">
       <div>
-        <strong>业务来源</strong>
+        <strong>可打印业务</strong>
         <span>{{ countText }}</span>
       </div>
       <NButton v-if="canManage" size="small" type="primary" @click="$emit('create')">
+        <template #icon>
+          <i class="i-lucide:plus" />
+        </template>
         新增
       </NButton>
     </header>
@@ -38,7 +41,7 @@ function iconOf(type) {
         v-model:value="store.keyword"
         size="small"
         clearable
-        placeholder="搜索来源名称"
+        placeholder="搜索业务名称"
         @keyup.enter="store.load()"
       />
       <NSelect
@@ -75,7 +78,7 @@ function iconOf(type) {
           <NEmpty
             v-if="!store.loading && !store.sources.length"
             size="small"
-            description="暂无业务来源"
+            description="暂无可打印业务"
           />
         </div>
       </NScrollbar>

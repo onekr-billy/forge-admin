@@ -9,21 +9,14 @@ const route = useRoute()
 const source = computed(() => printSourceFromQuery(route.query))
 const applicationId = computed(() => /^[1-9]\d*$/.test(String(route.query.applicationId || '')) ? String(route.query.applicationId) : null)
 const legacyApplicationScope = computed(() => Boolean(applicationId.value))
-const standaloneSection = computed(() => {
-  if (route.path === '/print/sources')
-    return 'sources'
-  if (route.path === '/print/bindings')
-    return 'bindings'
-  return 'templates'
-})
 </script>
 
 <template>
-  <!-- 保留低代码应用从设置页进入的原有模板管理入口。 -->
+  <!-- 低代码应用内嵌入口仍走模板列表；独立打印中心合并为单一工作台。 -->
   <PrintTemplateList
     v-if="legacyApplicationScope"
     :application-id="applicationId"
     :source="source"
   />
-  <PrintCenterWorkspace v-else :section="standaloneSection" />
+  <PrintCenterWorkspace v-else />
 </template>

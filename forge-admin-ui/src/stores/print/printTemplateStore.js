@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import * as api from '@/api/print'
 import { newPrintTemplateCode } from '@/components/print/id'
 import { printSourcePayload } from '@/components/print/management/printRouteContext'
-import { DEFAULT_PRINT_SCENES, syncPrintTemplateScenes } from '@/components/print/management/printSceneBinding'
+import { DEFAULT_PRINT_SCENES, normalizePrintScenes, syncPrintTemplateScenes } from '@/components/print/management/printSceneBinding'
 import { formatPrintApiError } from '@/components/print/protocol/formatPrintError'
 import { createPrintDocument } from '@/components/print/protocol/types'
 import { assertPrintDocument } from '@/components/print/protocol/validate'
@@ -28,6 +28,8 @@ export const usePrintTemplateStore = defineStore('printTemplates', {
     bindings: [],
     scene: 'DETAIL',
     panel: null,
+    /** 独立来源新建时勾选的挂载位置，发布后自动绑定 */
+    pendingScenesByTemplateId: {},
   }),
   getters: { nameDirty: state => state.name !== state.savedName },
   actions: {
@@ -45,6 +47,49 @@ export const usePrintTemplateStore = defineStore('printTemplates', {
       this.loading = false
       this.saving = false
       this.panel = null
+    },
+    rememberPendingScenes(templateId, scenes) {
+      const id = String(templateId || '')
+      const next = normalizePrintScenes(scenes)
+      if (!id || !next.length) {
+        if (id) {
+          const cleared = { ...this.pendingScenesByTemplateId }
+          delete cleared[id]
+          this.pendingScenesByTemplateId = cleared
+        }
+        return
+      }
+      this.pendingScenesByTemplateId = {
+        ...this.pendingScenesByTemplateId,
+        [id]: next,
+      }
+    },
+    async applyPendingScenes(template) {
+      const id = String(template?.id || '')
+      const payload = printSourcePayload(template?.source)
+      if (!id || !payload?.businessSourceId || !template?.publishedVersionId)
+        return
+      // 业务打印统一挂详情；新建时勾选的场景优先，否则默认 DETAIL
+      const scenes = this.pendingScenesByTemplateId[id]?.length
+        ? this.pendingScenesByTemplateId[id]
+        : ['DETAIL']
+      try {
+        await syncPrintTemplateScenes({
+          source: payload,
+          templateId: template.id,
+          templateVersionId: template.publishedVersionId,
+          scenes,
+          bindings: this.bindings,
+          save: api.savePrintBinding,
+          remove: api.deletePrintBinding,
+        })
+        const next = { ...this.pendingScenesByTemplateId }
+        delete next[id]
+        this.pendingScenesByTemplateId = next
+      }
+      catch (error) {
+        window.$message?.warning?.(error.message || '模板已发布，但挂载位置绑定失败，请重新发布一次')
+      }
     },
     async list(sourceOrApplicationId, pageNum = 1, pageId) {
       const generation = ++this.listGeneration
@@ -108,14 +153,20 @@ export const usePrintTemplateStore = defineStore('printTemplates', {
       const payload = printSourcePayload(source)
       if (!payload)
         throw new Error('打印来源无效')
+      const wanted = normalizePrintScenes(scenes)
+      if (!wanted.length)
+        throw new Error('请至少选择一个挂载位置')
       const { data } = await api.createPrintTemplate({ ...payload, templateName: name, templateCode: newPrintTemplateCode(), schemaJson: JSON.stringify(schema) })
       try {
-        if (payload.businessSourceId)
+        if (payload.businessSourceId) {
+          // 独立来源须发布后才有版本可绑定；先记下，发布时自动挂载
+          this.rememberPendingScenes(data.id, wanted)
           return data
+        }
         await syncPrintTemplateScenes({
           source: printSourcePayload(data.source) || payload,
           templateId: data.id,
-          scenes,
+          scenes: wanted,
           bindings: [],
           save: api.savePrintBinding,
           remove: api.deletePrintBinding,
@@ -167,6 +218,7 @@ export const usePrintTemplateStore = defineStore('printTemplates', {
         if (generation !== this.generation)
           return false
         this.row = data.template
+        await this.applyPendingScenes(data.template)
         window.$message?.success?.(`已发布模板版本 ${data.version.versionNo}`)
         return true
       }
