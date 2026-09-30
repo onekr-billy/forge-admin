@@ -121,4 +121,52 @@ describe('page form object promotion', () => {
       searchFieldRefs: ['fieldSlider', 'fieldRate'],
     })
   })
+
+  it('mirrors optionSource from an existing form select onto the field registry', () => {
+    const payload = buildBusinessObjectDesignerPayloadFromFormAsset({
+      id: 'form_detail',
+      name: '明细表单',
+      formDesignerSchema: {
+        formKey: 'detail_form',
+        components: [{
+          id: 'cmp_fieldSelect',
+          componentKey: 'select',
+          label: '指标',
+          fieldBinding: {
+            mode: 'field',
+            fieldCode: 'fieldSelect',
+            columnName: 'field_select',
+            createIfMissing: true,
+          },
+          props: {
+            optionSource: {
+              type: 'QUERY_SOURCE',
+              sourceType: 'BUSINESS_OBJECT',
+              sourceKey: 'detail_lmd1',
+              valueField: 'id',
+              labelField: 'fieldInput',
+            },
+          },
+        }],
+      },
+    }, [{
+      fieldCode: 'fieldSelect',
+      fieldName: '指标',
+      componentType: 'input',
+      basicProps: {},
+    }])
+
+    expect(payload.fields).toEqual([
+      expect.objectContaining({
+        fieldCode: 'fieldSelect',
+        componentType: 'select',
+        basicProps: expect.objectContaining({
+          optionSource: expect.objectContaining({
+            type: 'QUERY_SOURCE',
+            sourceKey: 'detail_lmd1',
+          }),
+        }),
+      }),
+    ])
+  })
 })

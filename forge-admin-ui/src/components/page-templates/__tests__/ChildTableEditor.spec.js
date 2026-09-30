@@ -36,6 +36,7 @@ describe('child table editor runtime cells', () => {
     expect(childTableEditorSource).toContain('preloadChildQuerySourceOptions')
     expect(childTableEditorSource).toContain('allowOptionSourceFetch: true')
     expect(childTableEditorSource).toContain('只要配了动态选项源，一律走 AiFormItem')
+    expect(childTableEditorSource).toContain('select 一律走 AiFormItem')
     expect(childTableEditorSource).toContain('[forge-child-select] ChildTableEditor setup v4')
     expect(childTableEditorSource).toContain('[forge-child-select] module imported v4')
   })

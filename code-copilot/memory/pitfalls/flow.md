@@ -1,6 +1,6 @@
 # 踩坑：流程 / Flowable / BPMN
 
-> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 54 条。
+> 从 `code-copilot/memory/pitfalls.md` 按主题拆出。新条目追加到本文件。共 57 条。
 
 ## 审批/主从子表下拉人员部门开关失效与窄列
 
@@ -18,6 +18,14 @@
 7. `useRuntimeCell` 只认精确 `userSelect`，`forgeUserSelect` / `userPicker` 等别名会落到普通输入框。
 
 处理：运行态 cell 保留完整 props；过滤保留 `*Name`；开关默认 1/0；人员/组织列加宽且输入框 `min-width:0`；人员清空用独立 ✕ 按钮；缺名时按 id 调 `getById` 补回显；`isUserSelectLikeField` 路由进 AiFormItem 并规范化 type；`sourceField===自身` 不启用级联；表单 governance.fieldEvents 挂到 childrenConfig。
+
+## 明细页下拉正常但子表引用后失效：optionSource 没回写字段注册表
+
+**发现日期**：2026-09-30
+
+明细对象页面表单里配置的 `select` + `optionSource` 在本页渲染正常；其它页面把该对象当 `subTable` 时下拉空/不好使。不是组件类型本身坏了，而是两条协议不一致：明细页读 `formDesignerSchema.components[].props`，子表 `childrenConfig` 读模型字段 `basicProps`。`buildAutoFieldAssets` 以前只给**新建**字段从组件拷贝 props，已存在字段改成下拉后 `optionSource` 只留在表单组件上；字段重建的 `PRESERVED_BASIC_PROP_KEYS` 也漏了 `optionSource`，保存时还会把已有选项源冲掉。`ChildTableEditor` 对无 `optionSource` 的 `select` 还会落到空 `options` 的原生 `n-select`。
+
+处理：已存在字段也从表单组件镜像 `optionSource`/控件类型；保留键补上 `optionSource` 等；子表 `select` 一律走 `AiFormItem`。修完后需重新保存明细页面，父页 designPreview 或发布刷新 `modelRefs`。
 
 ## 审批子表只读列能改却保存报「不允许编辑子表字段」
 

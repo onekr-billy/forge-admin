@@ -193,7 +193,7 @@
 - 177. 业务对象发布不能重置应用入口配置
 - 180. 运行字段基线会掩盖表单组件的结构变更
 
-### [流程 / Flowable / BPMN](pitfalls/flow.md)（56）
+### [流程 / Flowable / BPMN](pitfalls/flow.md)（57）
 
 - Flow 服务承载业务表单接口时不能沿用旧的 FlowClient 8080 默认端口
 - 审批子表列控件类型不能只依赖发布态 masterDetailConfig

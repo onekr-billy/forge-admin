@@ -69,10 +69,13 @@ final class BusinessObjectFieldDesignPolicy {
             "", "input", "textarea", "number", "inputNumber", "input-number", "inputnumber", "integer"
     );
     private static final Set<String> PRESERVED_BASIC_PROP_KEYS = Set.of(
-            "dictType", "options", "recordSelector", "generation", "cascade", "cascadeConfig",
-            "referenceObjectCode", "referenceDisplayField", "targetObjectCode", "targetLabelField",
-            "labelField", "valueField", "fieldMappings", "searchParams", "keywordFields", "displayFields",
-            "placeholder", "clearable", "filterable", "multiple", "validation"
+            "dictType", "options", "optionSource", "labelValueField", "recordSelector", "generation",
+            "cascade", "cascadeConfig",
+            "referenceObjectCode", "referenceDisplayField", "referenceValueField",
+            "targetObjectCode", "targetLabelField",
+            "labelField", "valueField", "fieldMappings", "mappings", "searchParams", "keywordFields", "displayFields",
+            "placeholder", "clearable", "filterable", "multiple", "validation",
+            "checkedValue", "uncheckedValue", "runtimeRules"
     );
     private static final Set<String> PRESERVED_ADVANCED_PROP_KEYS = Set.of(
             "dictType", "recordSelector", "generation", "referenceObjectCode", "referenceDisplayField", "validation"

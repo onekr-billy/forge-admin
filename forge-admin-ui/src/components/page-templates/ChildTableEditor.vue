@@ -686,9 +686,10 @@ function useRuntimeCell(field = {}, child = {}) {
   // 只要配了动态选项源，一律走 AiFormItem，避免退回空 options 的原生 n-select
   if (optionSource)
     return true
-  if (fieldType === 'select' || controlType === 'select') {
-    return Boolean(field.dictType || field.props?.dictType
-      || field.multiple === true || field.props?.multiple === true)
+  // select 一律走 AiFormItem：原生 n-select 只认静态 options，子表常丢 optionSource 后会变成空下拉
+  if (fieldType === 'select' || controlType === 'select'
+    || fieldType === 'customSelect' || controlType === 'customSelect') {
+    return true
   }
   return [
     'dictSelect',
