@@ -28,10 +28,28 @@ export const manualRoutes = [
   ...openPlatformRoutes,
   // 打印中心使用标准工作台布局；设计器和运行页保持独立全屏。
   {
-    name: 'PrintTemplates',
+    name: 'PrintLegacyEntry',
     path: '/print',
     component: () => import('@/views/print/index.vue'),
-    meta: { title: '打印中心', preserveOnQuery: true },
+    meta: { title: '打印模板', preserveOnQuery: true },
+  },
+  {
+    name: 'PrintSources',
+    path: '/print/sources',
+    component: () => import('@/views/print/index.vue'),
+    meta: { title: '业务数据源', preserveOnQuery: true },
+  },
+  {
+    name: 'PrintTemplates',
+    path: '/print/templates',
+    component: () => import('@/views/print/index.vue'),
+    meta: { title: '打印模板', preserveOnQuery: true },
+  },
+  {
+    name: 'PrintBindings',
+    path: '/print/bindings',
+    component: () => import('@/views/print/index.vue'),
+    meta: { title: '场景绑定', preserveOnQuery: true },
   },
   {
     name: 'PrintDesigner',

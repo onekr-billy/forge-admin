@@ -9,6 +9,13 @@ const route = useRoute()
 const source = computed(() => printSourceFromQuery(route.query))
 const applicationId = computed(() => /^[1-9]\d*$/.test(String(route.query.applicationId || '')) ? String(route.query.applicationId) : null)
 const legacyApplicationScope = computed(() => Boolean(applicationId.value))
+const standaloneSection = computed(() => {
+  if (route.path === '/print/sources')
+    return 'sources'
+  if (route.path === '/print/bindings')
+    return 'bindings'
+  return 'templates'
+})
 </script>
 
 <template>
@@ -18,5 +25,5 @@ const legacyApplicationScope = computed(() => Boolean(applicationId.value))
     :application-id="applicationId"
     :source="source"
   />
-  <PrintCenterWorkspace v-else />
+  <PrintCenterWorkspace v-else :section="standaloneSection" />
 </template>

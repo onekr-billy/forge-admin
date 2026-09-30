@@ -7,8 +7,6 @@ import {
   NEmpty,
   NModal,
   NSpin,
-  NTabPane,
-  NTabs,
   NTag,
 } from 'naive-ui'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -21,11 +19,17 @@ import { usePrintCenterStore } from '@/stores/print/printCenterStore'
 import PrintSourceForm from './PrintSourceForm.vue'
 import PrintSourceList from './PrintSourceList.vue'
 
+defineProps({
+  section: {
+    type: String,
+    default: 'templates',
+    validator: value => ['sources', 'templates', 'bindings'].includes(value),
+  },
+})
 const route = useRoute()
 const router = useRouter()
 const store = usePrintCenterStore()
 const user = useUserStore()
-const activeTab = ref('templates')
 const editing = ref(false)
 const creating = ref(false)
 const deleting = ref(false)
@@ -55,7 +59,6 @@ async function removeSource() {
   try {
     await store.remove()
     deleting.value = false
-    activeTab.value = 'templates'
   }
   catch (error) {
     store.error = error.message || '删除打印来源失败'
@@ -77,7 +80,7 @@ async function toggleSource() {
   <div class="print-center-page">
     <MasterDetailWorkspace :aside-width="250">
       <template #aside>
-        <PrintSourceList :can-manage="canManageSource" @create="creating = true" />
+        <PrintSourceList :can-manage="canManageSource && section === 'sources'" @create="creating = true" />
       </template>
 
       <div class="print-center-main">
@@ -102,7 +105,7 @@ async function toggleSource() {
                   <span>{{ source.sourceCode }} · {{ typeLabel }}</span>
                 </div>
               </div>
-              <div v-if="canManageSource" class="print-center-head__actions">
+              <div v-if="canManageSource && section === 'sources'" class="print-center-head__actions">
                 <NButton size="small" @click="editing = true">
                   来源设置
                 </NButton>
@@ -115,51 +118,50 @@ async function toggleSource() {
               </div>
             </header>
 
-            <!-- 来源工作区 -->
-            <NTabs v-model:value="activeTab" type="line" size="small" class="print-center-tabs">
-              <NTabPane name="templates" tab="模板资产" display-directive="show">
-                <div class="print-center-pane">
-                  <PrintTemplateList
-                    :key="source.id"
-                    :business-source-id="String(source.id)"
-                    :source="sourceIdentity"
-                    :sources="store.sources"
-                    lock-source
-                  />
-                </div>
-              </NTabPane>
-              <NTabPane name="source" tab="接入信息" display-directive="show">
-                <div class="source-detail-pane">
-                  <NDescriptions label-placement="left" :column="1" bordered size="small">
-                    <NDescriptionsItem label="来源编码">
-                      {{ source.sourceCode }}
-                    </NDescriptionsItem>
-                    <NDescriptionsItem label="对象编码">
-                      {{ source.objectCode }}
-                    </NDescriptionsItem>
-                    <NDescriptionsItem label="来源类型">
-                      {{ typeLabel }}
-                    </NDescriptionsItem>
-                    <NDescriptionsItem :label="source.sourceType === 'DATASET' ? '数据集 ID' : 'Provider 编码'">
-                      {{ source.sourceType === 'DATASET' ? source.datasetId : source.providerCode }}
-                    </NDescriptionsItem>
-                    <NDescriptionsItem label="参数协议">
-                      <pre>{{ source.parameterSchemaJson || '{}' }}</pre>
-                    </NDescriptionsItem>
-                    <NDescriptionsItem label="数据映射">
-                      <pre>{{ source.mappingJson || '{}' }}</pre>
-                    </NDescriptionsItem>
-                  </NDescriptions>
-                </div>
-              </NTabPane>
-            </NTabs>
+            <!-- 独立菜单分别承载来源、模板和场景绑定，避免在一个页面继续套业务页签。 -->
+            <div v-if="section === 'sources'" class="source-detail-pane">
+              <NDescriptions label-placement="left" :column="1" bordered size="small">
+                <NDescriptionsItem label="来源编码">
+                  {{ source.sourceCode }}
+                </NDescriptionsItem>
+                <NDescriptionsItem label="对象编码">
+                  {{ source.objectCode }}
+                </NDescriptionsItem>
+                <NDescriptionsItem label="来源类型">
+                  {{ typeLabel }}
+                </NDescriptionsItem>
+                <NDescriptionsItem :label="source.sourceType === 'DATASET' ? '数据集 ID' : 'Provider 编码'">
+                  {{ source.sourceType === 'DATASET' ? source.datasetId : source.providerCode }}
+                </NDescriptionsItem>
+                <NDescriptionsItem label="参数协议">
+                  <pre>{{ source.parameterSchemaJson || '{}' }}</pre>
+                </NDescriptionsItem>
+                <NDescriptionsItem label="数据映射">
+                  <pre>{{ source.mappingJson || '{}' }}</pre>
+                </NDescriptionsItem>
+              </NDescriptions>
+            </div>
+            <div v-else class="print-center-pane">
+              <PrintTemplateList
+                :key="`${source.id}:${section}`"
+                :business-source-id="String(source.id)"
+                :source="sourceIdentity"
+                :sources="store.sources"
+                :show-bindings="section === 'bindings'"
+                :allow-create="section === 'templates'"
+                lock-source
+              />
+            </div>
           </template>
-          <NEmpty v-else description="从左侧选择业务来源，或新增一个来源" />
+          <NEmpty
+            v-else
+            :description="section === 'sources' ? '从左侧选择业务来源，或新增一个来源' : '请先到业务数据源菜单新增来源'"
+          />
         </NSpin>
       </div>
     </MasterDetailWorkspace>
 
-    <PrintSourceForm v-model:show="creating" @saved="activeTab = 'templates'" />
+    <PrintSourceForm v-model:show="creating" />
     <PrintSourceForm v-model:show="editing" :source="source" />
     <NModal
       v-model:show="deleting"
@@ -264,18 +266,6 @@ async function toggleSource() {
   gap: 6px;
 }
 
-.print-center-tabs {
-  flex: 1;
-  min-height: 0;
-  padding: 0 16px;
-}
-
-.print-center-tabs :deep(.n-tabs-pane-wrapper),
-.print-center-tabs :deep(.n-tab-pane) {
-  min-height: 0;
-  height: 100%;
-}
-
 .print-center-pane,
 .source-detail-pane {
   height: 100%;
@@ -285,12 +275,12 @@ async function toggleSource() {
 }
 
 .print-center-pane {
-  padding-bottom: 16px;
+  padding: 12px 16px 16px;
 }
 
 .source-detail-pane {
   max-width: 820px;
-  padding: 4px 0 20px;
+  padding: 16px;
 }
 
 .source-detail-pane pre {

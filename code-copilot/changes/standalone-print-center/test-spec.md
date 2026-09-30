@@ -69,6 +69,7 @@
 | 2026-09-29 | Task 1-5 后端逻辑 | 来源、模板、绑定、参数、SERVICE Provider | `mvn ... -Penable-tests -Dtest='Print*Test,ServicePrintDataProviderTest' test` | 通过 | 146 项测试；Mockito 通过显式 Byte Buddy Java Agent 运行 |
 | 2026-09-29 | Task 5 数据集 Provider | 数据集发布/权限/取数映射 | `mvn ... -Penable-tests -Dtest=DatasetPrintDataProviderTest test` | 通过 | 2 项测试通过 |
 | 2026-09-29 | Task 8 Admin 聚合 | 完整后端依赖树与主应用装配 | `mvn -pl forge-admin-server -am package -DskipTests` | 通过 | 46 个 reactor 模块全部成功 |
+| 2026-09-30 | Task 9 菜单层级修复 | 应用总览恢复、独立打印目录、三个子菜单、旧入口兼容 | `PrintResourceContractTest`、3 个前端 Vitest 文件、变更文件 ESLint、`vite build`、Flyway 占位符扫描、`git diff --check` | 通过 | 后端 4 项合同、前端 23 项增量测试通过；构建仅有存量 Vite/CSS 警告 |
 
 ## 6. 执行证据
 

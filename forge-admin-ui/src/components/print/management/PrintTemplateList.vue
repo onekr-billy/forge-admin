@@ -20,6 +20,8 @@ const props = defineProps({
   source: { type: Object, default: null },
   sources: { type: Array, default: () => [] },
   lockSource: Boolean,
+  showBindings: { type: Boolean, default: true },
+  allowCreate: { type: Boolean, default: true },
 })
 const router = useRouter()
 const route = useRoute()
@@ -49,7 +51,8 @@ watch(scopeKey, () => {
   bindings.value = []
   if (hasContext.value)
     store.list(listSource.value, 1, source.value?.pageId)
-  loadBindings()
+  if (props.showBindings)
+    loadBindings()
 }, { immediate: true })
 onBeforeUnmount(() => {
   store.listGeneration++
@@ -232,7 +235,8 @@ function isEnabled(row) {
 async function refresh() {
   if (hasContext.value)
     await store.list(listSource.value, store.pageNum, source.value?.pageId)
-  await loadBindings()
+  if (props.showBindings)
+    await loadBindings()
 }
 </script>
 
@@ -243,7 +247,7 @@ async function refresh() {
         <NButton :disabled="!hasContext || busy" @click="refresh">
           刷新
         </NButton>
-        <NButton v-if="canManage" type="primary" :disabled="!source || busy" @click="creating = true">
+        <NButton v-if="canManage && allowCreate" type="primary" :disabled="!source || busy" @click="creating = true">
           新建模板
         </NButton>
       </NSpace>
@@ -257,7 +261,7 @@ async function refresh() {
         <NButton :disabled="!hasContext || busy" @click="refresh">
           刷新
         </NButton>
-        <NButton v-if="canManage" type="primary" :disabled="!source || busy" @click="creating = true">
+        <NButton v-if="canManage && allowCreate" type="primary" :disabled="!source || busy" @click="creating = true">
           新建模板
         </NButton>
       </div>
@@ -309,7 +313,7 @@ async function refresh() {
                 <DictTag dict-type="sys_print_design_status" :value="row.designStatus" />
                 <DictTag dict-type="sys_print_source_type" :value="row.source?.sourceType" />
               </div>
-              <div class="print-card__scenes">
+              <div v-if="showBindings" class="print-card__scenes">
                 <span class="print-card__scenes-label">
                   <i class="i-lucide:map-pin" />
                   挂载位置

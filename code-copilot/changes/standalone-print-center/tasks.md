@@ -90,3 +90,15 @@
   - 当前变更文档
 - **验证**：后端聚合 package、前端 build、相关打印单测和 `git diff --check`。
 - **结果**：打印中心菜单/权限和接入文档已补齐；268 项前端测试、146 项打印后端测试、2 项数据集打印测试和 Admin 46 模块聚合打包全部通过。
+
+## Task 9：修复打印中心菜单层级 ✅
+
+- **目标**：撤销把历史 `/print` 隐藏路由直接显示在“应用总览”下的错误做法，恢复应用总览，并将打印中心拆成独立一级目录。
+- **涉及文件**：
+  - `forge-server/db/migration/V1.0.205__repair_print_center_menu_hierarchy.sql`
+  - `forge-admin-ui/src/router/index.js`
+  - `forge-admin-ui/src/views/print/index.vue`
+  - `components/print/center/PrintCenterWorkspace.vue`
+  - `components/print/management/PrintTemplateList.vue`
+- **验证**：菜单迁移合同、前端路由上下文、场景绑定、Store、ESLint、生产构建和 `git diff --check`。
+- **结果**：打印中心与应用中心平级，下面拆为“业务数据源 / 打印模板 / 场景绑定”；设计器和预览继续隐藏，旧低代码 `/print?applicationId=...` 入口继续兼容。

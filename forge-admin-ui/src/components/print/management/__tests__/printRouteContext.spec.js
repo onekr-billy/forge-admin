@@ -31,7 +31,7 @@ describe('打印工作台页面身份', () => {
       formKey: null,
     })
     expect(printPreviewFallbackLocation({ source: standalone, scene: 'DETAIL' })).toEqual({
-      path: '/print',
+      path: '/print/templates',
       query: { businessSourceId: standalone.businessSourceId },
     })
   })
@@ -120,7 +120,7 @@ describe('打印设计器返回', () => {
       },
     })).toBe('source')
     expect(router.replace).toHaveBeenCalledWith({
-      path: '/print',
+      path: '/print/templates',
       query: { businessSourceId: '9007199254740995' },
     })
   })
