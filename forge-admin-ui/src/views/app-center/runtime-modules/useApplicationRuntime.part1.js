@@ -51,7 +51,13 @@ import {
   updateInAppFormAsset,
 } from '../in-app-builder/in-app-builder-schema'
 import { bindProvisionedFormData, collectFormDataProvisionTargets, mergePageFieldCatalogs } from '../in-app-builder/page-form-data-provisioning'
-import { buildBusinessObjectDesignerPayloadFromFormAsset, normalizeObjectDesignerFieldCatalog, syncFormBoundFieldRefs } from '../in-app-builder/page-form-object-promotion'
+import {
+  buildBusinessObjectDesignerPayloadFromFormAsset,
+  filterPrimaryObjectDesignerFields,
+  isChildScopedFormFieldAsset,
+  normalizeObjectDesignerFieldCatalog,
+  syncFormBoundFieldRefs,
+} from '../in-app-builder/page-form-object-promotion'
 import {
   isPageManagementSystemPageId,
   PAGE_MANAGEMENT_SYSTEM_PAGES,
@@ -872,8 +878,10 @@ export function applyApplicationRuntimePart1() {
   const activeFormFields = computed(() => {
     const assetFields = activeFormAsset.value ? resolveFormAssetFields(activeFormAsset.value) : []
     const objectRef = activeFormDesignerObjectRef.value
-    if (!objectRef)
-      return assetFields
+    if (!objectRef) {
+      // 未绑定对象时货架仍要去掉子表合成列，避免「字段资产」被明细列撑爆
+      return filterPrimaryObjectDesignerFields(assetFields)
+    }
     const cacheKey = resolveRuntimeObjectCacheKey(objectRef)
     const designerFields = formDesignerObjectContextByObjectId.value[cacheKey]?.fields || []
     const runtimeFields = runtimeCrudPropsByObjectId.value[cacheKey]?.fieldCatalog || []
@@ -890,7 +898,12 @@ export function applyApplicationRuntimePart1() {
       : objectFields
     // 对象字段目录是字段资产货架的事实源；画布字段只补充尚未保存的新字段。
     // 不能只用当前表单 schema 当字段资产，否则未使用列表恒为空，删除组件后也无法回到未使用。
-    return objectFields.length ? mergePageFieldCatalogs(assetFields, protectedObjectFields) : assetFields
+    // 子表列（model__field）只给列表选列用，禁止进表单设计器字段资产，否则删拖子表会反复堆积并保存报重复。
+    const merged = objectFields.length ? mergePageFieldCatalogs(assetFields, protectedObjectFields) : assetFields
+    const subTableCodes = assetFields
+      .filter(field => isChildScopedFormFieldAsset(field))
+      .map(field => field.fieldCode || field.field)
+    return filterPrimaryObjectDesignerFields(merged, subTableCodes)
   })
   const activeFormDataState = computed(() => formDataProvisioningByAssetId.value[activeFormAssetId.value] || { status: 'idle', message: '' })
   const selectedPageBlockFormAssetId = computed(() => selectedPageBlock.value?.props?.formAssetId || (formAssets.value.length === 1 ? formAssets.value[0].id : ''))

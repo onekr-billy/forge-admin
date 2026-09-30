@@ -359,25 +359,28 @@ final class BusinessObjectRelationProjector {
                 schema == null ? modelCode : StringUtils.defaultIfBlank(schema.getBusinessName(), modelCode)));
         ref.setTableName(schema == null ? null : schema.getTableName());
         ref.setPrimary(primary);
-        ref.setFields(toPageModelFields(modelCode, schema, primary));
+        Map<String, Map<String, Object>> designerFieldProps = indexFormDesignerFieldProps(object);
+        ref.setFields(toPageModelFields(modelCode, schema, primary, designerFieldProps));
         return ref;
     }
 
     private List<Map<String, Object>> toPageModelFields(String modelCode,
                                                         LowcodeModelSchema schema,
-                                                        boolean primary) {
+                                                        boolean primary,
+                                                        Map<String, Map<String, Object>> designerFieldProps) {
         if (schema == null || schema.getFields() == null) {
             return new ArrayList<>();
         }
         return schema.getFields().stream()
                 .filter(field -> field != null)
-                .map(field -> toPageModelField(modelCode, field, primary))
+                .map(field -> toPageModelField(modelCode, field, primary, designerFieldProps))
                 .toList();
     }
 
     private Map<String, Object> toPageModelField(String modelCode,
                                                  LowcodeFieldSchema field,
-                                                 boolean primary) {
+                                                 boolean primary,
+                                                 Map<String, Map<String, Object>> designerFieldProps) {
         Map<String, Object> item = new LinkedHashMap<>();
         String fieldName = field.getField();
         item.put("field", fieldName);
@@ -394,9 +397,13 @@ final class BusinessObjectRelationProjector {
         item.put("searchable", field.getSearchable());
         item.put("listVisible", field.getListVisible());
         item.put("formVisible", field.getFormVisible());
-        item.put("componentType", field.getComponentType());
+        Map<String, Object> designerProps = designerFieldProps == null
+                ? Map.of()
+                : designerFieldProps.getOrDefault(fieldName, Map.of());
+        String designerComponentType = text(designerProps.get("componentType"));
+        item.put("componentType", StringUtils.defaultIfBlank(designerComponentType, field.getComponentType()));
         item.put("queryType", field.getQueryType());
-        item.put("dictType", field.getDictType());
+        item.put("dictType", StringUtils.defaultIfBlank(text(designerProps.get("dictType")), field.getDictType()));
         item.put("sensitiveType", field.getSensitiveType());
         item.put("encryptAlgorithm", field.getEncryptAlgorithm());
         item.put("sortable", field.getSortable());
@@ -408,12 +415,76 @@ final class BusinessObjectRelationProjector {
         item.put("width", field.getWidth());
         item.put("remark", field.getRemark());
         // 子表运行态控件依赖这些配置（选项源/引用对象/公式），快照缺失会让下拉、引用退化为输入框
-        item.put("referenceObjectCode", field.getReferenceObjectCode());
-        item.put("referenceDisplayField", field.getReferenceDisplayField());
-        item.put("basicProps", field.getBasicProps() == null ? null : new LinkedHashMap<>(field.getBasicProps()));
+        item.put("referenceObjectCode", StringUtils.defaultIfBlank(
+                text(designerProps.get("referenceObjectCode")), field.getReferenceObjectCode()));
+        item.put("referenceDisplayField", StringUtils.defaultIfBlank(
+                text(designerProps.get("referenceDisplayField")), field.getReferenceDisplayField()));
+        Map<String, Object> basicProps = field.getBasicProps() == null
+                ? new LinkedHashMap<>()
+                : new LinkedHashMap<>(field.getBasicProps());
+        // 明细页表单设计器上的 optionSource 是下拉事实源；子表引用时注册表 basicProps 可能未回写，这里补齐
+        mergeMissingDesignerProps(basicProps, designerProps);
+        item.put("basicProps", basicProps.isEmpty() ? null : basicProps);
         item.put("advancedProps", field.getAdvancedProps() == null ? null : new LinkedHashMap<>(field.getAdvancedProps()));
         item.put("formulaConfig", field.getFormulaConfig() == null ? null : new LinkedHashMap<>(field.getFormulaConfig()));
         return item;
+    }
+
+    /**
+     * 从对象 designerOptions.formDesignerSchema 按 fieldCode 索引控件 props，
+     * 供子表 masterDetailConfig 继承明细页下拉/引用配置。
+     */
+    private Map<String, Map<String, Object>> indexFormDesignerFieldProps(AiBusinessObject object) {
+        Map<String, Object> designerOptions = readMap(object == null ? null : object.getDesignerOptions());
+        Object rawSchema = designerOptions.get(FORM_DESIGNER_SCHEMA_OPTION_KEY);
+        Map<String, Object> formSchema = rawSchema instanceof String json ? readMap(json) : mapValue(rawSchema);
+        Map<String, Map<String, Object>> byCode = new LinkedHashMap<>();
+        collectFormDesignerFieldProps(listOfMap(formSchema.get("components")), byCode);
+        return byCode;
+    }
+
+    private void collectFormDesignerFieldProps(List<Map<String, Object>> components,
+                                               Map<String, Map<String, Object>> byCode) {
+        for (Map<String, Object> component : components) {
+            if (component == null) {
+                continue;
+            }
+            Map<String, Object> binding = mapValue(component.get("fieldBinding"));
+            String fieldCode = StringUtils.firstNonBlank(text(binding.get("fieldCode")), text(component.get("field")));
+            String componentKey = StringUtils.firstNonBlank(text(component.get("componentKey")), text(component.get("type")));
+            if (StringUtils.isNotBlank(fieldCode) && !"virtual".equalsIgnoreCase(text(binding.get("mode")))) {
+                Map<String, Object> props = new LinkedHashMap<>(mapValue(component.get("props")));
+                props.remove("__fc");
+                props.remove("__fcType");
+                props.remove("fieldBinding");
+                if (StringUtils.isNotBlank(componentKey)) {
+                    props.putIfAbsent("componentType", componentKey);
+                }
+                if (StringUtils.isNotBlank(text(props.get("dictType")))) {
+                    props.putIfAbsent("dictType", text(props.get("dictType")));
+                }
+                byCode.putIfAbsent(fieldCode, props);
+            }
+            collectFormDesignerFieldProps(listOfMap(component.get("children")), byCode);
+        }
+    }
+
+    private void mergeMissingDesignerProps(Map<String, Object> basicProps, Map<String, Object> designerProps) {
+        if (basicProps == null || designerProps == null || designerProps.isEmpty()) {
+            return;
+        }
+        for (String key : List.of(
+                "optionSource", "options", "dictType", "labelValueField", "fieldMappings", "mappings",
+                "cascade", "cascadeConfig", "referenceObjectCode", "referenceDisplayField", "referenceValueField",
+                "recordSelector", "multiple", "clearable", "filterable", "placeholder", "defaultValue",
+                "checkedValue", "uncheckedValue", "runtimeRules")) {
+            if (basicProps.get(key) == null && designerProps.get(key) != null) {
+                basicProps.put(key, designerProps.get(key));
+            }
+        }
+        if (basicProps.get("optionSource") instanceof Map<?, ?>) {
+            basicProps.remove("options");
+        }
     }
 
     private void syncInlineEditRefsToEditZone(LowcodePageSchema pageSchema,

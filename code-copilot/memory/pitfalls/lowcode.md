@@ -143,6 +143,19 @@
 **解决方案**:
 主表单跳过 `scope=child` 和 `__` 子表字段引用，子表只走 `childrenConfig`。编辑 schema 一律去掉子表字段引用，列表 columns 保留。流程模型的表单权限目录来自应用页面表单资产，不是运行时 `editSchema`；明细表字段在 `subTable.props.columns`。同一张子表会同时出现关系键和带应用前缀的对象编码（`detail_ujpc` / `cgou_detail_ujpc`），权限面板必须收成一套，审批回放按别名匹配，不能因为业务流程 formKey 和节点 formKey 写法不同就把节点权限清空。字段「可编辑」必须能改已有子表行，不能再被行级 `allowUpdate=false` 盖掉。带子表时节点 `formFieldPermissions` 是 JSON 对象字符串，不能按数组解析，否则 `fields` 整段丢失，暂存会报「不允许编辑子表字段」。主从表单据的字段在 `main` 里，审批标题不能只扫记录最外层，否则 `${fieldInput}` 不会被替换。结束回调用快照 `configKey` 回退草稿配置写 `flowStatus`；关联已结束时仍补写一次。列表设计字段面板要按主表/子表分组；选出的子表列不能被 `listVisible=false` 从表格区滤掉。列表默认按外键把子表聚合成一行再 LEFT JOIN，避免一对多把主表行乘开、分页主键重复。用户可在「子表行展示」里改成拆成多条；拆行时表格行键用 `__listRowKey`，编辑和删除仍按主表主键，批量删除要先去重。
 
+## 表单设计器把子表列写进主对象字段目录会重复堆积
+
+**发现日期**: 2026-09-24
+
+**问题描述**:
+`resolveFormAssetFields` 为列表选列合成 `relationKey__childField`，并标 `fieldScope=child`。表单设计器货架 `activeFormFields` 把这批合成列与主对象字段目录 merge 后，又原样交给 `buildBusinessObjectDesignerPayloadFromFormAsset` 保存。后端 `normalizeFieldCode` 把 `oa_kpi_template_detail__indicatorId` 压成 `oaKpiTemplateDetailIndicatorid` 写入主对象。删除画布 subTable 不会清掉这些脏字段；再拖一次子表又生成 `__` 合成列，与已扁平化的脏编码撞车，保存报「字段编码不能重复」。字段资产左侧也会看到同一个 `indicatorId` 越积越多。另：子表运行态下拉依赖子对象字段 `basicProps.optionSource`，明细页本身读 formDesignerSchema 正常，被主表引用为 subTable 时若注册表未回写 optionSource，下拉为空。
+
+**解决方案**:
+1. `filterPrimaryObjectDesignerFields` / `isChildScopedFormFieldAsset`：表单货架与保存载荷剔除 `fieldScope=child`、含 `__` 的合成列，并按后端同规则扁平化后剔除历史脏编码（大小写不敏感）。
+2. `buildBusinessObjectDesignerPayloadFromFormAsset` 保存前再滤一遍；后端 `normalizeFields` 直接跳过含 `__` 的 fieldCode。
+3. `BusinessObjectRelationProjector` 投影子表 modelRef 时，从子对象 `designerOptions.formDesignerSchema` 补齐 `optionSource` 等到 `basicProps`，保证 masterDetailConfig / 审批 childrenConfig 与明细页下拉一致。
+4. 已污染库：带上子表再保存一次（无列数据时字段守卫会删掉脏主表列）；或手动从「未使用」字段资产删除。
+
 ## 子表运行时单元格不能把 class 落到 AiFormItem 碎片根上
 
 **发现日期**: 2026-09-18

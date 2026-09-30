@@ -279,19 +279,26 @@ public class BusinessApplicationPageDesignService {
     }
 
     private List<BusinessFieldDTO> normalizeFields(List<BusinessFieldDTO> fields) {
-        List<BusinessFieldDTO> normalized = (fields == null ? List.<BusinessFieldDTO>of() : fields).stream()
-                .filter(field -> field != null
-                        && !Boolean.TRUE.equals(field.getSystemField())
-                        && StringUtils.isNotBlank(field.getFieldCode()))
-                .toList();
+        List<BusinessFieldDTO> normalized = new ArrayList<>();
         Set<String> codes = new LinkedHashSet<>();
-        for (BusinessFieldDTO field : normalized) {
+        for (BusinessFieldDTO field : (fields == null ? List.<BusinessFieldDTO>of() : fields)) {
+            if (field == null || Boolean.TRUE.equals(field.getSystemField())
+                    || StringUtils.isBlank(field.getFieldCode())) {
+                continue;
+            }
+            String originalCode = StringUtils.trimToEmpty(field.getFieldCode());
+            // 子表列引用（model__field）禁止写入主对象字段目录
+            if (originalCode.contains("__")) {
+                log.warn("[页面设计] 跳过子表合成字段，禁止写入主对象: {}", originalCode);
+                continue;
+            }
             field.setFieldCode(namingService.normalizeFieldCode(field.getFieldCode(), field.getFieldName()));
             field.setColumnName(namingService.camelToSnake(
                     StringUtils.defaultIfBlank(field.getColumnName(), field.getFieldCode())));
             if (!codes.add(field.getFieldCode())) {
                 throw new BusinessException("字段编码不能重复: " + field.getFieldCode());
             }
+            normalized.add(field);
         }
         return normalized;
     }

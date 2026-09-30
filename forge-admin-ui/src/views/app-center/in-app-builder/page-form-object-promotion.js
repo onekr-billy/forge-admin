@@ -1,13 +1,120 @@
+import { isChildListField } from '@/components/lowcode-builder/page/page-schema-fields'
 import { buildAutoFieldAssets } from '@/views/app-center/components/designer/form-first/autoFieldRegistry'
 import { normalizeFormDesignerSchema } from '@/views/app-center/components/designer/form-first/formDesignerSchema'
 
 export function buildBusinessObjectDesignerPayloadFromFormAsset(asset = {}, existingFields = []) {
   const formDesignerSchema = normalizeFormDesignerSchema(asset.formDesignerSchema || asset.schema || {})
-  const fields = buildAutoFieldAssets(formDesignerSchema, existingFields).fields.map(toBusinessFieldPayload)
+  // 子表列（model__field / fieldScope=child）只服务列表选列，绝不能写进主对象字段目录；
+  // 否则删了再拖子表会把同一列以「扁平编码」反复入库，保存时报字段编码重复。
+  const subTableChildCodes = collectSubTableQualifiedFieldCodes(formDesignerSchema)
+  const primaryExisting = filterPrimaryObjectDesignerFields(existingFields, subTableChildCodes)
+  const fields = buildAutoFieldAssets(formDesignerSchema, primaryExisting).fields
+    .filter(field => !isChildScopedFormFieldAsset(field))
+    .map(toBusinessFieldPayload)
   return {
     fields,
     formDesignerSchema,
   }
+}
+
+/**
+ * 表单设计器字段资产 / 保存载荷用的主对象字段过滤。
+ * 同时丢掉历史上被错误提升进来的扁平编码（与当前子表列 normalize 后同码）。
+ * @param {unknown[]} fields
+ * @param {string[]} [extraChildCodes] 额外的子表合成编码（如当前画布 subTable 列），即使 fields 里已被剔掉也要参与扁平码比对
+ */
+export function filterPrimaryObjectDesignerFields(fields = [], extraChildCodes = []) {
+  const list = Array.isArray(fields) ? fields : []
+  const promotedFlatCodes = collectPromotedChildFlatCodes(list)
+  for (const raw of (Array.isArray(extraChildCodes) ? extraChildCodes : [])) {
+    const code = String(raw || '').trim()
+    if (!code)
+      continue
+    promotedFlatCodes.add(code.toLowerCase())
+    promotedFlatCodes.add(flattenFieldCodeLikeBackend(code).toLowerCase())
+  }
+  return list.filter((field) => {
+    if (isChildScopedFormFieldAsset(field))
+      return false
+    const code = String(field?.fieldCode || field?.field || '').trim()
+    if (!code)
+      return false
+    // 大小写不敏感：__ 扁平化会把 IndicatorId 收成 Indicatorid，脏数据里也可能保留原驼峰
+    return !promotedFlatCodes.has(code.toLowerCase())
+  })
+}
+
+/** 子表明细列或带 model__field 的合成字段，禁止当作主表字段资产 */
+export function isChildScopedFormFieldAsset(field = {}) {
+  if (!field || typeof field !== 'object')
+    return false
+  if (field.fieldScope === 'child' || field.scope === 'child')
+    return true
+  if (isChildListField(field))
+    return true
+  const code = String(field.field || field.fieldCode || '').trim()
+  return code.includes('__')
+}
+
+/**
+ * 收集子表合成字段编码，以及其按后端 normalizeFieldCode 近似扁平化后的编码，
+ * 用于剔除「oa_kpi_xxx__indicatorId → oaKpiXxxIndicatorid」这类脏主表字段。
+ */
+function collectPromotedChildFlatCodes(fields = []) {
+  const codes = new Set()
+  for (const field of fields) {
+    if (!isChildScopedFormFieldAsset(field))
+      continue
+    const raw = String(field.fieldCode || field.field || '').trim()
+    if (!raw)
+      continue
+    codes.add(raw.toLowerCase())
+    codes.add(flattenFieldCodeLikeBackend(raw).toLowerCase())
+  }
+  return codes
+}
+
+/** 对齐 BusinessNamingService.normalizeFieldCode：按下划线切词再转 lowerCamel */
+function flattenFieldCodeLikeBackend(value = '') {
+  const source = String(value || '').trim()
+  if (!source)
+    return ''
+  const words = source.includes('_') ? source.split('_') : [source]
+  let result = ''
+  for (const word of words) {
+    const normalized = String(word || '').replace(/[^A-Za-z0-9]/g, '').toLowerCase()
+    if (!normalized)
+      continue
+    result = result.length === 0
+      ? normalized
+      : result + normalized.charAt(0).toUpperCase() + normalized.slice(1)
+  }
+  return result || 'field'
+}
+
+/** 从画布 subTable 列收集 model__field 合成编码 */
+function collectSubTableQualifiedFieldCodes(schema = {}) {
+  const codes = []
+  const walk = (components = []) => {
+    ;(Array.isArray(components) ? components : []).forEach((component) => {
+      if (!component || typeof component !== 'object')
+        return
+      const key = String(component.componentKey || component.type || '').trim()
+      if (key === 'subTable' || key === 'forgeSubTable' || key === 'childTable') {
+        const props = component.props && typeof component.props === 'object' ? component.props : {}
+        const relationKey = String(props.relationKey || props.modelCode || component.fieldBinding?.fieldCode || '').trim()
+        const columns = Array.isArray(props.columns) ? props.columns : []
+        columns.forEach((column) => {
+          const childCode = String(column?.fieldCode || column?.field || column?.key || column?.value || '').trim()
+          if (relationKey && childCode)
+            codes.push(`${relationKey}__${childCode}`)
+        })
+      }
+      walk(component.children)
+    })
+  }
+  walk(schema.components)
+  return codes
 }
 
 export function syncFormBoundFieldRefs({ formFieldCodes = [], searchFieldRefs = [] } = {}) {

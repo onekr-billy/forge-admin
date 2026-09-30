@@ -169,4 +169,73 @@ describe('page form object promotion', () => {
       }),
     ])
   })
+
+  it('excludes child-scoped and model__field assets from the primary object designer payload', () => {
+    const payload = buildBusinessObjectDesignerPayloadFromFormAsset({
+      id: 'form_main',
+      name: '主表',
+      formDesignerSchema: {
+        formKey: 'main_form',
+        components: [{
+          id: 'cmp_name',
+          componentKey: 'input',
+          label: '名称',
+          fieldBinding: { mode: 'field', fieldCode: 'templateName', createIfMissing: true },
+        }, {
+          id: 'cmp_sub',
+          componentKey: 'subTable',
+          label: '考核指标',
+          fieldBinding: { mode: 'virtual', fieldCode: '' },
+          props: {
+            modelCode: 'oa_kpi_template_detail',
+            relationKey: 'oa_kpi_template_detail',
+            columns: [
+              { fieldCode: 'indicatorId', label: '指标' },
+              { fieldCode: 'weight', label: '权重' },
+            ],
+          },
+        }],
+      },
+    }, [
+      { fieldCode: 'templateName', fieldName: '名称' },
+      {
+        fieldCode: 'oa_kpi_template_detail__indicatorId',
+        fieldName: '指标',
+        sourceField: 'indicatorId',
+        fieldScope: 'child',
+      },
+      {
+        fieldCode: 'oaKpiTemplateDetailIndicatorid',
+        fieldName: '指标',
+      },
+    ])
+
+    expect(payload.fields.map(field => field.fieldCode)).toEqual(['templateName'])
+  })
+
+  it('also drops previously promoted camelCase clones of child fields', () => {
+    const payload = buildBusinessObjectDesignerPayloadFromFormAsset({
+      id: 'form_main',
+      name: '主表',
+      formDesignerSchema: {
+        formKey: 'main_form',
+        components: [{
+          id: 'cmp_name',
+          componentKey: 'input',
+          label: '名称',
+          fieldBinding: { mode: 'field', fieldCode: 'templateName', createIfMissing: true },
+        }],
+      },
+    }, [
+      { fieldCode: 'templateName', fieldName: '名称' },
+      {
+        fieldCode: 'oa_kpi_template_detail__indicatorId',
+        sourceField: 'indicatorId',
+        fieldScope: 'child',
+      },
+      { fieldCode: 'oaKpiTemplateDetailIndicatorId', fieldName: '指标' },
+    ])
+
+    expect(payload.fields.map(field => field.fieldCode)).toEqual(['templateName'])
+  })
 })

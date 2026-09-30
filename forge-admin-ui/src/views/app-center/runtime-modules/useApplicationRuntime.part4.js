@@ -795,6 +795,7 @@ export function applyApplicationRuntimePart4(deps = {}) {
     }
     const designer = buildBusinessObjectDesignerPayloadFromFormAsset(
       activeFormAsset.value,
+      // activeFormFields 已剔除子表合成列；再滤系统字段后写主对象目录
       activeFormFields.value.filter(field => field?.systemField !== true),
     )
     if (!designer.fields.length) {
