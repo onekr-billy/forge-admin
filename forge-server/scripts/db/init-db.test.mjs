@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
@@ -65,4 +66,93 @@ test('帮助使用当前 SQL 路径且不连接数据库', () => {
   assert.equal(result.status, 0, result.stdout + result.stderr)
   assert.match(result.stdout, /db\/全量初始化SQL\.sql/)
   assert.doesNotMatch(result.stdout, /MYSQL_STUB_CALLED|forge-admin-server\/sql/)
+})
+
+// 按 SQL 内容应答的 MySQL 桩：记录每次调用，information_schema 表数量由 TABLE_COUNT 控制
+function runWithRecorder(args, { tableCount = 0, dir = scriptDir } = {}) {
+  const tmp = mkdtempSync(path.join(tmpdir(), 'forge-init-db-'))
+  const log = path.join(tmp, 'calls.log')
+  const script = source.replace(/^SCRIPT_DIR=.*$/m, `SCRIPT_DIR=${JSON.stringify(dir)}`)
+  const result = spawnSync('bash', ['--noprofile', '--norc', '-c', `
+mysql() {
+  local q="" a
+  for a in "$@"; do case "$a" in --execute=*) q="\${a#--execute=}" ;; esac; done
+  printf 'MYSQL %s\\n' "$q" | tr '\\n' ' ' >> ${JSON.stringify(log)}; echo >> ${JSON.stringify(log)}
+  case "$q" in
+    *"VERSION()"*) echo "8.0.36" ;;
+    *information_schema.tables*) echo "${tableCount}" ;;
+    "") cat > /dev/null ;;
+  esac
+}
+mvn() { printf 'MVN %s\\n' "$*" >> ${JSON.stringify(log)}; }
+${script}
+`, 'init-db-test', ...args], {
+    encoding: 'utf8', timeout: 30000,
+    env: { ...process.env, BASH_ENV: '', ENV: '' },
+  })
+  const calls = existsSync(log) ? readFileSync(log, 'utf8') : ''
+  return { result, calls }
+}
+
+test('非空库拒绝重复导入全量 SQL', () => {
+  const { result, calls } = runWithRecorder([], { tableCount: 12 })
+  assert.equal(result.status, 1, result.stdout + result.stderr)
+  assert.match(result.stderr, /已有 12 张表.*--recreate/)
+  assert.doesNotMatch(calls, /DROP DATABASE/)
+  assert.doesNotMatch(result.stdout, /initialization completed/)
+})
+
+test('--recreate --yes 先删库再导入', () => {
+  const { result, calls } = runWithRecorder(['--recreate', '--yes'])
+  assert.equal(result.status, 0, result.stdout + result.stderr)
+  const dropAt = calls.indexOf('DROP DATABASE IF EXISTS `forge_admin`')
+  const createAt = calls.indexOf('CREATE DATABASE IF NOT EXISTS `forge_admin`')
+  assert.ok(dropAt >= 0 && createAt > dropAt, calls)
+  assert.match(result.stdout, /Running .*db\/全量初始化SQL\.sql/)
+})
+
+test('--clean 不能与 --with-demo 同时使用，且不连接数据库', () => {
+  const { result, calls } = runWithRecorder(['--clean', '--with-demo'])
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /--with-demo/)
+  assert.equal(calls, '')
+})
+
+test('--migrate 在全量与 seed 之后调用独立 Flyway 执行器', () => {
+  const { result, calls } = runWithRecorder(['--migrate', '--database', 'demo_db', '--port', '3307'])
+  assert.equal(result.status, 0, result.stdout + result.stderr)
+  assert.match(calls, /MVN -q -B -f .*scripts\/db\/flyway\/pom\.xml flyway:migrate/)
+  assert.match(calls, /-Dforge\.db\.url=jdbc:mysql:\/\/127\.0\.0\.1:3307\/demo_db\?/)
+  assert.match(calls, /-Dforge\.migration\.dir=.*\/db\/migration/)
+  assert.ok(result.stdout.indexOf('全量初始化SQL') < result.stdout.indexOf('Running Flyway'), result.stdout)
+})
+
+test('缺少 Maven 时 --migrate 在连接数据库前给出替代方案', () => {
+  const result = spawnSync('bash', ['--noprofile', '--norc', '-c', `
+mysql() { printf 'MYSQL_STUB_CALLED\\n'; }
+${source}
+`, 'init-db-test', '--migrate'], {
+    encoding: 'utf8', timeout: 30000,
+    env: { ...process.env, BASH_ENV: '', ENV: '', PATH: '/usr/bin:/bin' },
+  })
+  assert.equal(result.status, 1, result.stdout + result.stderr)
+  assert.match(result.stderr, /需要 Maven.*clean-db\.sh --execute/)
+  assert.doesNotMatch(result.stdout, /MYSQL_STUB_CALLED/)
+})
+
+test('--clean 执行增量后调用 clean-db.sh 并透传参数', () => {
+  const fakeDir = mkdtempSync(path.join(tmpdir(), 'forge-fake-scripts-'))
+  const cleanLog = path.join(fakeDir, 'clean.log')
+  writeFileSync(path.join(fakeDir, 'clean-db.sh'),
+    `printf 'CLEAN %s PWD=%s\\n' "$*" "$MYSQL_PWD" > ${JSON.stringify(cleanLog)}\n`)
+  const { result, calls } = runWithRecorder(
+    ['--clean', '--yes', '--password', 'p@ss', '--clean-arg', '--admin-username', '--clean-arg', 'root_admin'],
+    { dir: fakeDir },
+  )
+  assert.equal(result.status, 0, result.stdout + result.stderr)
+  assert.match(calls, /MVN .*flyway:migrate/)
+  const cleanCall = readFileSync(cleanLog, 'utf8')
+  assert.match(cleanCall, /--database forge_admin/)
+  assert.match(cleanCall, /--execute --yes --admin-username root_admin/)
+  assert.match(cleanCall, /PWD=p@ss/)
 })

@@ -386,3 +386,14 @@ Table 'forge_admin_test.sys_data_scope_config' doesn't exist
 - 超级管理员也把当前 Session 租户当作工作区，SQL 按该租户隔离。
 - 平台表（如 `sys_tenant`）继续走 ignoreTables；跨租户绑定只留在租户管理和用户高级关系。
 - 登录页和顶栏仅在可切换租户数 > 1 时展示选择器。
+
+## 初始化 SQL 不能从开发库直接导出存储凭据
+
+**发现日期**: 2026-09-30
+
+**问题描述**:
+`全量初始化SQL.sql` 和 `docker-forge-admin/init-sql/01-init.sql` 的 `sys_file_storage_config` 带着一条腾讯 COS 配置，里面有真实 SecretId/SecretKey。测试数据里的预签名 URL（`ai_report_project`、`sys_file_metadata`）也带着 `q-ak=AKID...`。
+
+**解决方案**:
+- 初始化 SQL 只保留本地存储 `local`，凭据字段为 NULL；泄露过的密钥必须到云控制台轮换，只删文件不够，git 历史仍在。
+- 从开发库重新导出全量 SQL 后，先搜 `AKID`、`LTAI`、`sk-`、`secret` 再提交。

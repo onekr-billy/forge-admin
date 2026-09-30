@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  独立 Flyway 执行器：不启动 forge-admin-server 也能执行 db/migration 增量脚本。
+  版本与表名、基线配置必须和 forge-admin-server 的 spring.flyway 保持一致，否则启动时校验和对不上。
+  不属于 forge-server 反应堆模块，由 scripts/db/init-db.sh 调用：
+    FORGE_DB_PASSWORD=*** mvn -q -f forge-server/scripts/db/flyway/pom.xml flyway:migrate \
+      -Dforge.db.url=jdbc:mysql://127.0.0.1:3306/forge_admin -Dforge.db.user=root
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.mdframe.forge</groupId>
+    <artifactId>forge-db-flyway-runner</artifactId>
+    <version>1.0.0</version>
+    <packaging>pom</packaging>
+
+    <properties>
+        <!-- 与 forge-server/pom.xml 的 flyway.version、Spring Boot 管理的 MySQL 驱动版本对齐 -->
+        <flyway.version>10.20.1</flyway.version>
+        <mysql-connector.version>9.6.0</mysql-connector.version>
+        <forge.db.url>jdbc:mysql://127.0.0.1:3306/forge_admin</forge.db.url>
+        <forge.db.user>root</forge.db.user>
+        <forge.migration.dir>${project.basedir}/../../../db/migration</forge.migration.dir>
+    </properties>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.flywaydb</groupId>
+                <artifactId>flyway-maven-plugin</artifactId>
+                <version>${flyway.version}</version>
+                <configuration>
+                    <url>${forge.db.url}</url>
+                    <user>${forge.db.user}</user>
+                    <password>${env.FORGE_DB_PASSWORD}</password>
+                    <locations>
+                        <location>filesystem:${forge.migration.dir}</location>
+                    </locations>
+                    <table>forge_schema_history</table>
+                    <baselineOnMigrate>true</baselineOnMigrate>
+                    <baselineVersion>1.0.0</baselineVersion>
+                    <placeholderReplacement>false</placeholderReplacement>
+                    <failOnMissingLocations>true</failOnMissingLocations>
+                </configuration>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.flywaydb</groupId>
+                        <artifactId>flyway-mysql</artifactId>
+                        <version>${flyway.version}</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>com.mysql</groupId>
+                        <artifactId>mysql-connector-j</artifactId>
+                        <version>${mysql-connector.version}</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
+        </plugins>
+    </build>
+</project>

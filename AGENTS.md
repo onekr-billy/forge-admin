@@ -107,7 +107,7 @@ pnpm lint:fix
 - **最小必要原则**：只读取本轮任务需要的 Skill；多个 Skill 同时适用时按任务链路排序读取，避免无关上下文污染判断。
 - **Forge 编码类任务默认遵循本文件第 5 章关键约定**；需要更细规范时继续读取 `code-copilot/rules/coding-style.md` 和 `forge-docs/guide/conventions.md`。若当前环境额外暴露用户级 `forge-coding-standards` Skill，可作为补充，但不得替代本文件和项目级 `.agents/skills/`。
 - **前端 UI/交互/样式变更必须先读取 `forge-admin-ui/DESIGN.md`**，遵循其中的界面设计、公共组件、列表卡片、按钮操作区和禁用项规范；涉及 `/flow/model` 或同类资产卡片时，必须遵循其“流程/资产卡片列表规范”，禁止左侧装饰色条、随机彩色图标块和营销化发布图标。
-- **CRUD 代码生成/审查优先使用 `.agents/skills/forge-codegen-crud/SKILL.md`**；流程业务开发/审查优先使用 `.agents/skills/forge-business-flow-development/SKILL.md`。
+- **CRUD 代码生成/审查优先使用 `.agents/skills/forge-codegen-crud/SKILL.md`**；流程业务开发/审查优先使用 `.agents/skills/forge-business-flow-development/SKILL.md`；基于本模板初始化新项目或重置干净数据库使用 `.agents/skills/forge-project-init/SKILL.md`。
 - **Skill 规范优先级**：`AGENTS.md` > 当前变更 `spec.md` > `.agents/skills/*/SKILL.md` > `code-copilot/rules/*` > 其它参考文档。若 Skill 与本文件冲突，以本文件为准。
 
 ---

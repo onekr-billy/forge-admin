@@ -59,7 +59,49 @@ bash forge-server/scripts/db/init-db.sh \
 2. 执行 forge-server/db/全量初始化SQL.sql
 3. 执行 forge-server/db/seed/required/*.sql
 
-表结构增量变更由主后台服务启动时的 Flyway 执行 `forge-server/db/migration`。
+表结构增量变更由主后台服务启动时的 Flyway 执行 `forge-server/db/migration`。加 `--migrate` 可以在脚本里直接执行增量（需要 Maven），效果与后端启动时相同。
+
+说明：
+
+- 密码建议用 `MYSQL_PWD=*** bash ...` 传入。脚本内部通过临时 defaults 文件把密码交给 mysql，不会出现在进程参数里。
+- 全量 SQL 只能导入空库。库里已经有表时脚本会直接失败；要重建请加 `--recreate`，执行前会要求输入库名确认。
+
+  ---
+3.1 初始化一个干净的模板库（新项目推荐）
+
+```bash
+MYSQL_PWD=your_password bash forge-server/scripts/db/init-db.sh \
+  --database my_project --recreate --clean
+```
+
+依次执行：重建库 → 全量 SQL → required seed → Flyway 增量 → `clean-db.sh` 清理。最终只保留：
+
+- 默认租户、超级管理员 admin（含角色和根组织）；
+- 菜单权限、字典、系统参数、行政区划、定时任务配置、内置模板；
+- `forge_schema_history`，后续新增的迁移会继续增量执行。
+
+日志、流程、低代码应用及其自动建的表、测试用户/租户/组织/角色、报表、AI 配置、文件记录都会被清空。
+
+没有 Maven 时，分两步做：
+
+1. `init-db.sh --recreate` 导入后，启动一次 admin，让 Flyway 执行增量；
+2. 再清理：
+
+```bash
+MYSQL_PWD=your_password bash forge-server/scripts/db/clean-db.sh --database my_project           # 预览
+MYSQL_PWD=your_password bash forge-server/scripts/db/clean-db.sh --database my_project --execute # 执行
+```
+
+注意：
+
+- 清理必须在增量之后。部分迁移脚本会写入演示数据，先清理再迁移，数据会被写回来。增量没执行完时 `clean-db.sh` 会拒绝执行。
+- `clean-db.sh` 是物理删除，只能用于模板库或开发库。执行前可以加 `--backup-file backup.sql` 先备份。
+- 其它常用参数：
+  - `--keep-table` 保护指定表；
+  - `--keep-business-tables` 让业务表只清空不删除；
+  - `--extra-sql` 追加项目自定义清理 SQL；
+  - `--print-sql` 查看完整 SQL。
+- 通过 `init-db.sh` 传给 `clean-db.sh` 的参数，用 `--clean-arg` 逐个透传。
 
   ---
 4. 如果需要导入演示数据
@@ -359,6 +401,14 @@ bash forge-server/scripts/db/init-db.sh \
 --user root \
 --password your_password \
 --with-demo
+
+初始化干净模板库（全量 + 增量 + 清理）
+
+MYSQL_PWD=your_password bash forge-server/scripts/db/init-db.sh --database my_project --recreate --clean
+
+预览模板库清理结果
+
+MYSQL_PWD=your_password bash forge-server/scripts/db/clean-db.sh --database my_project
 
 社区导出 dry-run
 

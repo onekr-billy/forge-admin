@@ -32,7 +32,7 @@
       ]
     },
     "full": {
-      "description": "全量能力：保留当前 Forge 后端所有子模块和两个前端工程。",
+      "description": "全量能力：保留当前 Forge 后端所有子模块、管理端/报表端/H5 三个前端工程和 Docker 部署编排。",
       "roots": [
         "admin-server",
         "report-server",
@@ -53,7 +53,9 @@
         "plugin-ai",
         "plugin-external",
         "plugin-data",
-        "starter-idempotent"
+        "starter-idempotent",
+        "h5-ui",
+        "docker"
       ]
     }
   },
@@ -564,6 +566,23 @@
       "type": "frontend",
       "path": "forge-report-ui",
       "dependencies": []
+    },
+    "h5-ui": {
+      "type": "frontend",
+      "path": "forge-h5-ui",
+      "dependencies": [
+        "app-server",
+        "flow-server"
+      ]
+    },
+    "docker": {
+      "type": "deploy",
+      "path": "docker-forge-admin",
+      "dependencies": [
+        "admin-server",
+        "flow-server",
+        "admin-ui"
+      ]
     }
   }
 }

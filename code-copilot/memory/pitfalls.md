@@ -295,7 +295,7 @@
 - 打印执行事件新增枚举必须同步 Jackson/DTO/Mapper/字典
 - 打印 style 不能用封闭白名单拦展示属性
 
-### [安全 / 加密 / 租户 / 鉴权](pitfalls/security.md)（19）
+### [安全 / 加密 / 租户 / 鉴权](pitfalls/security.md)（20）
 
 - 多租户拦截器会破坏 LIMIT 1 FOR UPDATE 顺序
 - 登录密码 RSA 不能复用通用 API 传输加密开关
@@ -316,8 +316,9 @@
 - 159. REQUIRES_NEW 建单后外层 REPEATABLE_READ 可能仍看不到新记录
 - 171. 动作路径 `record.*` 的单测必须构造服务端权威记录上下文
 - 超级管理员不能全局忽略租户隔离
+- 初始化 SQL 不能从开发库直接导出存储凭据
 
-### [数据库 / Flyway / 索引](pitfalls/db-flyway.md)（12）
+### [数据库 / Flyway / 索引](pitfalls/db-flyway.md)（15）
 
 - 15. Flyway 已执行版本脚本不能二次修改
 - 23. 菜单活跃项函数签名不一致导致选中状态停留
@@ -331,6 +332,9 @@
 - 179. 逻辑删除业务键回填去重必须与最终唯一索引使用相同维度
 - 企业协同连接根的 client_id/client_secret 不能继续 NOT NULL
 - 共享库已执行的高版本 Flyway 脚本必须原样出现在当前分支
+- 模板库清理必须在 Flyway 增量之后执行
+- macOS bash 3.2 会把变量后紧跟的中文字符当成变量名
+- docker 初始化 SQL 与全量 SQL 漂移
 
 ### [能力开放 / MCP / 动作发布](pitfalls/capability.md)（26）
 
@@ -361,4 +365,4 @@
 - 157. 桌面常驻属性面板不能用移动端抽屉显隐状态判断是否保存
 - 158. 低代码业务字段编码不能被当作同名物理列
 
-合计 275 条。
+合计 279 条。

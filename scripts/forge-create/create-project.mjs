@@ -60,7 +60,13 @@ const ignoredFileNames = new Set([
   '.flattened-pom.xml',
 ])
 
-const ignoredTemplatePathPrefixes = []
+// 模板自身历史（变更记录含已归档、已并入全量 SQL 的旧迁移归档、社区导出产物）和本机 docker 密钥文件不带入新项目
+const ignoredTemplatePathPrefixes = [
+  'code-copilot/changes',
+  'forge-server/db/backup',
+  'forge-server/db/community-export',
+  'docker-forge-admin/.env',
+]
 
 const projectContextNames = [
   'AGENTS.md',
@@ -126,6 +132,12 @@ async function main() {
   if (selection.frontendIds.has('report-ui')) {
     await copyProjectDir(path.join(repoRoot, 'forge-report-ui'), path.join(outputRoot, `${options.projectName}-report-ui`))
   }
+  if (selection.frontendIds.has('h5-ui')) {
+    await copyProjectDir(path.join(repoRoot, 'forge-h5-ui'), path.join(outputRoot, `${options.projectName}-h5-ui`))
+  }
+  if (selection.deployIds.has('docker')) {
+    await copyProjectDir(path.join(repoRoot, 'docker-forge-admin'), path.join(outputRoot, dockerDirName(options)))
+  }
 
   await copyOptionalRootFiles(outputRoot)
   await copyProjectContextFiles(outputRoot)
@@ -134,12 +146,22 @@ async function main() {
   const replacements = buildTextReplacements(artifactMap, applicationClassMap, options, selection)
   const hasReportUi = selection?.frontendIds?.has('report-ui')
   await rewriteTextFiles(outputRoot, replacements, hasReportUi)
+  if (selection.deployIds.has('docker')) {
+    await rewriteDockerDeploy(path.join(outputRoot, dockerDirName(options)), options)
+  }
   await moveJavaPackageDirectories(outputRoot, 'com.mdframe.forge', options.basePackage)
   await renameFilesByBasename(outputRoot, applicationClassMap, '.java')
   await renameArtifactDirectories(serverRoot, artifactMap)
   await writeSelectedSqlBundle(serverRoot, catalog, selection, replacements, options)
   if (options.excludeLogData) {
     await stripLogSeedData(path.join(serverRoot, 'db/全量初始化SQL.sql'), options.javaName)
+  }
+  if (selection.deployIds.has('docker')) {
+    // docker 首次建库必须与 db/全量初始化SQL.sql 同源，避免两份 SQL 漂移
+    await fs.copyFile(
+      path.join(serverRoot, 'db/全量初始化SQL.sql'),
+      path.join(outputRoot, dockerDirName(options), 'init-sql/01-init.sql'),
+    )
   }
 
   printSummary(outputRoot, options, selection, catalog, adminServerArtifactId)
@@ -298,20 +320,21 @@ function resolveSelection(catalog, presetName, includeModuleIds = []) {
   const preset = catalog.presets[presetName]
   const selectedModuleIds = new Set()
   const frontendIds = new Set()
+  const deployIds = new Set()
 
+  // 前端和部署目录不进 Maven 模块集合，但要带上它们依赖的后端服务（如 H5 依赖 app-server）
   const visit = (moduleId) => {
     const moduleInfo = catalog.modules[moduleId]
     if (!moduleInfo) {
       throw new Error(`模块清单缺少定义：${moduleId}`)
     }
-    if (moduleInfo.type === 'frontend') {
-      frontendIds.add(moduleId)
+    const bucket = moduleInfo.type === 'frontend'
+      ? frontendIds
+      : moduleInfo.type === 'deploy' ? deployIds : selectedModuleIds
+    if (bucket.has(moduleId)) {
       return
     }
-    if (selectedModuleIds.has(moduleId)) {
-      return
-    }
-    selectedModuleIds.add(moduleId)
+    bucket.add(moduleId)
     for (const dependency of moduleInfo.dependencies || []) {
       visit(dependency)
     }
@@ -328,6 +351,7 @@ function resolveSelection(catalog, presetName, includeModuleIds = []) {
     presetName,
     selectedModuleIds,
     frontendIds,
+    deployIds,
   }
 }
 
@@ -691,7 +715,20 @@ function buildTextReplacements(artifactMap, applicationClassMap, options, select
   const reportPath = `/${options.projectName}-report`
   const hasReportUi = selection?.frontendIds?.has('report-ui')
   
+  // H5 的客户端 ID 同时出现在前端 .env 和全量 SQL 的 sys_client 中，必须一起改；
+  // 且要先于 VITE_PUBLIC_PATH=/forge 等前缀替换，否则 /forge-h5 会被截成 /-h5
+  const h5Replacements = selection?.frontendIds?.has('h5-ui')
+    ? [
+        ['forge-h5-ui', `${options.projectName}-h5-ui`],
+        ['/forge-h5', `/${options.projectName}-h5`],
+        ['forge_h5', `${snakeName}_h5`],
+      ]
+    : []
+
   const replacements = [
+    // 必须先于 forge-admin/、forge-admin 等通用替换，否则会被改成 docker-<artifact>-server
+    ['docker-forge-admin', dockerDirName(options)],
+    ...h5Replacements,
     ['com.mdframe.forge', options.basePackage],
     ['com/mdframe/forge', options.basePackage.replaceAll('.', '/')],
     ['Forge AI', options.javaName],
@@ -935,6 +972,47 @@ async function renameArtifactDirectories(serverRoot, artifactMap) {
   }
 }
 
+function dockerDirName(options) {
+  return `docker-${options.projectName}`
+}
+
+// 模板 docker 写死了 /forge/ 公开路径和 /forge-api/ 前缀，生成后必须与管理端 .env.production 的替换结果一致
+async function rewriteDockerDeploy(dockerRoot, options) {
+  const base = `/${String(options.adminPublicPath || '/').replace(/^\/+|\/+$/g, '')}`.replace(/^\/$/, '')
+  const publicPath = `${base}/`
+  const apiPrefix = `/${String(options.adminApiPrefix || '/api').replace(/^\/+|\/+$/g, '')}`
+  const serverDirName = `${options.artifactPrefix}-server`
+  const common = [
+    ['forge-mysql', `${options.projectName}-mysql`],
+    ['forge-redis', `${options.projectName}-redis`],
+    ['forge-network', `${options.projectName}-network`],
+    ['forge-ui', `${options.projectName}-ui`],
+  ]
+  const perFile = {
+    'nginx.conf': [
+      ['/forge/assets/', `${publicPath}assets/`],
+      ['location /forge/ {', `location ${publicPath} {`],
+      ['/forge/index.html', `${publicPath}index.html`],
+      ['/forge-api/', `${apiPrefix}/`],
+    ],
+    'Dockerfile.ui': [['/usr/share/nginx/html/forge', `/usr/share/nginx/html${base}`]],
+    'Dockerfile.admin': [['COPY ./forge-server .', `COPY ./${serverDirName} .`]],
+    'Dockerfile.flow': [['COPY ./forge-server .', `COPY ./${serverDirName} .`]],
+    'docker-compose.yml': [['http://localhost/forge', `http://localhost${publicPath}`]],
+  }
+  for (const [fileName, fileReplacements] of Object.entries(perFile)) {
+    const file = path.join(dockerRoot, fileName)
+    if (!(await exists(file))) {
+      continue
+    }
+    const content = await fs.readFile(file, 'utf8')
+    const nextContent = applyTextReplacements(content, [...fileReplacements, ...common])
+    if (nextContent !== content) {
+      await fs.writeFile(file, nextContent)
+    }
+  }
+}
+
 async function copyOptionalRootFiles(outputRoot) {
   for (const fileName of ['LICENSE', '.gitignore']) {
     const source = path.join(repoRoot, fileName)
@@ -1088,6 +1166,11 @@ async function copyProjectContextFiles(outputRoot) {
       await copyProjectDir(source, path.join(outputRoot, name))
     }
   }
+  const changesDir = path.join(outputRoot, 'code-copilot/changes')
+  if (await exists(path.join(outputRoot, 'code-copilot'))) {
+    await fs.mkdir(changesDir, { recursive: true })
+    await fs.writeFile(path.join(changesDir, '.gitkeep'), '')
+  }
 }
 
 async function writeGeneratedConfig(outputRoot, options, selection, catalog) {
@@ -1106,6 +1189,7 @@ async function writeGeneratedConfig(outputRoot, options, selection, catalog) {
     excludeLogData: options.excludeLogData,
     modules: [...selection.selectedModuleIds].sort(),
     frontends: [...selection.frontendIds].sort(),
+    deploy: [...selection.deployIds].sort(),
   }
   await fs.writeFile(
     path.join(outputRoot, 'forge.config.json'),
@@ -1151,6 +1235,29 @@ ${selection.frontendIds.has('report-ui')
 cd ${options.projectName}-report-ui
 pnpm install
 pnpm dev
+\`\`\`
+`
+  : ''}
+${selection.frontendIds.has('h5-ui')
+  ? `\`\`\`bash
+cd ${options.projectName}-h5-ui
+pnpm install
+pnpm dev
+\`\`\`
+`
+  : ''}
+${selection.deployIds.has('docker')
+  ? `\`\`\`bash
+cd ${dockerDirName(options)}
+cp .env.example .env
+docker compose up -d
+\`\`\`
+
+Docker 首次启动用 \`init-sql/01-init.sql\` 建库，其中带有模板测试数据。等 admin 启动完成（Flyway 增量执行完）后清理一次，然后重启 admin：
+
+\`\`\`bash
+MYSQL_PWD=*** bash ${options.artifactPrefix}-server/scripts/db/clean-db.sh --host 127.0.0.1 --database ${options.databaseName} --execute
+docker compose restart ${options.moduleArtifactPrefix}-admin
 \`\`\`
 `
   : ''}
@@ -1246,18 +1353,17 @@ function buildDatabaseReadme(options) {
 
 \`manifest.json\` 和 \`module/\` 按本次选择的模块收集 SQL 资源，数据库名已替换为 \`${options.databaseName}\`。
 
-数据库初始化统一使用后端根工程脚本：
+初始化干净库（全量 SQL → required seed → Flyway 增量 → 清理测试数据，需要 mysql 客户端和 Maven）：
 
 \`\`\`bash
-bash scripts/db/init-db.sh \\
-  --host 127.0.0.1 \\
-  --port 3306 \\
-  --database ${options.databaseName} \\
-  --user root \\
-  --password your_password
+MYSQL_PWD=your_password bash scripts/db/init-db.sh --database ${options.databaseName} --recreate --clean
 \`\`\`
 
-以上命令仅用于新建空库，默认先执行 \`db/全量初始化SQL.sql\`，再导入 \`db/seed/required\`。如需额外执行本目录按模块收集的 SQL，追加 \`--with-module\`。\`V1.0.0__baseline.sql\` 仅含基线注释，不会建表；已有业务库不要重跑全量初始化，后续增量由主服务启动时执行 Flyway。
+只保留默认租户、超级管理员 admin、菜单权限、字典、系统参数、定时任务配置和内置模板；日志、流程、低代码应用及其自动建表、测试用户/租户/组织/角色都会清空。
+
+没有 Maven 时：先 \`init-db.sh --database ${options.databaseName} --recreate\`，启动一次 admin 让 Flyway 执行增量，再执行 \`clean-db.sh --database ${options.databaseName}\` 预览、加 \`--execute\` 清理。
+
+全量 SQL 只能导入空库；已有业务库不要重跑全量初始化，也不要执行 \`clean-db.sh\`（物理删除）。如需额外执行本目录按模块收集的 SQL，追加 \`--with-module\`。
 `
 }
 
@@ -1354,7 +1460,7 @@ function printHelp(catalog) {
   --module-artifact-prefix 子模块 artifactId 前缀，默认等于 artifact-prefix
   --strip-module-prefix 从子模块 artifactId 前缀中剥离指定前缀，例如 nmg-lt
   --database-name     数据库名，默认由 project-name 转 snake_case
-  --include           额外模块 ID，逗号分隔，例如 business-core
+  --include           额外模块 ID，逗号分隔，例如 business-core、h5-ui（移动端）、docker（部署编排）
   --exclude-log-data  保留日志/运行历史表结构，但从全量 SQL 移除其初始化数据
   --force             目标目录非空时覆盖
 
@@ -1369,6 +1475,7 @@ function printHelp(catalog) {
 function printSummary(outputRoot, options, selection, catalog, adminServerArtifactId) {
   const modules = [...selection.selectedModuleIds].sort()
   const frontends = [...selection.frontendIds].sort()
+  const deploys = [...selection.deployIds].sort()
   console.log('\n[forge:create] 生成完成')
   console.log(`目标目录：${outputRoot}`)
   console.log(`preset：${options.preset} - ${catalog.presets[options.preset].description}`)
@@ -1377,6 +1484,7 @@ function printSummary(outputRoot, options, selection, catalog, adminServerArtifa
   }
   console.log(`后端模块：${modules.join(', ')}`)
   console.log(`前端工程：${frontends.length ? frontends.join(', ') : '无'}`)
+  console.log(`部署目录：${deploys.length ? deploys.map(() => dockerDirName(options)).join(', ') : '无'}`)
   console.log('\n建议验证：')
   console.log(`  cd ${path.join(outputRoot, `${options.artifactPrefix}-server`)}`)
   console.log(`  mvn -pl ${adminServerArtifactId} -am compile -DskipTests`)
@@ -1384,4 +1492,7 @@ function printSummary(outputRoot, options, selection, catalog, adminServerArtifa
     console.log(`  cd ${path.join(outputRoot, `${options.projectName}-admin-ui`)}`)
     console.log('  pnpm install && pnpm build')
   }
+  console.log('\n初始化干净数据库：')
+  console.log(`  cd ${path.join(outputRoot, `${options.artifactPrefix}-server`)}`)
+  console.log(`  MYSQL_PWD=*** bash scripts/db/init-db.sh --database ${options.databaseName} --recreate --clean`)
 }

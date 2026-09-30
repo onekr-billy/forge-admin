@@ -227,3 +227,39 @@ Detected resolved migration not applied to database: 1.0.56
 - 共享库被别的分支跑到更高版本时，把对方的 `V1.0.171`–`V1.0.174` 原样放到本分支；本需求新脚本用下一个空号（如 `V1.0.175`）。
 - 不要把本需求占用已存在的 `1.0.171`，也不要用 `flyway repair` 把别人已执行的版本标成删除。
 - 排查时先对照 `forge_schema_history` 和 `forge-server/db/migration/V*`，缺文件就补文件，不要改已落库脚本。
+
+## 模板库清理必须在 Flyway 增量之后执行
+
+**发现日期**: 2026-09-30
+
+**问题描述**:
+全量 SQL 里的 `forge_schema_history` 是空的，admin 启动时会重跑所有迁移。V1.0.105（预售应用和 `ps_presale_*` 表）、V1.0.114（预售流程）、V1.0.158（Gitee 租户）、V1.0.107（外部接口示例）会写入演示数据。先清理再迁移，这些数据会被重新写回来。
+
+**解决方案**:
+- 固定顺序为：全量 SQL → required seed → Flyway → `clean-db.sh`。`clean-db.sh` 在增量没有全部成功执行时拒绝运行。
+- 有 Java 实体或 Mapper 引用的演示表（`sample_purchase_order`、`biz_leave_request` 等）只能 TRUNCATE，DROP 后服务启动或访问会报表不存在。
+
+## macOS bash 3.2 会把变量后紧跟的中文字符当成变量名
+
+**发现日期**: 2026-09-30
+
+**问题描述**:
+`init-db.sh` 里的 `"重建数据库 $DATABASE，原数据..."` 在 macOS `/bin/bash` 3.2（UTF-8 locale）下报 `DATABASE�: unbound variable`，脚本在确认提示处直接退出。
+
+**解决方案**:
+- 变量后面直接跟非 ASCII 字符时一律写 `${VAR}`。可以用 `LC_ALL=C grep -nE '\$[A-Za-z_][A-Za-z0-9_]*[^ -~]' *.sh` 检查。
+- 同时避免使用 bash 4 语法：关联数组、`mapfile`、`${var,,}`。`set -u` 下空数组展开前要先判断长度。
+
+## docker 初始化 SQL 与全量 SQL 漂移
+
+**发现日期**: 2026-09-30
+
+**问题描述**:
+`docker-forge-admin/init-sql/01-init.sql` 与 `forge-server/db/全量初始化SQL.sql` 相差 677 行：
+- 混入了其它生成项目的包名 `com.craken`（Quartz 任务类、数据权限 Mapper 方法、流程服务类）；
+- Quartz 用小写 `qrtz_*` 表，而配置的 `tablePrefix: QRTZ_` 是大写。Linux 上 MySQL 表名区分大小写，docker 部署后 Quartz 会找不到表，已保留的任务类也不存在。
+
+**解决方案**:
+- docker 的初始化 SQL 必须与全量 SQL 字节一致；更新全量 SQL 后执行 `cp forge-server/db/全量初始化SQL.sql docker-forge-admin/init-sql/01-init.sql`。
+- `forge:create` 生成项目时直接用生成后的全量 SQL 覆盖 docker 的 `01-init.sql`。
+- 不要从改过名的生成项目反向拷贝 SQL 回模板仓库。
